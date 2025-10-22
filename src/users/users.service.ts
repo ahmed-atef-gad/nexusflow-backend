@@ -16,4 +16,11 @@ export class UsersService {
     const createdUser = new this.userModel(createUserDto);
     return createdUser.save();
   }
+
+  async updateLastLogin(userId: string) {
+    return this.userModel.updateOne(
+      { _id: userId },
+      { $set: { last_login: new Date() } }
+    ).exec();
+  }
 }

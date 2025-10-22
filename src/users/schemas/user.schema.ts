@@ -1,10 +1,10 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
-import { Role } from '../enums/role.enum'; // Import the enum
+import { Role } from '../enums/role.enum';
 
 export type UserDocument = User & Document;
 
-@Schema({ timestamps: true }) // Adds createdAt and updatedAt automatically
+@Schema({ timestamps: true })
 export class User {
   @Prop({ required: true, unique: true })
   username: string;
@@ -13,9 +13,12 @@ export class User {
   email: string;
 
   @Prop({ required: true })
-  passwordHash: string; // We'll store the hash, not the password
+  passwordHash: string;
 
-  @Prop({ type: [String], default: [Role.User] }) // This is the array fix!
+  @Prop({ type: String, nullable: true })
+  avatarUrl?: string;
+
+  @Prop({ type: [String], default: [Role.User] }) 
   roles: Role[];
 
   @Prop({ default: true })

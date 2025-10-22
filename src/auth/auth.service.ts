@@ -28,6 +28,7 @@ export class AuthService {
    * Called by the AuthController.
    */
   async login(user: any) {
+    await this.usersService.updateLastLogin(user._id);
     const payload = { email: user.email, sub: user._id, roles: user.roles };
     return {
       access_token: this.jwtService.sign(payload),
