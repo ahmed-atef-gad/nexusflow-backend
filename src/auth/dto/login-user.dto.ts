@@ -10,4 +10,6 @@ export class LoginUserDto {
   @ApiProperty({ example: 'strongPassword123', description: 'The password of the user' })
   @IsString()
   password: string;
+
+  
 }
