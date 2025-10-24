@@ -1,6 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { HttpException, Injectable, Param } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { User, UserDocument } from './schemas/user.schema';
 import { RegisterUserDto } from 'src/auth/dto/register-user.dto';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -24,8 +24,27 @@ export class UsersService {
     const createdUser = new this.userModel(createUserDto);
     return createdUser.save();
   }
+  async findAll(): Promise<UserDocument[]> {
+    return this.userModel.find().exec();
+  }
+  async getUserById(@Param('id') id: string): Promise<UserDocument | null> {
+     const isValidId = Types.ObjectId.isValid(id);
 
-  async updateLastLogin(userId: string) {
+    if (!isValidId) {
+      throw new HttpException('User not found', 404);
+    }
+    return this.userModel.findById(id).exec();
+  }
+  async delete(@Param('id') id: string): Promise<{ deleted: boolean }> {
+    const isValidId = Types.ObjectId.isValid(id);
+    if (!isValidId) {
+      throw new HttpException('User not found', 404);
+    }
+    const result = await this.userModel.deleteOne({ _id: id }).exec();
+    return { deleted: result.deletedCount === 1 };
+  }
+
+  async updateLastLogin(@Param('id') userId: string) {
     return this.userModel.updateOne(
       { _id: userId },
       { $set: { last_login: new Date() } }

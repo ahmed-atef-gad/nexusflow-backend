@@ -45,12 +45,14 @@ export class AuthService {
     const saltOrRounds = 10;
     const hashedPassword = await bcrypt.hash(registerDto.password, saltOrRounds);
 
-    // Create the new user object
-   registerDto.password = hashedPassword;
+    const userCreationData = {
+            ...registerDto,
+            password: hashedPassword, // Use the hash, not the plain password
+        };
 
     // Save the user (UsersService will handle this)
     try {
-      const createdUser = await this.usersService.register( registerDto );
+      const createdUser = await this.usersService.register(userCreationData);
       // Don't return the password hash
       const { passwordHash, ...result } = createdUser.toObject();
       return result;
