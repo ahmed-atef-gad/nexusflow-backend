@@ -4,6 +4,8 @@ import { Model } from 'mongoose';
 import { User, UserDocument } from './schemas/user.schema';
 import { RegisterUserDto } from 'src/auth/dto/register-user.dto';
 import { CreateUserDto } from './dto/create-user.dto';
+import { Role } from './enums/role.enum';
+
 
 @Injectable()
 export class UsersService {
@@ -15,6 +17,7 @@ export class UsersService {
   }
   async register(registerUserDto: RegisterUserDto): Promise<UserDocument> {
     const createdUser = new this.userModel(registerUserDto);
+    createdUser.roles = [Role.User]; // Default role
     return createdUser.save();
   }
   async create(createUserDto: CreateUserDto): Promise<UserDocument> {
