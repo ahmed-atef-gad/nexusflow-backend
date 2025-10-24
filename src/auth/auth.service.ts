@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { UsersService } from 'src/users/users.service';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import { RegisterUserDto } from './dto/register-user.dto';
 
 @Injectable()
 export class AuthService {
@@ -39,22 +40,17 @@ export class AuthService {
    * Handles the registration request.
    * Called by the AuthController.
    */
-  async register(registerDto: any) {
+  async register(registerDto: RegisterUserDto) {
     // Hash the password
     const saltOrRounds = 10;
     const hashedPassword = await bcrypt.hash(registerDto.password, saltOrRounds);
 
     // Create the new user object
-    const newUser = {
-      email: registerDto.email,
-      username: registerDto.username,
-      passwordHash: hashedPassword,
-      // ... other fields from your DTO
-    };
+   registerDto.password = hashedPassword;
 
     // Save the user (UsersService will handle this)
     try {
-      const createdUser = await this.usersService.create(newUser);
+      const createdUser = await this.usersService.register( registerDto );
       // Don't return the password hash
       const { passwordHash, ...result } = createdUser.toObject();
       return result;
