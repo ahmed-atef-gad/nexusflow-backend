@@ -1,15 +1,18 @@
-import { Body, Controller, Delete, Get, Param, Post, Request, UseGuards  , Patch} from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Request, UseGuards, Patch } from '@nestjs/common';
 import { AuthGuard } from '../gaurds/auth/auth.guard';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UsersService } from './users.service';
 import { ApiBadRequestResponse, ApiCreatedResponse, ApiUnauthorizedResponse } from '@nestjs/swagger';
+import { Roles } from './../auth/decorators/roles.decorator';
+import { RolesGuard } from '../gaurds/auth/roles.guard';
+import { Role } from './enums/role.enum';
 
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, RolesGuard)
 @Controller('users')
 
 export class UsersController {
-     constructor(private  userService: UsersService) {}
+    constructor(private userService: UsersService) { }
     @Get('profile')
     async getProfile(@Request() req) {
         return "This is the profile of user";
@@ -18,6 +21,7 @@ export class UsersController {
     @ApiBadRequestResponse({ description: 'Bad Request' })
     @ApiUnauthorizedResponse({ description: 'Unauthorized' })
     @Post()
+    
     async createUser(@Body() createUserDto: CreateUserDto) {
         return this.userService.create(createUserDto);
     }
@@ -32,6 +36,7 @@ export class UsersController {
     @ApiBadRequestResponse({ description: 'Not Valid ID' })
     @ApiUnauthorizedResponse({ description: 'Unauthorized' })
     @Get()
+    //@Roles(Role.Admin)
     async getUsers() {
         return this.userService.findAll();
     }
