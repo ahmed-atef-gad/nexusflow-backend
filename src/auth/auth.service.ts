@@ -9,7 +9,7 @@ export class AuthService {
   constructor(
     private usersService: UsersService,
     private jwtService: JwtService,
-  ) {}
+  ) { }
 
   /**
    * Validates a user by email and password.
@@ -46,15 +46,15 @@ export class AuthService {
     const hashedPassword = await bcrypt.hash(registerDto.password, saltOrRounds);
 
     const userCreationData = {
-            ...registerDto,
-            password: hashedPassword, // Use the hash, not the plain password
-        };
+      ...registerDto,
+      password: hashedPassword, // Use the hash, not the plain password
+    };
 
     // Save the user (UsersService will handle this)
     try {
       const createdUser = await this.usersService.register(userCreationData);
       // Don't return the password hash
-      const { passwordHash, ...result } = createdUser.toObject();
+      const { password, ...result } = createdUser.toObject();
       return result;
     } catch (error) {
       // Handle errors (e.g., unique email constraint)
