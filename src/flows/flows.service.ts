@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { isValidObjectId, Model } from 'mongoose';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
 import { Flow, FlowSchema } from './schemas/flow.schema';
 import { CreateFlowDto } from './dto/create-flow.dto';
 import { UpdateFlowDto } from './dto/update-flow.dto';
@@ -28,6 +28,9 @@ export class FlowsService {
   }
 
   async findOne(id: string, userId: string): Promise<Flow> {
+    if (!isValidObjectId(id)) {
+      throw new BadRequestException('Invalid id format');
+    }
     const flow = await this.flowModel.findOne({ _id: id, userId: userId }).exec();
     if (!flow) {
       throw new NotFoundException(`Flow with ID ${id} not found`);
@@ -36,6 +39,9 @@ export class FlowsService {
   }
 
   async update(id: string, userId: string, updateFlowDto: UpdateFlowDto): Promise<Flow> {
+    if (!isValidObjectId(id)) {
+      throw new BadRequestException('Invalid id format');
+    }
     const flow = await this.flowModel.findOneAndUpdate({ _id: id, userId: userId }, updateFlowDto, { new: true }).exec();
     if (!flow) {
       throw new NotFoundException(`Flow with ID ${id} not found`);
@@ -44,6 +50,9 @@ export class FlowsService {
   }
 
   async delete(id: string, userId: string): Promise<Flow> {
+    if (!isValidObjectId(id)) {
+      throw new BadRequestException('Invalid id format');
+    }
     const flow = await this.flowModel.findOneAndDelete({ _id: id, userId: userId }).exec();
     if (!flow) {
       throw new NotFoundException(`Flow with ID ${id} not found`);

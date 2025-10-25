@@ -1,5 +1,6 @@
 import { 
-  Controller, Get, Post, Body, Param, Delete, Put 
+  Controller, Get, Post, Body, Param, Delete, 
+  Patch
 } from '@nestjs/common';
 import { ApiTags, ApiOkResponse, ApiBadRequestResponse, ApiNotFoundResponse, ApiInternalServerErrorResponse } from '@nestjs/swagger';
 import { ModulesService } from './modules.service';
@@ -34,7 +35,7 @@ export class ModulesController {
     return this.modulesService.findOne(id);
   }
 
-  @Put(':id')
+  @Patch(':id')
   @ApiOkResponse({ description: 'Module updated successfully' })
   @ApiNotFoundResponse({ description: 'Module not found' })
   @ApiBadRequestResponse({ description: 'Invalid update data or ID' })
