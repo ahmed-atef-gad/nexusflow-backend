@@ -4,7 +4,9 @@ import { Model, Types } from 'mongoose';
 import { User, UserDocument } from './schemas/user.schema';
 import { RegisterUserDto } from 'src/auth/dto/register-user.dto';
 import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
 import { Role } from './enums/role.enum';
+import * as bcrypt from 'bcrypt';
 
 
 @Injectable()
@@ -21,6 +23,9 @@ export class UsersService {
     return createdUser.save();
   }
   async create(createUserDto: CreateUserDto): Promise<UserDocument> {
+    const saltOrRounds = 10;
+    const hashedPassword = await bcrypt.hash(createUserDto.password, saltOrRounds);
+    createUserDto.password = hashedPassword;
     const createdUser = new this.userModel(createUserDto);
     return createdUser.save();
   }
@@ -34,6 +39,13 @@ export class UsersService {
       throw new HttpException('User not found', 404);
     }
     return this.userModel.findById(id).exec();
+  }
+  async update(@Param('id') id: string, updateUserDto: UpdateUserDto): Promise<UserDocument | null> {
+    const isValidId = Types.ObjectId.isValid(id);
+    if (!isValidId) {
+      throw new HttpException('User not found', 404);
+    }
+    return this.userModel.findByIdAndUpdate(id, updateUserDto, { new: true }).exec();
   }
   async delete(@Param('id') id: string): Promise<{ deleted: boolean }> {
     const isValidId = Types.ObjectId.isValid(id);

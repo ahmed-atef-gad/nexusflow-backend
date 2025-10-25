@@ -1,6 +1,7 @@
-import { Body, Controller, Delete, Get, Param, Post, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Request, UseGuards  , Patch} from '@nestjs/common';
 import { AuthGuard } from '../gaurds/auth/auth.guard';
 import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
 import { UsersService } from './users.service';
 import { ApiBadRequestResponse, ApiCreatedResponse, ApiUnauthorizedResponse } from '@nestjs/swagger';
 
@@ -19,6 +20,13 @@ export class UsersController {
     @Post()
     async createUser(@Body() createUserDto: CreateUserDto) {
         return this.userService.create(createUserDto);
+    }
+    @ApiCreatedResponse({ description: 'Updated user as response' })
+    @ApiBadRequestResponse({ description: 'Bad Request' })
+    @ApiUnauthorizedResponse({ description: 'Unauthorized' })
+    @Patch(':id')
+    async updateUser(@Param('id') id: string, @Body() updateUserDto: UpdateUserDto) {
+        return this.userService.update(id, updateUserDto);
     }
     @ApiCreatedResponse({ description: 'show all users' })
     @ApiBadRequestResponse({ description: 'Not Valid ID' })

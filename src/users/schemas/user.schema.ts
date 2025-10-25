@@ -13,7 +13,7 @@ export class User {
   email: string;
 
   @Prop({ required: true })
-  passwordHash: string;
+  password: string;
 
   @Prop({ type: String, nullable: true })
   avatarUrl?: string;
