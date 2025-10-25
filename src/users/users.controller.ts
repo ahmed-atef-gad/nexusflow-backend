@@ -7,13 +7,16 @@ import { ApiBadRequestResponse, ApiCreatedResponse, ApiUnauthorizedResponse } fr
 import { Roles } from './../auth/decorators/roles.decorator';
 import { RolesGuard } from '../gaurds/auth/roles.guard';
 import { Role } from './enums/role.enum';
+import { OwnerGuard } from '../gaurds/auth/owner.guard';
+import { IsOwner } from 'src/auth/decorators/owner.decorator';
 
-@UseGuards(AuthGuard, RolesGuard)
+@UseGuards(AuthGuard, RolesGuard, OwnerGuard)
 @Controller('users')
 
 export class UsersController {
     constructor(private userService: UsersService) { }
     @Get('profile')
+    //@IsOwner()
     async getProfile(@Request() req) {
         return "This is the profile of user";
     }
@@ -21,7 +24,7 @@ export class UsersController {
     @ApiBadRequestResponse({ description: 'Bad Request' })
     @ApiUnauthorizedResponse({ description: 'Unauthorized' })
     @Post()
-    
+
     async createUser(@Body() createUserDto: CreateUserDto) {
         return this.userService.create(createUserDto);
     }
@@ -37,6 +40,7 @@ export class UsersController {
     @ApiUnauthorizedResponse({ description: 'Unauthorized' })
     @Get()
     //@Roles(Role.Admin)
+
     async getUsers() {
         return this.userService.findAll();
     }
@@ -44,6 +48,7 @@ export class UsersController {
     @ApiBadRequestResponse({ description: 'Not Valid ID' })
     @ApiUnauthorizedResponse({ description: 'Unauthorized' })
     @Get(':id')
+    @IsOwner()
     async getUserById(@Param('id') id: string) {
 
         return this.userService.getUserById(id);
