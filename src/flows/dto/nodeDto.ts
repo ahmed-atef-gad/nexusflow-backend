@@ -41,6 +41,30 @@ class NodeDataDto {
   @IsString()
   @ApiProperty({ example: 'custom-type', required: false })
   type?: string;
+  @IsOptional()
+  @IsString()
+  @ApiProperty({ example: 'port-1,port-2', required: false })
+  ports?: string;
+  @IsOptional()
+  @IsObject()
+  @ApiProperty({ example: { url: 'icon-url', size: 24 }, required: false })
+  icon?: any;
+  @IsOptional()
+  @IsString()
+  @ApiProperty({ example: '#FF5733', required: false })
+  color?: string
+  @IsOptional()
+  @IsString()
+  @ApiProperty({ example: 'category-1', required: false })
+  category?: string
+  @IsOptional()
+  @IsObject()
+  @ApiProperty({ example: { option1: true, option2: 'value' }, required: false })
+  options?: any
+  @IsOptional()
+  @IsObject()
+  @ApiProperty({ example: { var1: 123, var2: 'data' }, required: false })
+  variables?: any;
 }
 export class NodeDto {
   @IsString()

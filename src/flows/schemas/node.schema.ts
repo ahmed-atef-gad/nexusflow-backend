@@ -13,11 +13,13 @@ export class NodeData {
   @Prop() color?: string;
   @Prop() category?: string;
   @Prop({ type: MongooseSchema.Types.Mixed })
+  options: any;
+  @Prop({ type: MongooseSchema.Types.Mixed })
   variables: any;
 }
 const NodeDataSchema = SchemaFactory.createForClass(NodeData);
 
-@Schema() // Main schema for a single Node
+@Schema({ _id: false }) // Main schema for a single Node
 export class Node {
   @Prop() id: string;
   @Prop() type: string;
