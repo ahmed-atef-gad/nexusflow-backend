@@ -8,6 +8,7 @@ import {
   Req,
   UseGuards,
   Patch,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { AuthGuard } from '../gaurds/auth/auth.guard';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -18,43 +19,23 @@ import {
   ApiCreatedResponse,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { JwtService } from '@nestjs/jwt';
-import type { Request } from 'express';
 
 @UseGuards(AuthGuard)
 @Controller('users')
 export class UsersController {
-  constructor(
-    private userService: UsersService,
-    private jwtService: JwtService,
-  ) {}
+  constructor(private userService: UsersService) {}
   @Get('profile')
-  async getProfile(@Req() req: Request) {
-    // extract token from header
-    const authHeader = req.headers?.authorization;
-    const token = authHeader && authHeader.split(' ')[1];
-    if (!token) {
-      throw new Error('No token provided');
-    }
-    const rawDecoded: unknown = this.jwtService.decode(token);
+  async getProfile(@Req() req) {
+    const user = req.user;
 
-    if (
-      typeof rawDecoded !== 'object' ||
-      rawDecoded === null ||
-      !('sub' in rawDecoded)
-    ) {
-      throw new Error('Invalid token payload');
+    if (!user.sub) {
+      throw new UnauthorizedException('User not authenticated');
     }
-    const decoded = rawDecoded as { sub: string };
-    const userId: string = decoded.sub;
-    const user = await this.userService.getUserById(userId);
-    if (!user) {
-      throw new Error('User not found');
-    }
+
     return {
-      id: user._id,
-      username: user.username,
+      id: user.sub,
       email: user.email,
+      username: user.username,
     };
   }
   @ApiCreatedResponse({ description: 'Created user as response' })

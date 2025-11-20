@@ -99,7 +99,6 @@ export class NodeDto {
   @ApiProperty({ example: true })
   selected?: boolean;
 
-  @IsBoolean()
   @ApiProperty({ example: false })
   dragging?: boolean;
 }
