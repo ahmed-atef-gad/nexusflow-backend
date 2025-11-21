@@ -1,30 +1,21 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Param,
-  Post,
-  Req,
-  UseGuards,
-  Patch,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Request, Req, UseGuards, Patch, UnauthorizedException } from '@nestjs/common';
 import { AuthGuard } from '../gaurds/auth/auth.guard';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UsersService } from './users.service';
-import {
-  ApiBadRequestResponse,
-  ApiCreatedResponse,
-  ApiUnauthorizedResponse,
-} from '@nestjs/swagger';
+import { ApiBadRequestResponse, ApiCreatedResponse, ApiUnauthorizedResponse } from '@nestjs/swagger';
+import { Roles } from './../auth/decorators/roles.decorator';
+import { RolesGuard } from '../gaurds/auth/roles.guard';
+import { Role } from './enums/role.enum';
+import { OwnerGuard } from '../gaurds/auth/owner.guard';
+import { IsOwner } from 'src/auth/decorators/owner.decorator';
 
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, RolesGuard, OwnerGuard)
 @Controller('users')
 export class UsersController {
   constructor(private userService: UsersService) {}
   @Get('profile')
+  //@IsOwner()
   async getProfile(@Req() req) {
     const user = req.user;
 
@@ -59,6 +50,7 @@ export class UsersController {
   @ApiBadRequestResponse({ description: 'Not Valid ID' })
   @ApiUnauthorizedResponse({ description: 'Unauthorized' })
   @Get()
+  //@Roles(Role.Admin)
   async getUsers() {
     return this.userService.findAll();
   }
