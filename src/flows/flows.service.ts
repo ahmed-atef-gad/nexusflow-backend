@@ -5,19 +5,32 @@ import {
 } from '@nestjs/common';
 import { isValidObjectId, Model } from 'mongoose';
 import { InjectModel } from '@nestjs/mongoose';
-import { Flow, FlowSchema } from './schemas/flow.schema';
-import { CreateFlowDto } from './dto/create-flow.dto';
-import { UpdateFlowDto } from './dto/update-flow.dto';
-import { use } from 'passport';
+import { Flow } from './schemas/flow.schema';
+import { FlowBuilderService } from './flow-builder.service';
+import { ModuleNode } from './types/flow.types';
 
 @Injectable()
 export class FlowsService {
-  constructor(@InjectModel(Flow.name) private flowModel: Model<Flow>) {}
+  constructor(
+    @InjectModel(Flow.name) private flowModel: Model<Flow>,
+    private readonly flowBuilderService: FlowBuilderService,
+  ) {}
 
-  async create(createFlowDto: CreateFlowDto, userId: string): Promise<Flow> {
+  async create(flow: Flow, userId: string): Promise<Flow> {
+    const { nodes, edges } = flow;
+    const setup = this.flowBuilderService.buildSetupFromNodes(
+      nodes as ModuleNode[],
+    );
+    const logic = this.flowBuilderService.buildLogicCommandsFromGraph(
+      nodes as ModuleNode[],
+      edges,
+    );
+
     const createdFlow = new this.flowModel({
-      ...createFlowDto,
+      ...flow,
       userId: userId,
+      setup: setup,
+      logic: logic,
     });
     return createdFlow.save();
   }
@@ -43,16 +56,28 @@ export class FlowsService {
     return flow;
   }
 
-  async update(
-    id: string,
-    userId: string,
-    updateFlowDto: UpdateFlowDto,
-  ): Promise<Flow> {
+  async update(id: string, userId: string, updatedFlow: Flow): Promise<Flow> {
     if (!isValidObjectId(id)) {
       throw new BadRequestException('Invalid id format');
     }
+
+    const updatedFlowData = { ...updatedFlow };
+
+    if (updatedFlow.nodes && updatedFlow.edges) {
+      const { nodes, edges } = updatedFlow;
+      const setup = this.flowBuilderService.buildSetupFromNodes(
+        nodes as ModuleNode[],
+      );
+      const logic = this.flowBuilderService.buildLogicCommandsFromGraph(
+        nodes as ModuleNode[],
+        edges,
+      );
+      updatedFlowData.setup = setup;
+      updatedFlowData.logic = logic;
+    }
+
     const flow = await this.flowModel
-      .findOneAndUpdate({ _id: id, userId: userId }, updateFlowDto, {
+      .findOneAndUpdate({ _id: id, userId: userId }, updatedFlowData, {
         new: true,
       })
       .exec();

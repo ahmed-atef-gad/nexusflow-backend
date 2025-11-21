@@ -5,9 +5,10 @@ import { Node, NodeSchema } from './node.schema';
 import { Edge, EdgeSchema } from './edge.schema';
 import { Viewport, ViewportSchema } from './viewport.schema';
 
+export type FlowDocument = Flow & Document;
 
 @Schema({ timestamps: true })
-export class Flow extends Document {
+export class Flow {
   @Prop({ required: true })
   name: string;
 
@@ -23,6 +24,12 @@ export class Flow extends Document {
 
   @Prop({ type: ViewportSchema })
   viewport: Viewport;
+
+  @Prop({ type: MongooseSchema.Types.Mixed })
+  setup: any;
+
+  @Prop({ type: MongooseSchema.Types.Mixed })
+  logic: any;
 }
 
 export const FlowSchema = SchemaFactory.createForClass(Flow);

@@ -1,7 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Schema as MongooseSchema } from 'mongoose';
 
-
 @Schema({ _id: false }) // Sub-schema for Node data
 export class NodeData {
   @Prop() id: string;
@@ -24,11 +23,11 @@ export class Node {
   @Prop() id: string;
   @Prop() type: string;
   @Prop({ type: MongooseSchema.Types.Mixed })
-  position: { x: number; y: number; };
+  position: { x: number; y: number };
   @Prop({ type: NodeDataSchema })
   data: NodeData;
   @Prop({ type: MongooseSchema.Types.Mixed })
-  measured: { width: number; height: number; };
+  measured: { width: number; height: number };
   @Prop()
   selected?: boolean;
   @Prop()
