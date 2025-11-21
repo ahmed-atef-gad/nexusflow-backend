@@ -9,7 +9,7 @@ export class AuthService {
   constructor(
     private usersService: UsersService,
     private jwtService: JwtService,
-  ) { }
+  ) {}
 
   /**
    * Validates a user by email and password.
@@ -30,7 +30,12 @@ export class AuthService {
    */
   async login(user: any) {
     await this.usersService.updateLastLogin(user._id);
-    const payload = { email: user.email, sub: user._id, roles: user.roles };
+    const payload = {
+      email: user.email,
+      sub: user._id,
+      roles: user.roles,
+      username: user.username,
+    };
     return {
       access_token: this.jwtService.sign(payload),
     };
@@ -43,7 +48,10 @@ export class AuthService {
   async register(registerDto: RegisterUserDto) {
     // Hash the password
     const saltOrRounds = 10;
-    const hashedPassword = await bcrypt.hash(registerDto.password, saltOrRounds);
+    const hashedPassword = await bcrypt.hash(
+      registerDto.password,
+      saltOrRounds,
+    );
 
     const userCreationData = {
       ...registerDto,

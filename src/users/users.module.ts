@@ -6,7 +6,6 @@ import { User, UserSchema } from './schemas/user.schema';
 import { JwtService } from '@nestjs/jwt';
 import { RolesGuard } from '../gaurds/auth/roles.guard';
 
-
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
