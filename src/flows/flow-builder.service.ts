@@ -1,8 +1,128 @@
+/*
+  FlowBuilderService
+  Purpose: Convert a node-edge flow graph (from the frontend) into:
+  - Setup items to initialize ESP32 pin modes and default values.
+  - Executable command flows to be published over MQTT at runtime.
+
+  Key responsibilities:
+  - Map UI pin modes to protocol codes (MODE_MAP) and high-level actions to command bytes (CMD_MAP/CMD_*).
+  - Derive linear paths from a directed graph; detect cycles and isolated nodes, emitting warnings.
+  - Detect simple fan-out (one input → many GPIO outputs) and collapse it into a single multi-command step.
+  - Deduplicate setup per pin (last definition wins).
+
+  Main APIs:
+  - buildSetupFromNodes(nodes): SetupItem[]
+  - buildLogicCommandsFromGraph(nodes, edges): { flows: CommandStep[][], warnings: string[] }
+  - (internal) buildFlowFromGraph(nodes, edges): { flows: FlowStep[][], warnings: string[] }
+
+  Notes:
+  - Each CommandStep has a reportTopic based on the node id for routing.
+  - Output modules use "$prev" to reference the prior step's value.
+*/
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { ModuleNode, Edge as RFEdge } from './types/flow.types';
 
+/**
+ * Maps human-readable pin modes (from UI) to numeric protocol codes
+ * used by the ESP32 firmware.
+ */
+const MODE_MAP: Record<string, number> = {
+  INPUT: 1,
+  OUTPUT: 3,
+  INPUT_PULLUP: 5,
+  OUTPUT_TOGGLE: 3,
+  ANALOG: 1,
+  PWM: 3,
+  DAC: 3,
+};
+
+/**
+ * Maps high-level command names to their byte codes as expected by
+ * the device protocol during setup phase (e.g., set pin mode/value).
+ */
+const CMD_MAP: Record<string, number> = {
+  SET_PIN_MODE: 0x10,
+  SET_PIN_VALUE: 0x11,
+  GET_PIN_VALUE: 0x12,
+  TOGGLE_PIN_VALUE: 0x13,
+  ANALOG_READ: 0x20,
+  ANALOG_WRITE: 0x21,
+};
+
+/**
+ * One-time setup instruction for a specific pin.
+ */
+export type SetupItem = {
+  cmd: number;
+  pin: number;
+  mode: number;
+  value?: number;
+};
+
+/**
+ * A single logical node in a linearized flow path.
+ * - `next` points to next node id in the path; null when terminal.
+ * - `topic` is used for terminal MQTT nodes.
+ */
+export type FlowStep = {
+  id: string;
+  moduleId: string;
+  variables?: Record<string, string>;
+  next?: string | null;
+  topic?: string;
+};
+
+/**
+ * Result of extracting linear paths from a graph.
+ */
+export type FlowExtraction = {
+  flows: FlowStep[][];
+  warnings: string[];
+};
+
+/**
+ * A single executable step that may contain one command (normal) or
+ * a list of parallel commands (fan-out optimization).
+ */
+export type CommandStep = {
+  id: string;
+  moduleId: string;
+  command?: {
+    cmd: number;
+    condition?: string;
+    pin?: number;
+    value?: number | string;
+    topic?: string;
+  };
+  commands?: Array<{
+    condition?: string;
+    cmd: number;
+    pin?: number;
+    value?: number | string;
+    topic?: string;
+  }>;
+  reportTopic: string;
+  next?: string | null;
+};
+
+/**
+ * Result of converting linearized flows to executable command steps.
+ */
+export type CommandExtraction = {
+  flows: CommandStep[][];
+  warnings: string[];
+};
+
 @Injectable()
 export class FlowBuilderService {
+  /**
+   * Build device setup instructions from module nodes.
+   * - Validates required variables (`pinNumber`, `pinMode`).
+   * - Maps pin mode strings to protocol codes.
+   * - Deduplicates by pin: the last encountered setup wins.
+   *
+   * @throws BadRequestException when node variables are missing or invalid.
+   */
   buildSetupFromNodes(nodes: ModuleNode[]): SetupItem[] {
     const setupMap: Record<number, SetupItem> = {};
     nodes.forEach((node) => {
@@ -18,7 +138,7 @@ export class FlowBuilderService {
           const pinMode = MODE_MAP[pinModeStr];
           if (isNaN(pinNumber) || pinMode === undefined) {
             throw new BadRequestException(
-              `Invalid pin configuration for node ${node.id}`,
+              `Invalid pin configuration for node ${node.id}`
             );
           }
           // Build setup item
@@ -35,19 +155,31 @@ export class FlowBuilderService {
           setupMap[pinNumber] = setupItem;
         } else {
           throw new BadRequestException(
-            `Missing pin configuration for node ${node.id}`,
+            `Missing pin configuration for node ${node.id}`
           );
         }
       }
     });
+    // TODO: Replace console.log with NestJS Logger for structured logs
     console.log('Final setup map:', setupMap);
 
     return Object.values(setupMap);
   }
 
+  /**
+   * Convert a graph of nodes and edges into executable command steps.
+   * Steps are grouped per linear path; simple fan-outs (one input → many
+   * outputs) are collapsed into a single multi-command step to reduce
+   * round-trips.
+   *
+   * Mapping rules:
+   * - ESP32-gpio-input: read (analog or digital) from configured pin.
+   * - ESP32-gpio-output: write `$prev` (prior step's value) to pin; PWM/DAC use analog write; OUTPUT_TOGGLE uses toggle when `$prev === 1`.
+   * - MQTT-publish: no device command; included for chaining/reporting only.
+   */
   buildLogicCommandsFromGraph(
     nodes: ModuleNode[],
-    edges: RFEdge[],
+    edges: RFEdge[]
   ): CommandExtraction {
     const { flows: linear, warnings } = this.buildFlowFromGraph(nodes, edges);
 
@@ -65,7 +197,7 @@ export class FlowBuilderService {
           if (pin !== undefined) {
             const isAnalog = pinMode === 'ANALOG';
             command = {
-              cmd: isAnalog ? CMD_ANALOG_READ : CMD_GET_PIN_VALUE,
+              cmd: isAnalog ? CMD_MAP['ANALOG_READ'] : CMD_MAP['GET_PIN_VALUE'],
               pin,
               topic,
             };
@@ -76,9 +208,19 @@ export class FlowBuilderService {
           if (pin !== undefined) {
             // Value is taken from previous step result at runtime
             if (pinMode === 'PWM' || pinMode === 'DAC') {
-              command = { cmd: CMD_ANALOG_WRITE, pin, value: '$prev', topic };
+              command = {
+                cmd: CMD_MAP['ANALOG_WRITE'],
+                pin,
+                value: '$prev',
+                topic,
+              };
             } else {
-              command = { cmd: CMD_SET_PIN_VALUE, pin, value: '$prev', topic };
+              command = {
+                cmd: CMD_MAP['SET_PIN_VALUE'],
+                pin,
+                value: '$prev',
+                topic,
+              };
             }
           }
           break;
@@ -103,6 +245,7 @@ export class FlowBuilderService {
       };
     };
 
+    // Group linear paths that represent a simple fan-out: [input] -> [output]
     const byFirst: Map<string, FlowStep[][]> = new Map();
     for (const p of linear) {
       if (p.length >= 2) {
@@ -119,7 +262,7 @@ export class FlowBuilderService {
       const allAreFanout =
         paths.length > 1 &&
         paths.every(
-          (p) => p.length === 2 && p[1].moduleId === 'ESP32-gpio-output',
+          (p) => p.length === 2 && p[1].moduleId === 'ESP32-gpio-output'
         );
       if (!allAreFanout) continue;
 
@@ -136,7 +279,7 @@ export class FlowBuilderService {
         if (pin === undefined) continue;
         if (pinMode === 'PWM' || pinMode === 'DAC') {
           fanOutCommands.push({
-            cmd: CMD_ANALOG_WRITE,
+            cmd: CMD_MAP['ANALOG_WRITE'],
             pin,
             value: '$prev',
             topic: out.id,
@@ -144,13 +287,13 @@ export class FlowBuilderService {
         } else if (pinMode === 'OUTPUT_TOGGLE') {
           fanOutCommands.push({
             condition: '$prev === 1',
-            cmd: CMD_TOGGLE_PIN_VALUE,
+            cmd: CMD_MAP['TOGGLE_PIN_VALUE'],
             pin,
             topic: out.id,
           });
         } else {
           fanOutCommands.push({
-            cmd: CMD_SET_PIN_VALUE,
+            cmd: CMD_MAP['SET_PIN_VALUE'],
             pin,
             value: '$prev',
             topic: out.id,
@@ -177,24 +320,38 @@ export class FlowBuilderService {
     return { flows: outFlows, warnings };
   }
 
+  /**
+   * Extract linear flow paths from a directed graph.
+   * - Identifies start nodes (in-degree 0 and out-degree > 0).
+   * - DFS traverses successors; records a path for each terminal or branch.
+   * - Detects cycles, emitting warnings and cutting the path.
+   * - Includes isolated nodes as single-step flows.
+   */
   private buildFlowFromGraph(
     nodes: ModuleNode[],
-    edges: RFEdge[],
+    edges: RFEdge[]
   ): FlowExtraction {
     const warnings: string[] = [];
+    // Map node id → node for O(1) lookup
     const nodeMap = new Map<string, ModuleNode>();
     for (const n of nodes) nodeMap.set(n.id, n);
 
+    // Build adjacency lists for outgoing and incoming edges
     const outgoing = new Map<string, string[]>();
     const incoming = new Map<string, string[]>();
     for (const e of edges) {
       if (!e.source || !e.target) continue;
+
       if (!outgoing.has(e.source)) outgoing.set(e.source, []);
+
       outgoing.get(e.source)!.push(e.target);
+
       if (!incoming.has(e.target)) incoming.set(e.target, []);
+
       incoming.get(e.target)!.push(e.source);
     }
 
+    // Detect start nodes: no incoming, at least one outgoing
     const starts: string[] = [];
     for (const n of nodes) {
       const inDeg = (incoming.get(n.id) || []).length;
@@ -206,6 +363,7 @@ export class FlowBuilderService {
 
     const flows: FlowStep[][] = [];
 
+    // Convert a ModuleNode to a basic FlowStep template
     const getStep = (n: ModuleNode): FlowStep => {
       const data = n.data;
       return {
@@ -215,15 +373,18 @@ export class FlowBuilderService {
       };
     };
 
+    // Deterministic traversal order
     const outsOf = (id: string): string[] =>
       (outgoing.get(id) || []).slice().sort();
 
+    // Terminal when module is MQTT-publish (publishes to topic and stops)
     const isTerminalMqtt = (n: ModuleNode) => n.data.id === 'MQTT-publish';
 
+    // Depth-first traversal, cloning path and visited per branch
     const dfs = (
       currentId: string,
       pathSoFar: FlowStep[],
-      visited: Set<string>,
+      visited: Set<string>
     ) => {
       if (visited.has(currentId)) {
         warnings.push(`Detected cycle at node ${currentId}; stopping path.`);
@@ -257,7 +418,7 @@ export class FlowBuilderService {
 
       if (outs.length > 1) {
         warnings.push(
-          `Node ${currentId} has ${outs.length} outgoing edges; creating branches.`,
+          `Node ${currentId} has ${outs.length} outgoing edges; creating branches.`
         );
       }
 
@@ -270,10 +431,12 @@ export class FlowBuilderService {
       }
     };
 
+    // Start DFS from each start node
     for (const startId of starts) {
       dfs(startId, [], new Set<string>());
     }
 
+    // Include isolated nodes (no incoming and no outgoing)
     for (const n of nodes) {
       const id = n.id;
       const inDeg = (incoming.get(id) || []).length;
@@ -286,82 +449,9 @@ export class FlowBuilderService {
         flows.push([step]);
       }
     }
+    // TODO: Replace console.log with NestJS Logger for structured logs
     console.log(flows);
 
     return { flows, warnings };
   }
 }
-
-// Helper types and constants, moved from the original files
-
-const MODE_MAP: Record<string, number> = {
-  INPUT: 1,
-  OUTPUT: 3,
-  INPUT_PULLUP: 5,
-  OUTPUT_TOGGLE: 3,
-  ANALOG: 1,
-  PWM: 3,
-  DAC: 3,
-};
-
-const CMD_MAP: Record<string, number> = {
-  SET_PIN_MODE: 0x10,
-  SET_PIN_VALUE: 0x11,
-  GET_PIN_VALUE: 0x12,
-  TOGGLE_PIN_VALUE: 0x13,
-  ANALOG_READ: 0x20,
-  ANALOG_WRITE: 0x21,
-};
-
-export type SetupItem = {
-  cmd: number;
-  pin: number;
-  mode: number;
-  value?: number;
-};
-
-export type FlowStep = {
-  id: string;
-  moduleId: string;
-  variables?: Record<string, string>;
-  next?: string | null;
-  topic?: string;
-};
-
-export type FlowExtraction = {
-  flows: FlowStep[][];
-  warnings: string[];
-};
-
-// const CMD_SET_PIN_MODE = 0x10;
-const CMD_SET_PIN_VALUE = 0x11;
-const CMD_GET_PIN_VALUE = 0x12;
-const CMD_TOGGLE_PIN_VALUE = 0x13;
-const CMD_ANALOG_READ = 0x20;
-const CMD_ANALOG_WRITE = 0x21;
-
-export type CommandStep = {
-  id: string;
-  moduleId: string;
-  command?: {
-    cmd: number;
-    condition?: string;
-    pin?: number;
-    value?: number | string;
-    topic?: string;
-  };
-  commands?: Array<{
-    condition?: string;
-    cmd: number;
-    pin?: number;
-    value?: number | string;
-    topic?: string;
-  }>;
-  reportTopic: string;
-  next?: string | null;
-};
-
-export type CommandExtraction = {
-  flows: CommandStep[][];
-  warnings: string[];
-};
