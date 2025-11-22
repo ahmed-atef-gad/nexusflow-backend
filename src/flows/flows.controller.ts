@@ -30,7 +30,10 @@ import {
 export class FlowsController {
   constructor(private readonly flowsService: FlowsService) {}
 
-  @ApiOperation({ summary: 'Create a new flow' })
+  @ApiOperation({ 
+    summary: 'Create a Flow', 
+    description: 'Creates a Flow and automatically calculates/saves the associated Setup and Logic documents.' 
+  })
   @ApiBody({ type: Flow })
   @ApiResponse({ status: 201, description: 'Flow created' })
   @ApiBadRequestResponse({ description: 'Bad request' })
