@@ -65,6 +65,8 @@ export class UsersController {
   @ApiBadRequestResponse({ description: 'Not Valid ID' })
   @ApiUnauthorizedResponse({ description: 'Unauthorized' })
   @Delete(':id')
+  @Roles(Role.Admin)
+  @UseGuards(RolesGuard)
   async deleteUser(@Param('id') id: string) {
     return this.userService.delete(id);
   }
