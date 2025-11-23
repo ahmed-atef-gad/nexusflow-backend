@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { ModulesModule } from './modules/modules.module';
 import { FlowsModule } from './flows/flows.module';
+import { MqttModule } from './mqtt/mqtt.module';
 
 @Module({
   imports: [
@@ -28,9 +29,9 @@ import { FlowsModule } from './flows/flows.module';
     UsersModule,
     ModulesModule,
     FlowsModule,
+    MqttModule,
   ],
   controllers: [AppController],
   providers: [AppService],
 })
 export class AppModule {}
-
