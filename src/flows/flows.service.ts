@@ -17,7 +17,7 @@ export class FlowsService {
     @InjectModel(Flow.name) private flowModel: Model<FlowDocument>,
     private readonly flowBuilderService: FlowBuilderService,
     private readonly setupService: SetupService,
-    private readonly logicService: LogicService,
+    private readonly logicService: LogicService
   ) {}
 
   async create(flow: Flow, userId: string): Promise<any> {
@@ -25,24 +25,35 @@ export class FlowsService {
       ...flow,
       userId: userId,
     });
-    const savedFlow = await createdFlow.save();
 
     const { nodes, edges } = flow;
-    
+
     let setupData: any[] = [];
     let logicData: any = {};
+    let savedFlow: FlowDocument;
 
     if (nodes && edges) {
       setupData = this.flowBuilderService.buildSetupFromNodes(
-        nodes as ModuleNode[],
+        nodes as ModuleNode[]
       );
       logicData = this.flowBuilderService.buildLogicCommandsFromGraph(
         nodes as ModuleNode[],
-        edges,
+        edges
       );
+      savedFlow = await createdFlow.save();
 
-      await this.setupService.create({ flowId: savedFlow.id, elements: setupData });
-      await this.logicService.create({ flowId: savedFlow.id, program: logicData });
+      await this.setupService.create({
+        flowId: savedFlow.id,
+        elements: setupData,
+      });
+      await this.logicService.create({
+        flowId: savedFlow.id,
+        program: logicData,
+      });
+    } else {
+      throw new BadRequestException(
+        'Nodes and edges are required to create a flow'
+      );
     }
 
     return {
@@ -102,11 +113,11 @@ export class FlowsService {
 
     if (updatedFlow.nodes && updatedFlow.edges) {
       setupData = this.flowBuilderService.buildSetupFromNodes(
-        updatedFlow.nodes as ModuleNode[],
+        updatedFlow.nodes as ModuleNode[]
       );
       logicData = this.flowBuilderService.buildLogicCommandsFromGraph(
         updatedFlow.nodes as ModuleNode[],
-        updatedFlow.edges,
+        updatedFlow.edges
       );
 
       // We know setupData is an array here, so it's safe to pass
@@ -130,7 +141,7 @@ export class FlowsService {
     if (!isValidObjectId(id)) {
       throw new BadRequestException('Invalid id format');
     }
-    
+
     const flow = await this.flowModel
       .findOneAndDelete({ _id: id, userId: userId })
       .exec();

@@ -132,13 +132,14 @@ export class FlowBuilderService {
         module.id === 'ESP32-gpio-output'
       ) {
         const pinNumberStr = module.variables?.['pinNumber'];
-        const pinModeStr = module.variables?.['pinMode'];
+        // Frontend sends ModuleType (capital M); keep backwards compatibility with moduleType and pinMode variable
+        const pinModeStr = module?.moduleType;
         if (pinNumberStr && pinModeStr) {
           const pinNumber = parseInt(pinNumberStr, 10);
           const pinMode = MODE_MAP[pinModeStr];
           if (isNaN(pinNumber) || pinMode === undefined) {
             throw new BadRequestException(
-              `Invalid pin configuration for node ${node.id}`
+              `Invalid pin configuration for ${module?.alias || module.name}`
             );
           }
           // Build setup item
@@ -155,7 +156,7 @@ export class FlowBuilderService {
           setupMap[pinNumber] = setupItem;
         } else {
           throw new BadRequestException(
-            `Missing pin configuration for node ${node.id}`
+            `Missing configuration for node ${module?.alias || module.name}`
           );
         }
       }
@@ -366,10 +367,15 @@ export class FlowBuilderService {
     // Convert a ModuleNode to a basic FlowStep template
     const getStep = (n: ModuleNode): FlowStep => {
       const data = n.data;
+      // Normalize pin mode onto variables so downstream command mapping sees it
+      const pinMode = data?.moduleType;
       return {
         id: n.id,
         moduleId: data.id,
-        variables: data.variables,
+        variables: {
+          ...data.variables,
+          ...(pinMode ? { pinMode } : {}),
+        },
       };
     };
 

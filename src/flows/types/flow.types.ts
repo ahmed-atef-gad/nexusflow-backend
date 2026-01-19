@@ -15,7 +15,16 @@ export class Module {
   @ApiProperty({ example: 'ESP32 GPIO Input', description: 'Display name' })
   name: string;
 
-  @ApiProperty({ example: 'from-amber-500 to-orange-500', description: 'UI Gradient' })
+  @ApiProperty({
+    example: 'INPUT',
+    description: 'Module type',
+  })
+  moduleType?: string;
+
+  @ApiProperty({
+    example: 'from-amber-500 to-orange-500',
+    description: 'UI Gradient',
+  })
   color: string;
 
   @ApiProperty({ example: 'Hardware', description: 'Category' })
@@ -36,7 +45,10 @@ export class Module {
   @ApiProperty({ required: false })
   options?: any;
 
-  @ApiProperty({ required: false, example: { pinMode: 'INPUT', pinNumber: '4' } })
+  @ApiProperty({
+    required: false,
+    example: { pinMode: 'INPUT', pinNumber: '4' },
+  })
   variables?: Record<string, string>;
 }
 
@@ -80,23 +92,29 @@ export class Edge {
 // --- New Types for Setup/Logic APIs ---
 
 export class SetupPayload {
-  @ApiProperty({ example: '64b5f...', description: 'The Flow ID this setup belongs to' })
+  @ApiProperty({
+    example: '64b5f...',
+    description: 'The Flow ID this setup belongs to',
+  })
   flowId: string;
 
-  @ApiProperty({ 
-    example: [{ cmd: 16, pin: 4, mode: 1 }], 
-    description: 'Array of setup commands' 
+  @ApiProperty({
+    example: [{ cmd: 16, pin: 4, mode: 1 }],
+    description: 'Array of setup commands',
   })
   elements: any[];
 }
 
 export class LogicPayload {
-  @ApiProperty({ example: '64b5f...', description: 'The Flow ID this logic belongs to' })
+  @ApiProperty({
+    example: '64b5f...',
+    description: 'The Flow ID this logic belongs to',
+  })
   flowId: string;
 
-  @ApiProperty({ 
-    example: { flows: [[{ id: 'node-1', cmd: 18 }]] }, 
-    description: 'The compiled logic program graph' 
+  @ApiProperty({
+    example: { flows: [[{ id: 'node-1', cmd: 18 }]] },
+    description: 'The compiled logic program graph',
   })
   program: any;
 }
