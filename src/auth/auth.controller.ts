@@ -5,6 +5,7 @@ import {
   UnauthorizedException,
   Res,
   Get,
+  Req,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterUserDto } from './dto/register-user.dto';
@@ -12,16 +13,15 @@ import { RegisterUserDto } from './dto/register-user.dto';
 import { LoginUserDto } from './dto/login-user.dto';
 import { ApiBadRequestResponse, ApiCreatedResponse } from '@nestjs/swagger';
 import { User } from 'src/users/schemas/user.schema';
-import type { Response } from 'express';
+import type { Response, Request } from 'express';
 
 @Controller('auth')
 export class AuthController {
   constructor(private authService: AuthService) {}
 
-  @Get('profile') async getProfile(
-    @Res({ passthrough: true }) response: Response
-  ) {
-    const token = response.req.cookies['jwt'];
+  @Get('profile')
+  async getProfile(@Req() request: Request) {
+    const token = request.cookies['jwt'];
     if (!token) {
       throw new UnauthorizedException('No token found');
     }
@@ -42,8 +42,9 @@ export class AuthController {
     response.cookie('jwt', token.access_token, {
       httpOnly: true,
       maxAge: 86400000, // 1 day
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+      path: '/',
+      secure: true,
+      sameSite: 'none',
     });
     return { message: 'Registration successful' };
   }
@@ -72,17 +73,19 @@ export class AuthController {
     response.cookie('jwt', token.access_token, {
       httpOnly: true,
       maxAge: 86400000, // 1 day
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+      path: '/',
+      secure: true,
+      sameSite: 'none',
     });
     return { message: 'Login successful' };
   }
   @Post('logout')
-  async logout(@Res({ passthrough: true }) response: Response) {
+  logout(@Res({ passthrough: true }) response: Response) {
     response.clearCookie('jwt', {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+      path: '/',
+      secure: true,
+      sameSite: 'none',
     });
     return { message: 'Logout successful' };
   }
