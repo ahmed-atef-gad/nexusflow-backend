@@ -38,20 +38,20 @@ export class AuthController {
   ) {
     const user = await this.authService.register(registerUserDto);
     const token = await this.authService.login(user);
-    console.log('Registered user:', user);
-    console.log('Generated token:', token);
     // Set token in HttpOnly cookie
     response.cookie('jwt', token.access_token, {
       httpOnly: true,
       maxAge: 86400000, // 1 day
       secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
     });
     return { message: 'Registration successful' };
   }
 
   @Post('login')
-  @ApiCreatedResponse({ description: 'Access Token' })
+  @ApiCreatedResponse({
+    description: 'Login successful, JWT set in HTTP-only cookie',
+  })
   @ApiBadRequestResponse({ description: 'Bad Request' })
   async login(
     @Res({ passthrough: true }) response: Response,
@@ -73,7 +73,7 @@ export class AuthController {
       httpOnly: true,
       maxAge: 86400000, // 1 day
       secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
     });
     return { message: 'Login successful' };
   }
@@ -82,7 +82,7 @@ export class AuthController {
     response.clearCookie('jwt', {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
     });
     return { message: 'Logout successful' };
   }
