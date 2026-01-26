@@ -8,7 +8,7 @@ import { RegisterUserDto } from './dto/register-user.dto';
 export class AuthService {
   constructor(
     private usersService: UsersService,
-    private jwtService: JwtService,
+    private jwtService: JwtService
   ) {}
 
   /**
@@ -41,6 +41,20 @@ export class AuthService {
     };
   }
 
+  async getProfile(token: string) {
+    try {
+      const decoded = this.jwtService.verify(token);
+      const user = await this.usersService.getUserById(decoded.sub);
+      if (!user) {
+        throw new UnauthorizedException('User not found');
+      }
+      const { password, ...result } = user.toObject(); // Exclude password
+      return result;
+    } catch (error) {
+      throw new UnauthorizedException('Invalid token');
+    }
+  }
+
   /**
    * Handles the registration request.
    * Called by the AuthController.
@@ -50,7 +64,7 @@ export class AuthService {
     const saltOrRounds = 10;
     const hashedPassword = await bcrypt.hash(
       registerDto.password,
-      saltOrRounds,
+      saltOrRounds
     );
 
     const userCreationData = {
