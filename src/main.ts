@@ -3,10 +3,11 @@ import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { Transport, MicroserviceOptions } from '@nestjs/microservices';
+import cookieParser from 'cookie-parser';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  
+
   // --- MQTT Microservice Setup ---
   app.connectMicroservice<MicroserviceOptions>({
     transport: Transport.MQTT,
@@ -17,10 +18,17 @@ async function bootstrap() {
     },
   });
   // -------------------------------
-
-  app.enableCors();
+  app.enableCors({
+    origin: [
+      'http://localhost:8080',
+      'https://nexusflow-frontend-amber.vercel.app',
+    ],
+    credentials: true,
+  });
   app.useGlobalPipes(new ValidationPipe());
 
+  app.use(cookieParser());
+  // Swagger Setup
   const config = new DocumentBuilder()
     .setTitle('NexusFlow API')
     .setDescription('API documentation for NexusFlow')
