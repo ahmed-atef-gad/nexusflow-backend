@@ -35,12 +35,10 @@ export class FlowsService {
     let savedFlow: FlowDocument;
 
     if (nodes && edges) {
-      const setupResult = this.flowBuilderService.buildSetupFromNodes(
-        nodes as any[]
-      );
+      const setupResult = this.flowBuilderService.buildSetupFromNodes(nodes);
       setupData = setupResult;
       logicData = this.flowBuilderService.buildLogicCommandsFromGraph(
-        nodes as any[],
+        nodes,
         edges
       );
       savedFlow = await createdFlow.save();
@@ -58,10 +56,10 @@ export class FlowsService {
         'Nodes and edges are required to create a flow'
       );
     }
-
+    this.mqttService.publish(`esp/setup`, setupData);
     return {
       ...savedFlow.toObject(),
-      setup: setupData.setup,
+      setup: setupData,
       logic: logicData,
     };
   }
@@ -116,11 +114,11 @@ export class FlowsService {
 
     if (updatedFlow.nodes && updatedFlow.edges) {
       const setupResult = this.flowBuilderService.buildSetupFromNodes(
-        updatedFlow.nodes as any
+        updatedFlow.nodes
       );
       setupData = setupResult;
       logicData = this.flowBuilderService.buildLogicCommandsFromGraph(
-        updatedFlow.nodes as any,
+        updatedFlow.nodes,
         updatedFlow.edges
       );
 
