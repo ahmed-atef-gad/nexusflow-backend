@@ -113,6 +113,171 @@ export type CommandExtraction = {
   warnings: string[];
 };
 
+type Task = {
+  taskName: string;
+  intervalMs: number;
+  topic?: string;
+  pin?: number;
+  type?: number;
+  commands?: Array<{
+    cmd: number;
+    pin?: number;
+    topic: string;
+    value?: number | string;
+  }>;
+  command?: {
+    cmd: number;
+    pin: number;
+    topic: string;
+    value?: number | string;
+  };
+};
+
+// example setup and task to be generated from nodes
+// const char* setupJson = R"({
+//   "setup":[
+//     {"cmd":16 ,"pin":33,"mode":1},
+//     {"cmd":16 ,"pin":19,"mode":5}
+//       ]
+// })";
+
+// const char* logicJson = R"({
+//   "tasks":
+//   [
+//     {
+//       "gpio":{
+//         "taskName":"GpioTask",
+//         "intervalMs":3000,
+//         "commands":[
+//         {
+//            "cmd":32,
+//            "pin":33,
+//            "topic":"esp/analog1"
+//         },
+//         {
+//            "cmd":18,
+//            "pin":19,
+//            "topic":"esp/pin19"
+//           }]
+//       }
+//     },
+//     {
+//       "sensors":[
+//       {
+//         "DHT":[{
+//         "taskName":"readDHT22",
+//         "intervalMs":3000,
+//         "topic":"esp/DHT_32",
+//         "pin":32,
+//         "type":11}
+//         ]
+//       },
+//       {
+//         "PIR":[{
+//         "taskName":"readPIR_34",
+//         "intervalMs":4000,
+//         "topic":"esp/PIR_34",
+//         "pin":14}
+//         ]
+//       }
+//       ]
+//     }
+//   ]
+// })";
+
+// export const modules: Module[] = [
+//   {
+//     moduleId: "ESP32-gpio-input",
+//     name: "Digital Input",
+//     pinMode: "INPUT",
+//     ports: "source",
+//     icon: PlugZap,
+//     color: "from-amber-300 to-orange-500",
+//     category: "Hardware",
+//     options: {},
+//   },
+//   {
+//     moduleId: "ESP32-gpio-input-pullup",
+//     name: "Digital Input (Pullup)",
+//     pinMode: "INPUT_PULLUP",
+//     ports: "source",
+//     icon: PlugZap,
+//     color: "from-amber-300 to-orange-500",
+//     category: "Hardware",
+//     options: {},
+//   },
+//   {
+//     moduleId: "ESP32-gpio-input-analog",
+//     name: "Analog Input",
+//     pinMode: "ANALOG",
+//     ports: "source",
+//     icon: PlugZap,
+//     color: "from-amber-300 to-orange-500",
+//     category: "Hardware",
+//     options: {},
+//   },
+//   {
+//     moduleId: "ESP32-gpio-output",
+//     name: "Digital Output",
+//     pinMode: "OUTPUT",
+//     ports: "target",
+//     icon: LucideZap,
+//     color: "from-green-500 to-lime-500",
+
+//     category: "Hardware",
+//     options: {},
+//   },
+//   {
+//     moduleId: "ESP32-gpio-output-pwm",
+//     name: "PWM Output",
+//     pinMode: "PWM",
+//     ports: "target",
+//     icon: LucideZap,
+//     color: "from-green-500 to-lime-500",
+//     category: "Hardware",
+//     options: {},
+//   },
+//   {
+//     moduleId: "ESP32-gpio-output-dac",
+//     name: "DAC Output",
+//     pinMode: "DAC",
+//     ports: "target",
+//     icon: LucideZap,
+//     color: "from-green-500 to-lime-500",
+//     category: "Hardware",
+//     options: {},
+//   },
+//   {
+//     moduleId: "ESP32-gpio-output-led",
+//     name: "LED",
+//     pinMode: "OUTPUT",
+//     ports: "target",
+//     //give a lightbulb icon
+//     icon: Lightbulb,
+//     color: "from-green-500 to-lime-500",
+//     category: "Hardware",
+//     options: {},
+//   },
+//   {
+//     moduleId: "DHT-Sensor-11",
+//     name: "DHT11",
+//     ports: "source",
+//     icon: Thermometer,
+//     color: "from-blue-400 to-cyan-600",
+//     category: "Sensors",
+//     options: {},
+//   },
+//   {
+//     moduleId: "DHT-Sensor-22",
+//     name: "DHT22",
+//     ports: "source",
+//     icon: Thermometer,
+//     color: "from-blue-400 to-cyan-600",
+//     category: "Sensors",
+//     options: {},
+//   },
+// ];
+
 @Injectable()
 export class FlowBuilderService {
   /**
@@ -123,17 +288,26 @@ export class FlowBuilderService {
    *
    * @throws BadRequestException when node variables are missing or invalid.
    */
-  buildSetupFromNodes(nodes: ModuleNode[]): SetupItem[] {
-    const setupMap: Record<number, SetupItem> = {};
+  buildSetupFromNodes(nodes: ModuleNode[]): {
+    setup: SetupItem[];
+    tasks: Array<Record<string, any>>;
+  } {
+    const setupPins: Record<number, SetupItem> = {};
+    const gpioTask: Task = {
+      taskName: 'GpioTask',
+      intervalMs: 3000,
+      commands: [],
+    };
+    const sensorsTask: Record<string, Task[]> = {};
     nodes.forEach((node) => {
       const module = node.data;
       if (
-        module.id === 'ESP32-gpio-input' ||
-        module.id === 'ESP32-gpio-output'
+        module.moduleId.startsWith('ESP32-gpio-input') ||
+        module.moduleId.startsWith('ESP32-gpio-output')
       ) {
         const pinNumberStr = module.variables?.['pinNumber'];
         // Frontend sends ModuleType (capital M); keep backwards compatibility with moduleType and pinMode variable
-        const pinModeStr = module?.moduleType;
+        const pinModeStr = module?.pinMode;
         if (pinNumberStr && pinModeStr) {
           const pinNumber = parseInt(pinNumberStr, 10);
           const pinMode = MODE_MAP[pinModeStr];
@@ -149,22 +323,87 @@ export class FlowBuilderService {
             mode: pinMode,
           };
           // For outputs, set an initial value of 0
-          if (module.id === 'ESP32-gpio-output') {
+          if (module.moduleId === 'ESP32-gpio-output') {
             setupItem.value = 0;
           }
           // Deduplicate by pin (last definition wins)
-          setupMap[pinNumber] = setupItem;
+          setupPins[pinNumber] = setupItem;
+          // Add to GPIO task commands
+          let cmd = 0;
+
+          switch (module.moduleId) {
+            case 'ESP32-gpio-input':
+            case 'ESP32-gpio-input-pullup':
+              cmd = CMD_MAP['GET_PIN_VALUE'];
+              break;
+            case 'ESP32-gpio-input-analog':
+              cmd = CMD_MAP['ANALOG_READ'];
+              break;
+            case 'ESP32-gpio-output':
+              cmd = CMD_MAP['SET_PIN_VALUE'];
+              break;
+            case 'ESP32-gpio-output-pwm':
+              cmd = CMD_MAP['ANALOG_WRITE'];
+              break;
+            case 'ESP32-gpio-output-dac':
+              cmd = CMD_MAP['ANALOG_WRITE'];
+              break;
+            case 'ESP32-gpio-output-led':
+              cmd = CMD_MAP['SET_PIN_VALUE'];
+              break;
+            default:
+              throw new BadRequestException(
+                `Unsupported module ${module?.alias || module.name}`
+              );
+          }
+
+          gpioTask.commands!.push({
+            cmd: cmd,
+            pin: pinNumber,
+            topic: `esp/${node.id}`,
+          });
         } else {
           throw new BadRequestException(
             `Missing configuration for node ${module?.alias || module.name}`
           );
         }
       }
-    });
-    // TODO: Replace console.log with NestJS Logger for structured logs
-    console.log('Final setup map:', setupMap);
 
-    return Object.values(setupMap);
+      if (module.moduleId.startsWith('DHT-Sensor')) {
+        const pinNumberStr = module.variables?.['pinNumber'];
+        if (pinNumberStr) {
+          const pinNumber = parseInt(pinNumberStr, 10);
+          if (isNaN(pinNumber)) {
+            throw new BadRequestException(
+              `Invalid pin configuration for ${module?.alias || module.name}`
+            );
+          }
+          // Add to DHT sensors task
+          if (!sensorsTask['DHT']) {
+            sensorsTask['DHT'] = [];
+          }
+          const taskName = `read${module.moduleId.replace(/-/g, '_')}_${pinNumber}`;
+          const type = module.moduleId === 'DHT-Sensor-11' ? 11 : 22;
+          sensorsTask['DHT'].push({
+            taskName,
+            intervalMs: 3000,
+            topic: `esp/${node.id}`,
+            pin: pinNumber,
+            type,
+          });
+        }
+      }
+    });
+
+    const tasks: Array<Record<string, any>> = [];
+    if (gpioTask.commands && gpioTask.commands.length > 0) {
+      tasks.push({ gpio: gpioTask });
+    }
+    if (Object.keys(sensorsTask).length > 0) {
+      tasks.push({ sensors: [sensorsTask] });
+    }
+
+    return { setup: Object.values(setupPins), tasks };
   }
 
   /**
@@ -186,7 +425,7 @@ export class FlowBuilderService {
 
     const mapStep = (s: FlowStep): CommandStep => {
       // Topic should be the node id to uniquely route results per node
-      const topic = s.id;
+      const topic = `esp/${s.id}`;
       // infer command by module id
       const vars = s.variables || {};
       const pin = vars['pinNumber'] ? Number(vars['pinNumber']) : undefined;
@@ -368,7 +607,7 @@ export class FlowBuilderService {
     const getStep = (n: ModuleNode): FlowStep => {
       const data = n.data;
       // Normalize pin mode onto variables so downstream command mapping sees it
-      const pinMode = data?.moduleType;
+      const pinMode = data?.pinMode;
       return {
         id: n.id,
         moduleId: data.id,
@@ -455,8 +694,6 @@ export class FlowBuilderService {
         flows.push([step]);
       }
     }
-    // TODO: Replace console.log with NestJS Logger for structured logs
-    console.log(flows);
 
     return { flows, warnings };
   }

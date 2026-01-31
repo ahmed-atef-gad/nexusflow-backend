@@ -9,17 +9,19 @@ export class Position {
 }
 
 export class Module {
-  @ApiProperty({ example: 'ESP32-gpio-input', description: 'Unique module ID' })
+  @ApiProperty({ example: 'module-123', description: 'Unique ID for mqtt' })
   id: string;
+  @ApiProperty({ example: 'ESP32-gpio-input', description: 'Unique module ID' })
+  moduleId: string;
 
   @ApiProperty({ example: 'ESP32 GPIO Input', description: 'Display name' })
   name: string;
 
   @ApiProperty({
     example: 'INPUT',
-    description: 'Module type',
+    description: 'Pin Mode',
   })
-  moduleType?: string;
+  pinMode?: string;
 
   @ApiProperty({
     example: 'from-amber-500 to-orange-500',
