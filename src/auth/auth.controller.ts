@@ -41,7 +41,7 @@ export class AuthController {
     // Set token in HttpOnly cookie
     response.cookie('jwt', token.access_token, {
       httpOnly: true,
-      maxAge: 86400000, // 1 day
+      maxAge: 604800000, // 7 days
       path: '/',
       secure: true,
       sameSite: 'none',
@@ -72,7 +72,7 @@ export class AuthController {
     // Set token in HttpOnly cookie
     response.cookie('jwt', token.access_token, {
       httpOnly: true,
-      maxAge: 86400000, // 1 day
+      maxAge: 604800000, // 7 days
       path: '/',
       secure: true,
       sameSite: 'none',

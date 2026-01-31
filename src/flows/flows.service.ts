@@ -10,6 +10,7 @@ import { FlowBuilderService } from './flow-builder.service';
 import { ModuleNode } from './types/flow.types';
 import { SetupService } from './setup.service';
 import { LogicService } from './logic.service';
+import { MqttService } from 'src/mqtt/mqtt.service';
 
 @Injectable()
 export class FlowsService {
@@ -17,7 +18,8 @@ export class FlowsService {
     @InjectModel(Flow.name) private flowModel: Model<FlowDocument>,
     private readonly flowBuilderService: FlowBuilderService,
     private readonly setupService: SetupService,
-    private readonly logicService: LogicService
+    private readonly logicService: LogicService,
+    private readonly mqttService: MqttService
   ) {}
 
   async create(flow: Flow, userId: string): Promise<any> {
@@ -28,16 +30,17 @@ export class FlowsService {
 
     const { nodes, edges } = flow;
 
-    let setupData: any[] = [];
+    let setupData: any = {};
     let logicData: any = {};
     let savedFlow: FlowDocument;
 
     if (nodes && edges) {
-      setupData = this.flowBuilderService.buildSetupFromNodes(
-        nodes as ModuleNode[]
+      const setupResult = this.flowBuilderService.buildSetupFromNodes(
+        nodes as any[]
       );
+      setupData = setupResult;
       logicData = this.flowBuilderService.buildLogicCommandsFromGraph(
-        nodes as ModuleNode[],
+        nodes as any[],
         edges
       );
       savedFlow = await createdFlow.save();
@@ -58,7 +61,7 @@ export class FlowsService {
 
     return {
       ...savedFlow.toObject(),
-      setup: setupData,
+      setup: setupData.setup,
       logic: logicData,
     };
   }
@@ -108,21 +111,24 @@ export class FlowsService {
     }
 
     // Explicitly type these variables so TypeScript knows they aren't just "null"
-    let setupData: any[] | undefined;
+    let setupData: any | undefined;
     let logicData: any | undefined;
 
     if (updatedFlow.nodes && updatedFlow.edges) {
-      setupData = this.flowBuilderService.buildSetupFromNodes(
-        updatedFlow.nodes as ModuleNode[]
+      const setupResult = this.flowBuilderService.buildSetupFromNodes(
+        updatedFlow.nodes as any
       );
+      setupData = setupResult;
       logicData = this.flowBuilderService.buildLogicCommandsFromGraph(
-        updatedFlow.nodes as ModuleNode[],
+        updatedFlow.nodes as any,
         updatedFlow.edges
       );
 
-      // We know setupData is an array here, so it's safe to pass
+      // Extract the setup array and pass it to upsertByFlowId
       await this.setupService.upsertByFlowId(id, setupData);
       await this.logicService.upsertByFlowId(id, logicData);
+
+      this.mqttService.publish(`esp/setup`, setupData);
     } else {
       const s = await this.setupService.findByFlowId(id);
       const l = await this.logicService.findByFlowId(id);
