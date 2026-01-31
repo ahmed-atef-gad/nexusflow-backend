@@ -2,15 +2,31 @@ name: Deploy NexusFlow Backend
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
 
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build project
+        run: npm run build
+
+      - name: Prepare deploy package
+        run: |
+          tar -czf app.tar.gz dist node_modules package.json
 
       - name: Setup SSH
         run: |
@@ -19,7 +35,17 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan ${{ secrets.VM_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Deploy
+      - name: Upload build to VM
         run: |
-          ssh ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} \
-            "bash /home/zekwa/deploy-nexusflow.sh"
+          scp app.tar.gz \
+            ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}:/home/zekwa/
+
+      - name: Deploy on VM
+        run: |
+          ssh ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} << 'EOF'
+            set -e
+            cd /home/zekwa/nexusflow-backend
+            tar -xzf /home/zekwa/app.tar.gz
+            rm /home/zekwa/app.tar.gz
+            sudo systemctl restart nestapp
+          EOF
