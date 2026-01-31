@@ -7,8 +7,9 @@ import { Schema as MongooseSchema } from 'mongoose';
 export class NodeData {
   @ApiProperty() @Prop() id: string;
   @ApiProperty() @Prop() name: string;
+  @ApiProperty() @Prop() moduleId: string;
   @ApiProperty({ required: false }) @Prop() alias?: string;
-  @ApiProperty({ required: false }) @Prop() moduleType?: string;
+  @ApiProperty({ required: false }) @Prop() pinMode?: string;
   @ApiProperty({ required: false }) @Prop() type?: string;
   @ApiProperty({ required: false }) @Prop() ports?: string;
   @ApiProperty() @Prop({ type: MongooseSchema.Types.Mixed }) icon: any;

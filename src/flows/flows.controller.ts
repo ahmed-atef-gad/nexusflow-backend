@@ -30,9 +30,10 @@ import {
 export class FlowsController {
   constructor(private readonly flowsService: FlowsService) {}
 
-  @ApiOperation({ 
-    summary: 'Create a Flow', 
-    description: 'Creates a Flow and automatically calculates/saves the associated Setup and Logic documents.' 
+  @ApiOperation({
+    summary: 'Create a Flow',
+    description:
+      'Creates a Flow and automatically calculates/saves the associated Setup and Logic documents.',
   })
   @ApiBody({ type: Flow })
   @ApiResponse({ status: 201, description: 'Flow created' })
@@ -77,7 +78,7 @@ export class FlowsController {
   async update(
     @Param('id') id: string,
     @Body() updateFlow: Flow,
-    @Request() req,
+    @Request() req
   ): Promise<Flow> {
     const userId = req.user?.id ?? req.user?.sub ?? req.user?.userId;
     return this.flowsService.update(id, userId, updateFlow);
@@ -90,7 +91,7 @@ export class FlowsController {
   @Delete(':id')
   async delete(
     @Param('id') id: string,
-    @Request() req,
+    @Request() req
   ): Promise<{ success: boolean; message: string; id: string }> {
     const userId = req.user?.id ?? req.user?.sub ?? req.user?.userId;
     await this.flowsService.delete(id, userId);

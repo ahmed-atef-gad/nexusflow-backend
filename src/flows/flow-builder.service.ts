@@ -20,7 +20,8 @@
   - Output modules use "$prev" to reference the prior step's value.
 */
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { ModuleNode, Edge as RFEdge } from './types/flow.types';
+import { Edge as RFEdge } from './types/flow.types';
+import { Node } from './schemas/node.schema';
 
 /**
  * Maps human-readable pin modes (from UI) to numeric protocol codes
@@ -288,7 +289,7 @@ export class FlowBuilderService {
    *
    * @throws BadRequestException when node variables are missing or invalid.
    */
-  buildSetupFromNodes(nodes: ModuleNode[]): {
+  buildSetupFromNodes(nodes: Node[]): {
     setup: SetupItem[];
     tasks: Array<Record<string, any>>;
   } {
@@ -329,39 +330,29 @@ export class FlowBuilderService {
           // Deduplicate by pin (last definition wins)
           setupPins[pinNumber] = setupItem;
           // Add to GPIO task commands
-          let cmd = 0;
+          if (module.moduleId.startsWith('ESP32-gpio-input')) {
+            let cmd = 0;
 
-          switch (module.moduleId) {
-            case 'ESP32-gpio-input':
-            case 'ESP32-gpio-input-pullup':
-              cmd = CMD_MAP['GET_PIN_VALUE'];
-              break;
-            case 'ESP32-gpio-input-analog':
-              cmd = CMD_MAP['ANALOG_READ'];
-              break;
-            case 'ESP32-gpio-output':
-              cmd = CMD_MAP['SET_PIN_VALUE'];
-              break;
-            case 'ESP32-gpio-output-pwm':
-              cmd = CMD_MAP['ANALOG_WRITE'];
-              break;
-            case 'ESP32-gpio-output-dac':
-              cmd = CMD_MAP['ANALOG_WRITE'];
-              break;
-            case 'ESP32-gpio-output-led':
-              cmd = CMD_MAP['SET_PIN_VALUE'];
-              break;
-            default:
-              throw new BadRequestException(
-                `Unsupported module ${module?.alias || module.name}`
-              );
+            switch (module.moduleId) {
+              case 'ESP32-gpio-input':
+              case 'ESP32-gpio-input-pullup':
+                cmd = CMD_MAP['GET_PIN_VALUE'];
+                break;
+              case 'ESP32-gpio-input-analog':
+                cmd = CMD_MAP['ANALOG_READ'];
+                break;
+              default:
+                throw new BadRequestException(
+                  `Unsupported module ${module?.alias || module.name}`
+                );
+            }
+
+            gpioTask.commands!.push({
+              cmd: cmd,
+              pin: pinNumber,
+              topic: `esp/${node.id}`,
+            });
           }
-
-          gpioTask.commands!.push({
-            cmd: cmd,
-            pin: pinNumber,
-            topic: `esp/${node.id}`,
-          });
         } else {
           throw new BadRequestException(
             `Missing configuration for node ${module?.alias || module.name}`
@@ -418,7 +409,7 @@ export class FlowBuilderService {
    * - MQTT-publish: no device command; included for chaining/reporting only.
    */
   buildLogicCommandsFromGraph(
-    nodes: ModuleNode[],
+    nodes: Node[],
     edges: RFEdge[]
   ): CommandExtraction {
     const { flows: linear, warnings } = this.buildFlowFromGraph(nodes, edges);
@@ -567,13 +558,10 @@ export class FlowBuilderService {
    * - Detects cycles, emitting warnings and cutting the path.
    * - Includes isolated nodes as single-step flows.
    */
-  private buildFlowFromGraph(
-    nodes: ModuleNode[],
-    edges: RFEdge[]
-  ): FlowExtraction {
+  private buildFlowFromGraph(nodes: Node[], edges: RFEdge[]): FlowExtraction {
     const warnings: string[] = [];
     // Map node id → node for O(1) lookup
-    const nodeMap = new Map<string, ModuleNode>();
+    const nodeMap = new Map<string, Node>();
     for (const n of nodes) nodeMap.set(n.id, n);
 
     // Build adjacency lists for outgoing and incoming edges
@@ -604,13 +592,13 @@ export class FlowBuilderService {
     const flows: FlowStep[][] = [];
 
     // Convert a ModuleNode to a basic FlowStep template
-    const getStep = (n: ModuleNode): FlowStep => {
+    const getStep = (n: Node): FlowStep => {
       const data = n.data;
       // Normalize pin mode onto variables so downstream command mapping sees it
       const pinMode = data?.pinMode;
       return {
         id: n.id,
-        moduleId: data.id,
+        moduleId: data.moduleId,
         variables: {
           ...data.variables,
           ...(pinMode ? { pinMode } : {}),
@@ -623,7 +611,7 @@ export class FlowBuilderService {
       (outgoing.get(id) || []).slice().sort();
 
     // Terminal when module is MQTT-publish (publishes to topic and stops)
-    const isTerminalMqtt = (n: ModuleNode) => n.data.id === 'MQTT-publish';
+    const isTerminalMqtt = (n: Node) => n.data.id === 'MQTT-publish';
 
     // Depth-first traversal, cloning path and visited per branch
     const dfs = (
