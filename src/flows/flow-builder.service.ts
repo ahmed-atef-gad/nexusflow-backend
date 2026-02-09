@@ -540,45 +540,6 @@ export class FlowBuilderService {
           }
           break;
         }
-        case 'MQ2-Sensor' : 
-        {
-          if(vars['analogPin'] !== undefined || vars['digitalPin'] !== undefined) 
-            {
-               command = 
-               {
-                cmd: CMD_MAP['MQ2_READ'],
-                digtalPin: vars['digitalPin'] ? Number(vars['digitalPin']) : undefined,
-                analogPin: vars['analogPin'] ? Number(vars['analogPin']) : undefined,
-                topic,
-              }
-          }
-        }
-        case 'Soil-Sensor' : 
-        {
-          if(vars['analogPin'] !== undefined || vars['digitalPin'] !== undefined) 
-            {
-               command = 
-               {
-                cmd: CMD_MAP['SOIL_READ'],
-                digtalPin: vars['digitalPin'] ? Number(vars['digitalPin']) : undefined,
-                analogPin: vars['analogPin'] ? Number(vars['analogPin']) : undefined,
-                topic,
-              }
-          }
-        }
-        case 'Soil-Sensor' : 
-        {
-          if(vars['analogPin'] !== undefined || vars['digitalPin'] !== undefined) 
-            {
-               command = 
-               {
-                cmd: CMD_MAP['SOIL_READ'],
-                digtalPin: vars['digitalPin'] ? Number(vars['digitalPin']) : undefined,
-                analogPin: vars['analogPin'] ? Number(vars['analogPin']) : undefined,
-                topic,
-              }
-          }
-        }  
         case 'MQTT-publish': {
           // Not an ESP pin command; use report topic only. Frontend can handle publish side.
           command = undefined;
