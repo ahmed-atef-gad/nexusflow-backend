@@ -6,7 +6,9 @@ import { SetupPayload } from './types/flow.types';
 
 @Injectable()
 export class SetupService {
-  constructor(@InjectModel(Setup.name) private setupModel: Model<SetupDocument>) {}
+  constructor(
+    @InjectModel(Setup.name) private setupModel: Model<SetupDocument>
+  ) {}
 
   async create(data: SetupPayload): Promise<Setup> {
     const created = new this.setupModel(data);
@@ -39,12 +41,10 @@ export class SetupService {
   async upsertByFlowId(flowId: string, elements: any[]): Promise<Setup> {
     // upsert returns the document, but findOneAndUpdate signature can include null if not found (unlikely with upsert: true)
     // Casting or handling as non-null is usually safe with upsert: true and new: true
-    const result = await this.setupModel.findOneAndUpdate(
-      { flowId },
-      { elements },
-      { upsert: true, new: true }
-    ).exec();
-    
+    const result = await this.setupModel
+      .findOneAndUpdate({ flowId }, { elements }, { upsert: true, new: true })
+      .exec();
+
     // Since upsert is true, result should theoretically not be null
     return result as Setup;
   }

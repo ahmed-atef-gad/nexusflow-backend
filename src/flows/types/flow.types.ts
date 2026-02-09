@@ -120,3 +120,17 @@ export class LogicPayload {
   })
   program: any;
 }
+
+export class UiPayload {
+  @ApiProperty({
+    example: '64b5f...',
+    description: 'The Flow ID this UI belongs to',
+  })
+  flowId: string;
+
+  @ApiProperty({
+    example: [{ type: 'button', label: 'Turn On', action: 'turn_on' }],
+    description: 'Array of UI elements',
+  })
+  elements: any[];
+}
