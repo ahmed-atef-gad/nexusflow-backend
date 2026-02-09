@@ -120,6 +120,10 @@ type Task = {
   topic?: string;
   pin?: number;
   type?: number;
+  digitalPin?: number;
+  analogPin?: number;
+  useDigital?: boolean;
+  useAnalog?: boolean;
   commands?: Array<{
     cmd: number;
     pin?: number;
@@ -384,6 +388,78 @@ export class FlowBuilderService {
           });
         }
       }
+      if (module.moduleId.startsWith('PIR-Sensor')) 
+      {
+        const pinNumberStr = module.variables?.['pinNumber'];
+        if (pinNumberStr) {
+          const pinNumber = parseInt(pinNumberStr, 10);
+          if (isNaN(pinNumber)) {
+            throw new BadRequestException(
+              `Invalid pin configuration for ${module?.alias || module.name}`
+            );
+          }
+          if (!sensorsTask['PIR']) {
+            sensorsTask['PIR'] = [];
+          }
+          const taskName = `read${module.moduleId.replace(/-/g, '_')}_${pinNumber}`;
+          sensorsTask['PIR'].push({
+            taskName,
+            intervalMs: 3000,
+            topic: `esp/${node.id}`,
+            pin: pinNumber,
+          });
+
+        }
+      }
+    if (module.moduleId.startsWith('MQ2-Sensor') || module.moduleId.startsWith('Rain-Sensor') || module.moduleId.startsWith('Soil-Sensor')) 
+    {
+        const analogPinStr = module.variables?.['analogPin'];
+        const digitalPinStr = module.variables?.['digitalPin'];
+        const isDigital = module.variables?.['isDigital'] === 'true';
+        const isAnalog = module.variables?.['isAnalog'] === 'true';
+        if ((isDigital && digitalPinStr) || (isAnalog && analogPinStr)) 
+        {
+          let digitalPin: number | undefined;
+          let analogPin: number | undefined;
+          if((isDigital && digitalPinStr))
+          {
+             digitalPin = parseInt(digitalPinStr, 10);
+            if (isNaN(digitalPin)) {
+              throw new BadRequestException(
+                `Invalid digital pin configuration for ${module?.alias || module.name}`
+              );
+            }
+          }
+          if((isAnalog && analogPinStr))
+          {
+              analogPin = parseInt(analogPinStr, 10);
+            if (isNaN(analogPin)) {
+              throw new BadRequestException(
+                `Invalid analog pin configuration for ${module?.alias || module.name}`
+              );
+            }
+          }
+          const sensorType = module.moduleId.split('-')[0]; // e.g., "MQ2", "Rain", "Soil"
+          // Add to MQ2 sensors task
+          if (!sensorsTask[sensorType]) {
+            sensorsTask[sensorType] = [];
+          }
+          const taskName = `read${sensorType}_${isDigital ? 'digital' : 'analog'}_${isDigital ? digitalPin : analogPin}`;
+          sensorsTask[sensorType].push({
+            taskName,
+            intervalMs: 3000,
+            topic: `esp/${node.id}`,
+            digitalPin: digitalPin,
+            analogPin: analogPin,
+            useDigital: isDigital,
+            useAnalog: isAnalog,
+          });
+        }
+
+
+    }
+    
+
     });
 
     const tasks: Array<Record<string, any>> = [];
