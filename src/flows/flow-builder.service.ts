@@ -60,6 +60,16 @@ export type SetupItem = {
   value?: number;
 };
 
+export type UiItem = {
+  moduleId: string;
+  moduleName: string;
+  alias?: string;
+  topic: string;
+  pin?: number;
+  isDigital?: boolean;
+  isAnalog?: boolean;
+};
+
 /**
  * A single logical node in a linearized flow path.
  * - `next` points to next node id in the path; null when terminal.
@@ -388,8 +398,7 @@ export class FlowBuilderService {
           });
         }
       }
-      if (module.moduleId.startsWith('PIR-Sensor')) 
-      {
+      if (module.moduleId.startsWith('PIR-Sensor')) {
         const pinNumberStr = module.variables?.['pinNumber'];
         if (pinNumberStr) {
           const pinNumber = parseInt(pinNumberStr, 10);
@@ -408,31 +417,30 @@ export class FlowBuilderService {
             topic: `esp/${node.id}`,
             pin: pinNumber,
           });
-
         }
       }
-    if (module.moduleId.startsWith('MQ2-Sensor') || module.moduleId.startsWith('Rain-Sensor') || module.moduleId.startsWith('Soil-Sensor')) 
-    {
+      if (
+        module.moduleId.startsWith('MQ2-Sensor') ||
+        module.moduleId.startsWith('Rain-Sensor') ||
+        module.moduleId.startsWith('Soil-Sensor')
+      ) {
         const analogPinStr = module.variables?.['analogPin'];
         const digitalPinStr = module.variables?.['digitalPin'];
         const isDigital = module.variables?.['isDigital'] === 'true';
         const isAnalog = module.variables?.['isAnalog'] === 'true';
-        if ((isDigital && digitalPinStr) || (isAnalog && analogPinStr)) 
-        {
+        if ((isDigital && digitalPinStr) || (isAnalog && analogPinStr)) {
           let digitalPin: number | undefined;
           let analogPin: number | undefined;
-          if((isDigital && digitalPinStr))
-          {
-             digitalPin = parseInt(digitalPinStr, 10);
+          if (isDigital && digitalPinStr) {
+            digitalPin = parseInt(digitalPinStr, 10);
             if (isNaN(digitalPin)) {
               throw new BadRequestException(
                 `Invalid digital pin configuration for ${module?.alias || module.name}`
               );
             }
           }
-          if((isAnalog && analogPinStr))
-          {
-              analogPin = parseInt(analogPinStr, 10);
+          if (isAnalog && analogPinStr) {
+            analogPin = parseInt(analogPinStr, 10);
             if (isNaN(analogPin)) {
               throw new BadRequestException(
                 `Invalid analog pin configuration for ${module?.alias || module.name}`
@@ -455,11 +463,7 @@ export class FlowBuilderService {
             useAnalog: isAnalog,
           });
         }
-
-
-    }
-    
-
+      }
     });
 
     const tasks: Array<Record<string, any>> = [];
@@ -471,6 +475,39 @@ export class FlowBuilderService {
     }
 
     return { setup: Object.values(setupPins), tasks };
+  }
+
+  buildUiFromNodes(nodes: Node[]): UiItem[] {
+    const uiElements: UiItem[] = [];
+    nodes.forEach((node) => {
+      const module = node.data;
+      if (module.moduleId.startsWith('ESP32-gpio-output')) {
+        const pinNumberStr = module.variables?.['pinNumber'];
+        if (pinNumberStr) {
+          const pinNumber = parseInt(pinNumberStr, 10);
+          if (isNaN(pinNumber)) {
+            throw new BadRequestException(
+              `Invalid pin configuration for ${module?.alias || module.name}`
+            );
+          }
+          uiElements.push({
+            moduleId: module.moduleId,
+            moduleName: module.name,
+            alias: module.alias,
+            pin: pinNumber,
+            topic: `esp/cmd`,
+          });
+        }
+      } else {
+        uiElements.push({
+          moduleId: module.moduleId,
+          moduleName: module.name,
+          alias: module.alias,
+          topic: `esp/${node.id}`,
+        });
+      }
+    });
+    return uiElements;
   }
 
   /**
