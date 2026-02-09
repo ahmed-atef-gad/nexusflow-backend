@@ -524,7 +524,7 @@ export class FlowBuilderService {
             // Value is taken from previous step result at runtime
             if (pinMode === 'PWM' || pinMode === 'DAC') {
               command = {
-                cmd: pinMode === 'PWM' ? CMD_MAP['ANALOG_WRITE'] : CMD_MAP['SET_DAC'],
+                cmd: pinMode === 'PWM' ? CMD_MAP['ANALOG_WRITE'] : CMD_MAP['DAC_WRITE'],
                 pin,
                 value: '$prev',
                 topic,
