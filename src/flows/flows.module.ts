@@ -5,6 +5,8 @@ import { AuthModule } from '../auth/auth.module';
 import { FlowsController } from './flows.controller';
 import { FlowsService } from './flows.service';
 import { FlowBuilderService } from './flow-builder.service';
+import { UiController } from './ui.controller';
+import { UiService } from './ui.service';
 
 import { SetupController } from './setup.controller';
 import { SetupService } from './setup.service';
@@ -14,6 +16,7 @@ import { LogicService } from './logic.service';
 import { Flow, FlowSchema } from './schemas/flow.schema';
 import { Setup, SetupSchema } from './schemas/setup.schema';
 import { Logic, LogicSchema } from './schemas/logic.schema';
+import { Ui, UiSchema } from './schemas/ui.schema';
 
 @Module({
   imports: [
@@ -21,10 +24,22 @@ import { Logic, LogicSchema } from './schemas/logic.schema';
       { name: Flow.name, schema: FlowSchema },
       { name: Setup.name, schema: SetupSchema },
       { name: Logic.name, schema: LogicSchema },
+      { name: Ui.name, schema: UiSchema },
     ]),
     AuthModule,
   ],
-  controllers: [FlowsController, SetupController, LogicController],
-  providers: [FlowsService, FlowBuilderService, SetupService, LogicService],
+  controllers: [
+    FlowsController,
+    SetupController,
+    LogicController,
+    UiController,
+  ],
+  providers: [
+    FlowsService,
+    FlowBuilderService,
+    SetupService,
+    LogicService,
+    UiService,
+  ],
 })
 export class FlowsModule {}

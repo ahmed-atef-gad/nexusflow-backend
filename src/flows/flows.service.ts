@@ -11,6 +11,7 @@ import { ModuleNode } from './types/flow.types';
 import { SetupService } from './setup.service';
 import { LogicService } from './logic.service';
 import { MqttService } from 'src/mqtt/mqtt.service';
+import { UiService } from './ui.service';
 
 @Injectable()
 export class FlowsService {
@@ -18,6 +19,7 @@ export class FlowsService {
     @InjectModel(Flow.name) private flowModel: Model<FlowDocument>,
     private readonly flowBuilderService: FlowBuilderService,
     private readonly setupService: SetupService,
+    private readonly uiService: UiService,
     private readonly logicService: LogicService,
     private readonly mqttService: MqttService
   ) {}
@@ -32,6 +34,7 @@ export class FlowsService {
 
     let setupData: any = {};
     let logicData: any = {};
+    let uiData: any = {};
     let savedFlow: FlowDocument;
 
     if (nodes && edges) {
@@ -41,6 +44,7 @@ export class FlowsService {
         nodes,
         edges
       );
+      uiData = this.flowBuilderService.buildUiFromNodes(nodes);
       savedFlow = await createdFlow.save();
 
       await this.setupService.create({
@@ -50,6 +54,10 @@ export class FlowsService {
       await this.logicService.create({
         flowId: savedFlow.id,
         program: logicData,
+      });
+      await this.uiService.create({
+        flowId: savedFlow.id,
+        elements: uiData,
       });
     } else {
       throw new BadRequestException(
@@ -111,6 +119,7 @@ export class FlowsService {
     // Explicitly type these variables so TypeScript knows they aren't just "null"
     let setupData: any | undefined;
     let logicData: any | undefined;
+    let uiData: any | undefined;
 
     if (updatedFlow.nodes && updatedFlow.edges) {
       const setupResult = this.flowBuilderService.buildSetupFromNodes(
@@ -121,9 +130,11 @@ export class FlowsService {
         updatedFlow.nodes,
         updatedFlow.edges
       );
+      uiData = this.flowBuilderService.buildUiFromNodes(updatedFlow.nodes);
 
       // Extract the setup array and pass it to upsertByFlowId
       await this.setupService.upsertByFlowId(id, setupData);
+      await this.uiService.upsertByFlowId(id, uiData);
       await this.logicService.upsertByFlowId(id, logicData);
 
       this.mqttService.publish(`esp/setup`, setupData);
@@ -132,12 +143,15 @@ export class FlowsService {
       const l = await this.logicService.findByFlowId(id);
       setupData = s?.elements;
       logicData = l?.program;
+      const u = await this.uiService.findByFlowId(id);
+      uiData = u?.uiItems;
     }
 
     return {
       ...flow.toObject(),
       setup: setupData,
       logic: logicData,
+      ui: uiData,
     };
   }
 
