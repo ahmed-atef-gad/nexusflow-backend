@@ -43,12 +43,17 @@ const MODE_MAP: Record<string, number> = {
  * the device protocol during setup phase (e.g., set pin mode/value).
  */
 const CMD_MAP: Record<string, number> = {
+  SET_DAC: 0x09,
   SET_PIN_MODE: 0x10,
   SET_PIN_VALUE: 0x11,
   GET_PIN_VALUE: 0x12,
   TOGGLE_PIN_VALUE: 0x13,
   ANALOG_READ: 0x20,
   ANALOG_WRITE: 0x21,
+  MQ2_READ: 0x22,
+  SOIL_READ: 0x23,
+  DAC_WRITE: 0x24,
+  
 };
 
 /**
@@ -93,6 +98,8 @@ export type CommandStep = {
     cmd: number;
     condition?: string;
     pin?: number;
+    digtalPin?: number;
+    analogPin?: number;
     value?: number | string;
     topic?: string;
   };
@@ -323,8 +330,9 @@ export class FlowBuilderService {
             );
           }
           // Build setup item
+
           const setupItem: SetupItem = {
-            cmd: CMD_MAP['SET_PIN_MODE'],
+            cmd:  pinNumber == 25 || pinNumber == 26 ? CMD_MAP['SET_DAC'] : CMD_MAP['SET_PIN_MODE'],
             pin: pinNumber,
             mode: pinMode,
           };
@@ -544,7 +552,7 @@ export class FlowBuilderService {
             // Value is taken from previous step result at runtime
             if (pinMode === 'PWM' || pinMode === 'DAC') {
               command = {
-                cmd: CMD_MAP['ANALOG_WRITE'],
+                cmd: pinMode === 'PWM' ? CMD_MAP['ANALOG_WRITE'] : CMD_MAP['DAC_WRITE'],
                 pin,
                 value: '$prev',
                 topic,
