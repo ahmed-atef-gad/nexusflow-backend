@@ -144,7 +144,7 @@ export class FlowsService {
       setupData = s?.elements;
       logicData = l?.program;
       const u = await this.uiService.findByFlowId(id);
-      uiData = u?.elements;
+      uiData = u?.uiItems;
     }
 
     return {

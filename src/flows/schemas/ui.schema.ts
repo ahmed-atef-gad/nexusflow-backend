@@ -2,6 +2,7 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { ApiProperty } from '@nestjs/swagger';
 import { Document, Schema as MongooseSchema } from 'mongoose';
 import { Flow } from './flow.schema';
+import { UiItem, UiItemSchema } from './uiItem.schema';
 
 export type UiDocument = Ui & Document;
 
@@ -16,9 +17,9 @@ export class Ui {
   })
   flowId: Flow;
 
-  @ApiProperty({ description: 'Device setup instructions' })
-  @Prop({ type: MongooseSchema.Types.Mixed })
-  elements: any[];
+  @ApiProperty({ description: 'UI elements for the flow', type: [UiItem] })
+  @Prop({ type: [UiItemSchema] })
+  uiItems: UiItem[];
 }
 
 export const UiSchema = SchemaFactory.createForClass(Ui);

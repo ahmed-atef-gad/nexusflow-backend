@@ -1,0 +1,54 @@
+import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { ApiProperty } from '@nestjs/swagger';
+import { Schema as MongooseSchema } from 'mongoose';
+
+@Schema({ _id: false })
+export class UiItem {
+  @ApiProperty({
+    type: String,
+    description: 'Module ID associated with this UI item',
+  })
+  @Prop()
+  moduleId: string;
+
+  @ApiProperty({
+    type: String,
+    description: 'Module name associated with this UI item',
+  })
+  @Prop()
+  moduleName: string;
+
+  @ApiProperty({
+    required: false,
+    description: 'Optional alias for this UI item',
+  })
+  @Prop()
+  alias?: string;
+
+  @ApiProperty({ type: String, description: 'Topic for this UI item' })
+  @Prop()
+  topic: string;
+
+  @ApiProperty({
+    required: false,
+    description: 'Optional pin number for module associated with this UI item',
+  })
+  @Prop()
+  pin?: number;
+
+  @ApiProperty({
+    required: false,
+    description: 'Indicates if this UI item uses a digital pin',
+  })
+  @Prop()
+  isDigital?: boolean;
+
+  @ApiProperty({
+    required: false,
+    description: 'Indicates if this UI item uses an analog pin',
+  })
+  @Prop()
+  isAnalog?: boolean;
+}
+
+export const UiItemSchema = SchemaFactory.createForClass(UiItem);

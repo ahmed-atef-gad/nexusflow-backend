@@ -22,6 +22,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Edge as RFEdge } from './types/flow.types';
 import { Node } from './schemas/node.schema';
+import { UiItem } from './schemas/uiItem.schema';
 
 /**
  * Maps human-readable pin modes (from UI) to numeric protocol codes
@@ -58,16 +59,6 @@ export type SetupItem = {
   pin: number;
   mode: number;
   value?: number;
-};
-
-export type UiItem = {
-  moduleId: string;
-  moduleName: string;
-  alias?: string;
-  topic: string;
-  pin?: number;
-  isDigital?: boolean;
-  isAnalog?: boolean;
 };
 
 /**
