@@ -79,6 +79,10 @@ Run e2e tests:
 npm run test:e2e
 ```
 
+## Repository mind map
+
+- See [`docs/repo-mind-map.md`](docs/repo-mind-map.md) for a visual Mermaid mind map of the project structure and dependencies.
+
 ## Important files & symbols
 
 - Application bootstrap: [`src/main.ts`](src/main.ts) (`bootstrap`)  
