@@ -112,7 +112,8 @@ export class DevicesService {
 
     // Update last used timestamp
     const twoMinutes = 2 * 60 * 1000;
-    if (new Date().getTime() - tokenDoc.lastUsedAt.getTime() > twoMinutes) {
+    const lastUsed = tokenDoc.lastUsedAt ? tokenDoc.lastUsedAt.getTime() : 0;
+    if (new Date().getTime() - lastUsed > twoMinutes) {
         await this.tokenModel.updateOne(
         { _id: tokenDoc._id },
         { lastUsedAt: new Date() }
