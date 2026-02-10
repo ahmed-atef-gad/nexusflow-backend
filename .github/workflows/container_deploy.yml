@@ -45,6 +45,7 @@ jobs:
           az container create \
             --resource-group nexusflow-rgs \
             --name nexusflow-backend \
+            --location eastus \
             --image ${{ secrets.DOCKERHUB_USERNAME }}/nexusflow-backend:latest \
             --dns-name-label nexusflow-backend-${{ github.run_id }} \
             --ports 3000 \
