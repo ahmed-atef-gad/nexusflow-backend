@@ -46,7 +46,7 @@ jobs:
             --resource-group nexusflow-rgs \
             --name nexusflow-backend \
             --image ${{ secrets.DOCKERHUB_USERNAME }}/nexusflow-backend:latest \
-            --dns-name-label nexusflow-backend \
+            --dns-name-label nexusflow-backend-${{ github.run_id }} \
             --ports 3000 \
             --secure-environment-variables \
               MONGO_URI="${{ secrets.MONGO_URI }}" \
