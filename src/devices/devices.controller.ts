@@ -6,6 +6,8 @@ import {
   UseGuards,
   Param,
   Delete,
+  NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { DevicesService } from './devices.service';
 import { AuthGuard } from '../gaurds/auth/auth.guard';
@@ -186,8 +188,20 @@ export class DevicesController {
     description: 'Unauthorized - Invalid or missing user token',
   })
   @Post(':id/token')
-  async generateToken(@Param('id') deviceId: string) {
-    // TODO: Verify user owns this device before generating token
+  async generateToken(@Req() req, @Param('id') deviceId: string) {
+    const userId = req.user.sub;
+
+    // Verify device exists and belongs to the user
+    const device = await this.devicesService.findOne(deviceId);
+
+    if (!device) {
+      throw new NotFoundException('Device not found');
+    }
+
+    if (device.ownerId.toString() !== userId) {
+      throw new UnauthorizedException('You do not own this device');
+    }
+
     return this.devicesService.generateDeviceToken(deviceId);
   }
 

@@ -6,6 +6,7 @@ import { Device, DeviceSchema } from './schemas/device.schema';
 import { DeviceToken, DeviceTokenSchema } from './schemas/device-token.schema';
 import { DeviceAudit, DeviceAuditSchema } from './schemas/device-audit.schema';
 import { DeviceAuthGuard } from '../gaurds/device-auth.guard';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { DeviceAuthGuard } from '../gaurds/device-auth.guard';
       { name: DeviceToken.name, schema: DeviceTokenSchema },
       { name: DeviceAudit.name, schema: DeviceAuditSchema },
     ]),
+    AuthModule,
   ],
   controllers: [DevicesController],
   providers: [DevicesService, DeviceAuthGuard],
