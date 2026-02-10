@@ -195,12 +195,12 @@ export class SetupController {
   async syncDevice(@Req() req) {
     // Extract device information attached by DeviceAuthGuard
     const device = req.device;
-
-    // TODO: Fetch the actual setup configuration based on device MAC address or associated flow
+    const setupConfig = await this.setupService.findForDeviceContext(device);
 
     return {
       message: 'Here is your config',
       device: { macAddress: device.macAddress },
+      setup: setupConfig?.elements ?? [],
     };
   }
 }

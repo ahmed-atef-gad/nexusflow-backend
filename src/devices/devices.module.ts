@@ -19,6 +19,6 @@ import { AuthModule } from '../auth/auth.module';
   ],
   controllers: [DevicesController],
   providers: [DevicesService, DeviceAuthGuard],
-  exports: [DevicesService, DeviceAuthGuard], // Export Guard عشان نستخدمه في SetupController
+  exports: [DevicesService, DeviceAuthGuard], 
 })
 export class DevicesModule {}
