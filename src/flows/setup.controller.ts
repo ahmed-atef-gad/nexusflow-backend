@@ -7,6 +7,7 @@ import {
   Param,
   Delete,
   UseGuards,
+  Req,
 } from '@nestjs/common';
 import { SetupService } from './setup.service';
 import { SetupPayload } from './types/flow.types';
@@ -17,10 +18,19 @@ import {
   ApiParam,
   ApiBearerAuth,
   ApiBody,
+  ApiSecurity,
+  ApiHeader,
 } from '@nestjs/swagger';
 import { AuthGuard } from '../gaurds/auth/auth.guard';
 import { Setup } from './schemas/setup.schema';
+import { DeviceAuthGuard } from '../gaurds/device-auth.guard';
 
+/**
+ * SetupController
+ *
+ * Handles all endpoints related to device configuration setups.
+ * Manages CRUD operations for setup documents and device synchronization.
+ */
 @ApiTags('Setups (Device Configuration)')
 @ApiBearerAuth('access-token')
 @UseGuards(AuthGuard)
@@ -28,6 +38,12 @@ import { Setup } from './schemas/setup.schema';
 export class SetupController {
   constructor(private readonly setupService: SetupService) {}
 
+  /**
+   * Create a new setup document manually
+   *
+   * @param body - The setup payload containing configuration data
+   * @returns The created setup document
+   */
   @ApiOperation({ summary: 'Create a Setup document manually' })
   @ApiBody({ type: SetupPayload })
   @ApiResponse({ status: 201, description: 'Setup created', type: Setup })
@@ -36,6 +52,11 @@ export class SetupController {
     return this.setupService.create(body);
   }
 
+  /**
+   * Retrieve all setup documents from the database
+   *
+   * @returns Array of all setup documents
+   */
   @ApiOperation({ summary: 'Get all setups' })
   @ApiResponse({ status: 200, type: [Setup] })
   @Get()
@@ -43,6 +64,12 @@ export class SetupController {
     return this.setupService.findAll();
   }
 
+  /**
+   * Retrieve a specific setup document by its ID
+   *
+   * @param id - The setup document ID
+   * @returns The setup document matching the provided ID
+   */
   @ApiOperation({ summary: 'Get setup by ID' })
   @ApiParam({ name: 'id' })
   @ApiResponse({ status: 200, type: Setup })
@@ -51,6 +78,12 @@ export class SetupController {
     return this.setupService.findOne(id);
   }
 
+  /**
+   * Retrieve a setup document by the associated Flow ID
+   *
+   * @param flowId - The flow document ID
+   * @returns The setup document linked to the specified flow
+   */
   @ApiOperation({ summary: 'Get setup by Flow ID' })
   @ApiParam({ name: 'flowId' })
   @ApiResponse({ status: 200, type: Setup })
@@ -59,6 +92,13 @@ export class SetupController {
     return this.setupService.findByFlowId(flowId);
   }
 
+  /**
+   * Update an existing setup document
+   *
+   * @param id - The setup document ID to update
+   * @param body - Partial setup payload with fields to update
+   * @returns The updated setup document
+   */
   @ApiOperation({ summary: 'Update setup by ID' })
   @ApiParam({ name: 'id' })
   @ApiBody({ type: SetupPayload })
@@ -68,10 +108,94 @@ export class SetupController {
     return this.setupService.update(id, body);
   }
 
+  /**
+   * Delete a setup document
+   *
+   * @param id - The setup document ID to delete
+   */
   @ApiOperation({ summary: 'Delete setup by ID' })
   @ApiParam({ name: 'id' })
   @Delete(':id')
   delete(@Param('id') id: string) {
     return this.setupService.delete(id);
+  }
+
+  /**
+   * Device Configuration Synchronization Endpoint
+   *
+   * Allows authenticated IoT devices to fetch their configuration setup.
+   * This endpoint is protected by DeviceAuthGuard which validates the device token.
+   *
+   * @route GET /setups/device/sync
+   * @auth DeviceAuthGuard (Bearer token in Authorization header)
+   * @param req - The request object containing authenticated device information
+   * @returns { message: string, device: { macAddress: string } }
+   *
+   * @example
+   * // Request
+   * GET /setups/device/sync
+   * Headers: Authorization: Bearer <device-token>
+   *
+   * // Response (200 OK)
+   * {
+   *   "message": "Here is your config",
+   *   "device": {
+   *     "macAddress": "AA:BB:CC:DD:EE:FF"
+   *   }
+   * }
+   *
+   * @throws UnauthorizedException (401) - If device token is missing or invalid
+   * @throws UnauthorizedException (401) - If device token is expired or revoked
+   *
+   * @security DeviceAuthGuard
+   * Security: Requires valid device token in Bearer format
+   */
+  @ApiOperation({
+    summary: 'Sync device configuration',
+    description:
+      'Retrieves the setup configuration for an authenticated device. The device must be registered and have a valid token.',
+  })
+  @ApiSecurity('device-token')
+  @ApiHeader({
+    name: 'Authorization',
+    description: 'Device Bearer token (format: Bearer <tokenId.secret>)',
+    required: true,
+    example: 'Bearer 550e8400-e29b-41d4-a716-446655440000.a1b2c3d4e5f6...',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Device configuration retrieved successfully',
+    schema: {
+      example: {
+        message: 'Here is your config',
+        device: {
+          macAddress: 'AA:BB:CC:DD:EE:FF',
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - Invalid or missing device token',
+    schema: {
+      example: {
+        statusCode: 401,
+        message: 'Invalid or Revoked Device Token',
+        error: 'Unauthorized',
+      },
+    },
+  })
+  @UseGuards(DeviceAuthGuard)
+  @Get('device/sync')
+  async syncDevice(@Req() req) {
+    // Extract device information attached by DeviceAuthGuard
+    const device = req.device;
+
+    // TODO: Fetch the actual setup configuration based on device MAC address or associated flow
+
+    return {
+      message: 'Here is your config',
+      device: { macAddress: device.macAddress },
+    };
   }
 }

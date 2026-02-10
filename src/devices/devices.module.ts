@@ -1,0 +1,22 @@
+import { Module } from '@nestjs/common';
+import { MongooseModule } from '@nestjs/mongoose';
+import { DevicesService } from './devices.service';
+import { DevicesController } from './devices.controller';
+import { Device, DeviceSchema } from './schemas/device.schema';
+import { DeviceToken, DeviceTokenSchema } from './schemas/device-token.schema';
+import { DeviceAudit, DeviceAuditSchema } from './schemas/device-audit.schema';
+import { DeviceAuthGuard } from '../gaurds/device-auth.guard';
+
+@Module({
+  imports: [
+    MongooseModule.forFeature([
+      { name: Device.name, schema: DeviceSchema },
+      { name: DeviceToken.name, schema: DeviceTokenSchema },
+      { name: DeviceAudit.name, schema: DeviceAuditSchema },
+    ]),
+  ],
+  controllers: [DevicesController],
+  providers: [DevicesService, DeviceAuthGuard],
+  exports: [DevicesService, DeviceAuthGuard], // Export Guard عشان نستخدمه في SetupController
+})
+export class DevicesModule {}
