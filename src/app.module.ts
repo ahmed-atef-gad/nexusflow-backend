@@ -8,6 +8,7 @@ import { UsersModule } from './users/users.module';
 import { ModulesModule } from './modules/modules.module';
 import { FlowsModule } from './flows/flows.module';
 import { MqttModule } from './mqtt/mqtt.module';
+import { DevicesModule } from './devices/devices.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { MqttModule } from './mqtt/mqtt.module';
     ModulesModule,
     FlowsModule,
     MqttModule,
+    DevicesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

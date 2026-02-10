@@ -111,10 +111,13 @@ export class DevicesService {
     if (!isMatch) return null;
 
     // Update last used timestamp
-    await this.tokenModel.updateOne(
-      { _id: tokenDoc._id },
-      { lastUsedAt: new Date() }
-    );
+    const twoMinutes = 2 * 60 * 1000;
+    if (new Date().getTime() - tokenDoc.lastUsedAt.getTime() > twoMinutes) {
+        await this.tokenModel.updateOne(
+        { _id: tokenDoc._id },
+        { lastUsedAt: new Date() }
+        );
+  }
 
     // Return device info
     return this.deviceModel.findById(tokenDoc.deviceId);
@@ -124,6 +127,23 @@ export class DevicesService {
   async revokeToken(tokenId: string) {
     return this.tokenModel.updateOne({ tokenId }, { revokedAt: new Date() });
   }
+
+    // Find device by ID
+    async findOne(deviceId: string): Promise<DeviceDocument> {
+    // Validate device ID format
+    if (!Types.ObjectId.isValid(deviceId)) {
+      throw new BadRequestException('Invalid Device ID');
+    }
+
+    const device = await this.deviceModel.findById(deviceId).exec();
+    
+    if (!device) {
+      throw new NotFoundException(`Device with ID ${deviceId} not found`);
+    }
+
+    return device;
+  }
+
 
   // Log device activity for auditing
   async logActivity(data: {

@@ -33,7 +33,6 @@ import { DeviceAuthGuard } from '../gaurds/device-auth.guard';
  */
 @ApiTags('Setups (Device Configuration)')
 @ApiBearerAuth('access-token')
-@UseGuards(AuthGuard)
 @Controller('setups')
 export class SetupController {
   constructor(private readonly setupService: SetupService) {}
@@ -44,6 +43,7 @@ export class SetupController {
    * @param body - The setup payload containing configuration data
    * @returns The created setup document
    */
+  @UseGuards(AuthGuard)
   @ApiOperation({ summary: 'Create a Setup document manually' })
   @ApiBody({ type: SetupPayload })
   @ApiResponse({ status: 201, description: 'Setup created', type: Setup })
@@ -57,6 +57,7 @@ export class SetupController {
    *
    * @returns Array of all setup documents
    */
+  @UseGuards(AuthGuard)
   @ApiOperation({ summary: 'Get all setups' })
   @ApiResponse({ status: 200, type: [Setup] })
   @Get()
@@ -70,6 +71,7 @@ export class SetupController {
    * @param id - The setup document ID
    * @returns The setup document matching the provided ID
    */
+  @UseGuards(AuthGuard)
   @ApiOperation({ summary: 'Get setup by ID' })
   @ApiParam({ name: 'id' })
   @ApiResponse({ status: 200, type: Setup })
@@ -84,6 +86,7 @@ export class SetupController {
    * @param flowId - The flow document ID
    * @returns The setup document linked to the specified flow
    */
+  @UseGuards(AuthGuard)
   @ApiOperation({ summary: 'Get setup by Flow ID' })
   @ApiParam({ name: 'flowId' })
   @ApiResponse({ status: 200, type: Setup })
@@ -99,6 +102,7 @@ export class SetupController {
    * @param body - Partial setup payload with fields to update
    * @returns The updated setup document
    */
+  @UseGuards(AuthGuard)
   @ApiOperation({ summary: 'Update setup by ID' })
   @ApiParam({ name: 'id' })
   @ApiBody({ type: SetupPayload })
@@ -113,6 +117,7 @@ export class SetupController {
    *
    * @param id - The setup document ID to delete
    */
+  @UseGuards(AuthGuard)
   @ApiOperation({ summary: 'Delete setup by ID' })
   @ApiParam({ name: 'id' })
   @Delete(':id')
