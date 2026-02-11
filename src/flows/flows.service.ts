@@ -64,7 +64,8 @@ export class FlowsService {
         'Nodes and edges are required to create a flow'
       );
     }
-    this.mqttService.publish(`esp/setup`, setupData);
+    // this.mqttService.publish(`esp/setup`, setupData);
+
     return {
       ...savedFlow.toObject(),
       setup: setupData,
@@ -137,7 +138,9 @@ export class FlowsService {
       await this.uiService.upsertByFlowId(id, uiData);
       await this.logicService.upsertByFlowId(id, logicData);
 
-      this.mqttService.publish(`esp/setup`, setupData);
+      // this.mqttService.publish(`esp/setup`, setupData);
+    
+
     } else {
       const s = await this.setupService.findByFlowId(id);
       const l = await this.logicService.findByFlowId(id);
@@ -146,6 +149,8 @@ export class FlowsService {
       const u = await this.uiService.findByFlowId(id);
       uiData = u?.uiItems;
     }
+    await this.mqttService.publishFlowLastUpdateChanged(id, flow.updatedAt?.toISOString() || '');
+
 
     return {
       ...flow.toObject(),

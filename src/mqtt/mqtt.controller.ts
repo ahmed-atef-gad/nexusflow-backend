@@ -1,13 +1,21 @@
-import { Controller, Logger } from '@nestjs/common';
-import { MessagePattern, Payload, Ctx, MqttContext } from '@nestjs/microservices';
+import { Controller, Get, Query } from '@nestjs/common';
+import { MqttService } from './mqtt.service';
 
-@Controller()
+@Controller('mqtt')
 export class MqttController {
-  private readonly logger = new Logger(MqttController.name);
+  constructor(private readonly mqttService: MqttService) {}
+/// test connection
+  @Get('test')
+  async testConnection(
+    @Query('topic') topic = 'test/topic',
+    @Query('message') message = 'Hello from NexusFlow backend',
+  ) {
+    await this.mqttService.publishMessage(topic, message);
 
-  @MessagePattern('esp/+/data') // Example pattern
-  handleData(@Payload() data: any, @Ctx() context: MqttContext) {
-    const topic = context.getTopic();
-    this.logger.log(`Received on ${topic}: ${JSON.stringify(data)}`);
+    return {
+      status: 'success',
+      topic,
+      message,
+    };
   }
 }
