@@ -1,32 +1,28 @@
 import { Module, Global } from '@nestjs/common';
-import { ClientsModule, Transport } from '@nestjs/microservices';
-import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MqttService } from './mqtt.service';
 import { MqttController } from './mqtt.controller';
+import { PigeonModule } from '../pigeon-mqtt/pigeon.module';
+import { Transport } from '../pigeon-mqtt/enum/pigeon.transport.enum';
+import { DevicesModule } from '../devices/devices.module';
 
 @Global()
 @Module({
   imports: [
-    ClientsModule.registerAsync([
-      {
-        name: 'MQTT_CLIENT',
-        imports: [ConfigModule],
-        inject: [ConfigService],
-        useFactory: (configService: ConfigService) => ({
-          transport: Transport.MQTT,
-          options: {
-            url: configService.get<string>('MQTT_URL'),
-            username: configService.get<string>('MQTT_USERNAME'),
-            password: configService.get<string>('MQTT_PASSWORD'),
-            protocol: 'mqtts', 
-            // rejectUnauthorized: true, // Set to false only if you have self-signed cert issues (unlikely with HiveMQ Cloud)
-          },
-        }),
-      },
-    ]),
+    DevicesModule,
+
+    PigeonModule.forRoot({
+      transport: Transport.TCP,
+      port: 1883,
+      id: 'nexusflow-broker',
+      concurrency: 200,
+      queueLimit: 200,
+      maxClientsIdLength: 64,
+      connectTimeout: 15000,
+      heartbeatInterval: 60000,
+    }),
   ],
   controllers: [MqttController],
   providers: [MqttService],
-  exports: [MqttService, ClientsModule],
+  exports: [MqttService],
 })
 export class MqttModule {}
