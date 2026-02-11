@@ -35,23 +35,8 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Deploy to Azure Container Instance
-        run: |
-          az container delete \
-            --resource-group nexusflow-rgs \
-            --name nexusflow-backend \
-            --yes || true
-
-          az container create \
-            --resource-group nexusflow-rgs \
-            --name nexusflow-backend \
-            --location eastus \
-            --image ${{ secrets.DOCKERHUB_USERNAME }}/nexusflow-backend:latest \
-            --dns-name-label nexusflow-backend-${{ github.run_id }} \
-            --ports 3000 \
-            --secure-environment-variables \
-              MONGO_URI="${{ secrets.MONGO_URI }}" \
-              JWT_SECRET="${{ secrets.JWT_SECRET }}" \
-              MQTT_URL="${{ secrets.MQTT_URL }}" \
-              MQTT_USERNAME="${{ secrets.MQTT_USERNAME }}" \
-              MQTT_PASSWORD="${{ secrets.MQTT_PASSWORD }}"
+      - name: Deploy to Azure Web App
+        uses: azure/webapps-deploy@v2
+        with:
+          app-name: nexusflow
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/nexusflow-backend:latest
