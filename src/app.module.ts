@@ -9,11 +9,21 @@ import { ModulesModule } from './modules/modules.module';
 import { FlowsModule } from './flows/flows.module';
 import { MqttModule } from './mqtt/mqtt.module';
 import { DevicesModule } from './devices/devices.module';
-
+import { PigeonModule } from './pigeon-mqtt/pigeon.module';
+import { Transport } from './pigeon-mqtt/enum/pigeon.transport.enum';
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+    }),
+    PigeonModule.forRoot({
+      port: 1883, 
+      transport: Transport.TCP,
+      id: 'nexusflow-broker',  
+      concurrency: 100,
+      queueLimit: 42,
+      connectTimeout: 30000,
+      heartbeatInterval: 60000,
     }),
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
