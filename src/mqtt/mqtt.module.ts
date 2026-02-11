@@ -4,6 +4,7 @@ import { MqttController } from './mqtt.controller';
 import { PigeonModule } from '../pigeon-mqtt/pigeon.module';
 import { Transport } from '../pigeon-mqtt/enum/pigeon.transport.enum';
 import { DevicesModule } from '../devices/devices.module';
+import { MqttHandlers } from './mqtt.handlers';
 
 @Global()
 @Module({
@@ -21,8 +22,9 @@ import { DevicesModule } from '../devices/devices.module';
       heartbeatInterval: 60000,
     }),
   ],
+
   controllers: [MqttController],
-  providers: [MqttService],
+  providers: [MqttService, MqttHandlers],
   exports: [MqttService],
 })
 export class MqttModule {}
