@@ -29,6 +29,9 @@ export class Flow {
   @ApiProperty({ type: Viewport })
   @Prop({ type: ViewportSchema })
   viewport: Viewport;
+
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export const FlowSchema = SchemaFactory.createForClass(Flow);

@@ -1,28 +1,59 @@
-import { Injectable, Inject, Logger } from '@nestjs/common';
-import { ClientProxy } from '@nestjs/microservices';
+import { Injectable, Logger } from '@nestjs/common';
+import { PigeonService } from '../pigeon-mqtt/pigeon.service';
+
+type PublishOptions = {
+  qos?: 0 | 1 | 2;
+  retain?: boolean;
+};
 
 @Injectable()
 export class MqttService {
   private readonly logger = new Logger(MqttService.name);
 
-  constructor(@Inject('MQTT_CLIENT') private client: ClientProxy) {}
+  constructor(private readonly pigeonService: PigeonService) {}
 
-  /**
-   * Publish a message to a specific topic
-   * @param topic The MQTT topic (e.g., 'device/123/command')
-   * @param payload The data to send (string or object)
-   */
-  publish(topic: string, payload: any) {
-    this.logger.log(`Publishing to ${topic}: ${JSON.stringify(payload)}`);
-    // .emit() sends a message without waiting for a response (Fire-and-forget)
-    return this.client.emit(topic, payload);
+  async publish(
+    topic: string,
+    payload: unknown,
+    options: PublishOptions = {},
+  ) {
+    const packet = {
+      cmd: 'publish',
+      topic,
+      payload: Buffer.from(JSON.stringify(payload)),
+      qos: options.qos ?? 1,
+      retain: options.retain ?? false,
+    };
+
+    this.logger.log(`Publishing to topic: ${topic}`);
+    return this.pigeonService.publish(packet);
   }
 
-  /**
-   * Send a message and wait for a response (Request-Response pattern)
-   * Requires the device to reply on a specific reply topic
-   */
-  send(topic: string, payload: any) {
-    return this.client.send(topic, payload);
+  async publishMessage(topic: string, message: string) {
+    return this.publish(
+      topic,
+      {
+        message,
+        timestamp: new Date().toISOString(),
+      },
+      { qos: 1, retain: false },
+    );
+  }
+// flow id and its last update time
+  async publishFlowLastUpdateChanged(
+    flowId: string,
+    lastUpdate: Date | string,
+    topic = 'flows/lastupdate',
+  ) {
+    return this.publish(
+      topic,
+      {
+        flowId,
+        lastUpdate:
+          lastUpdate instanceof Date ? lastUpdate.toISOString() : lastUpdate,
+        message: `Flow ${flowId} has changed`,
+      },
+      { qos: 1, retain: true },
+    );
   }
 }
