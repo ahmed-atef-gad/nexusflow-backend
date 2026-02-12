@@ -17,15 +17,35 @@ export function createClientProvider(): Provider {
       const logger = new Logger('PigeonMqtt');
 
       const broker = new (Aedes as any)(options);
+      const fs = require('fs');
 
-      const loadPem = (value?: string | Buffer) => {
+      const loadPem = (value?: string | Buffer, label?: string) => {
         if (!value) return undefined;
         if (Buffer.isBuffer(value)) return value;
-        if (value.includes('-----BEGIN')) return value;
-        try {
-          return readFileSync(value);
-        } catch {
+        if (typeof value === 'string' && value.includes('-----BEGIN'))
           return value;
+        try {
+          if (typeof value !== 'string') {
+            logger.warn(
+              `Pigeon MQTT TLS: ${label} is not a string (got ${typeof value})`
+            );
+            return value;
+          }
+          const stats = fs.statSync(value);
+          if (!stats.isFile()) {
+            logger.warn(
+              `Pigeon MQTT TLS: ${label} path ${value} is not a file`
+            );
+            return undefined;
+          }
+          return readFileSync(value);
+        } catch (error) {
+          if (label) {
+            logger.warn(
+              `Pigeon MQTT TLS: failed to read ${label} from ${value}: ${(error as any).message}`
+            );
+          }
+          return undefined;
         }
       };
 
@@ -33,11 +53,15 @@ export function createClientProvider(): Provider {
         const port = options.port || 1883;
         const tls = options.tls ?? {};
         const tlsOptions = {
-          key: loadPem(tls.key),
-          cert: loadPem(tls.cert),
-          ca: loadPem(tls.ca),
+          key: loadPem(tls.key, 'key'),
+          cert: loadPem(tls.cert, 'cert'),
+          ca: loadPem(tls.ca, 'ca'),
           passphrase: tls.passphrase,
         };
+
+        logger.log(
+          `Pigeon MQTT TLS config: key=${!!tls.key} cert=${!!tls.cert} ca=${!!tls.ca} passphrase=${!!tls.passphrase}`
+        );
 
         if (tlsOptions.key && tlsOptions.cert) {
           const tlsServer = createTlsServer(tlsOptions, broker.handle);
@@ -46,7 +70,9 @@ export function createClientProvider(): Provider {
           });
         } else {
           if (tls.key || tls.cert || tls.ca || tls.passphrase) {
-            logger.warn('Pigeon MQTT TLS disabled: missing TLS key or cert');
+            logger.warn(
+              'Pigeon MQTT TLS disabled: missing TLS key or cert (check file paths and permissions)'
+            );
           }
           const server = createServer(broker.handle);
           server.listen(port, () => {
@@ -76,9 +102,9 @@ export function createClientProvider(): Provider {
         const wssPath = options.wss.path ?? '/mqtt';
         const tls = options.wss.tls ?? {};
         const tlsOptions = {
-          key: loadPem(tls.key),
-          cert: loadPem(tls.cert),
-          ca: loadPem(tls.ca),
+          key: loadPem(tls.key, 'wss key'),
+          cert: loadPem(tls.cert, 'wss cert'),
+          ca: loadPem(tls.ca, 'wss ca'),
           passphrase: tls.passphrase,
         };
 
