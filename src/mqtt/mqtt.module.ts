@@ -13,7 +13,7 @@ import { MqttHandlers } from './mqtt.handlers';
 
     PigeonModule.forRoot({
       transport: Transport.TCP,
-      port: 1883,
+      port: 8883,
       id: 'nexusflow-broker',
       concurrency: 200,
       queueLimit: 200,
@@ -25,17 +25,13 @@ import { MqttHandlers } from './mqtt.handlers';
         port: Number.parseInt(process.env.MQTT_WS_PORT || '', 10) || 8884,
         path: process.env.MQTT_WS_PATH || '/mqtt-ws',
       },
-      // wss: {
-      //   enabled: true,
-      //   port: Number.parseInt(process.env.MQTT_WSS_PORT || '', 10) || 8883,
-      //   path: process.env.MQTT_WSS_PATH || '/mqtt-ws',
-      //   tls: {
-      //     key: process.env.MQTT_WSS_KEY,
-      //     cert: process.env.MQTT_WSS_CERT,
-      //     ca: process.env.MQTT_WSS_CA,
-      //     passphrase: process.env.MQTT_WSS_PASSPHRASE,
-      //   },
-      // },
+      tls: {
+        key: process.env.MQTT_TLS_KEY || process.env.MQTT_WSS_KEY,
+        cert: process.env.MQTT_TLS_CERT || process.env.MQTT_WSS_CERT,
+        ca: process.env.MQTT_TLS_CA || process.env.MQTT_WSS_CA,
+        passphrase:
+          process.env.MQTT_TLS_PASSPHRASE || process.env.MQTT_WSS_PASSPHRASE,
+      },
     }),
   ],
 
