@@ -186,13 +186,24 @@ export class DevicesService {
   }
 
   async updateDeviceFlow(deviceId: string, flowId: string) {
-  return this.deviceModel.findByIdAndUpdate(
-    deviceId,
-    { activeFlowId: new Types.ObjectId(flowId) },
-    { new: true }
-  );
-  }
+    const updatedDevice = await this.deviceModel.findByIdAndUpdate(
+      deviceId,
+      { activeFlowId: new Types.ObjectId(flowId) },
+      { new: true }
+    );
 
+    if (!updatedDevice) {
+      throw new NotFoundException(`Device with ID ${deviceId} not found`);
+    }
+
+    await this.mqttService.publishDeviceFlowChanged(
+      updatedDevice.macAddress,
+      flowId,
+      updatedDevice.updatedAt ?? new Date()
+    );
+
+    return updatedDevice;
+  }
   async getDeviceStatus(deviceId: string) {
     const lastSync = await this.auditModel
       .findOne({
