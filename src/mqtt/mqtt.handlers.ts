@@ -17,6 +17,11 @@ export class MqttHandlers implements OnModuleInit {
     broker.authorizePublish = this.onAuthorizePublish.bind(this);
     broker.authorizeSubscribe = this.onAuthorizeSubscribe.bind(this);
     broker.authorizeForward = this.onAuthorizeForward.bind(this);
+    broker.on('publish', (packet: any, client: any) => {
+      this.logger.log(
+        `MQTT message published. client=${client ? `clientId=${client.id} mac=${client.deviceMac ?? '(no mac)'}` : 'unknown'} topic=${packet?.topic ?? '(no topic)'}`
+      );
+    });
   }
 
   private normalizeMacAddress(value: string): string {
@@ -27,7 +32,10 @@ export class MqttHandlers implements OnModuleInit {
     return topic.startsWith('/devices') || topic.startsWith('devices/');
   }
 
-  private isAuthorizedForDevicesTopic(clientMac: string, topic: string): boolean {
+  private isAuthorizedForDevicesTopic(
+    clientMac: string,
+    topic: string
+  ): boolean {
     const normalizedClientMac = this.normalizeMacAddress(clientMac);
     const segments = topic.split('/').filter(Boolean);
 
@@ -53,7 +61,7 @@ export class MqttHandlers implements OnModuleInit {
 
   private isAuthorizedDevicesSubscriptionFilter(
     clientMac: string,
-    filter: string,
+    filter: string
   ): boolean {
     const normalizedClientMac = this.normalizeMacAddress(clientMac);
     const segments = (filter ?? '').split('/').filter(Boolean);
@@ -70,7 +78,7 @@ export class MqttHandlers implements OnModuleInit {
     client: any,
     username: Buffer | string | undefined,
     password: Buffer | string | undefined,
-    done: (error: Error | null, success?: boolean) => void,
+    done: (error: Error | null, success?: boolean) => void
   ) {
     try {
       const macAddress = Buffer.isBuffer(username)
@@ -87,21 +95,23 @@ export class MqttHandlers implements OnModuleInit {
 
       if (!device || device.status === 'revoked') {
         this.logger.warn(
-          `MQTT auth rejected. clientId=${client?.id ?? 'unknown'} mac=${macAddress || '(empty)'}`,
+          `MQTT auth rejected. clientId=${client?.id ?? 'unknown'} mac=${macAddress || '(empty)'}`
         );
-        const error = new Error('Auth error') as Error & { returnCode?: number };
+        const error = new Error('Auth error') as Error & {
+          returnCode?: number;
+        };
         error.returnCode = 4;
         return done(error, false);
       }
 
       this.logger.log(
-        `MQTT auth accepted. clientId=${client?.id ?? 'unknown'} mac=${device.macAddress}`,
+        `MQTT auth accepted. clientId=${client?.id ?? 'unknown'} mac=${device.macAddress}`
       );
       client.deviceMac = this.normalizeMacAddress(device.macAddress);
       return done(null, true);
     } catch (error) {
       this.logger.error(
-        `MQTT auth failed with internal error. clientId=${client?.id ?? 'unknown'}`,
+        `MQTT auth failed with internal error. clientId=${client?.id ?? 'unknown'}`
       );
       return done(error as Error, false);
     }
@@ -110,7 +120,7 @@ export class MqttHandlers implements OnModuleInit {
   private onAuthorizePublish(
     client: any,
     packet: { topic: string },
-    done: (error: Error | null) => void,
+    done: (error: Error | null) => void
   ) {
     const topic = packet?.topic ?? '';
 
@@ -121,7 +131,7 @@ export class MqttHandlers implements OnModuleInit {
     const clientMac = client?.deviceMac;
     if (!clientMac || !this.isAuthorizedForDevicesTopic(clientMac, topic)) {
       this.logger.warn(
-        `MQTT publish rejected. clientId=${client?.id ?? 'unknown'} topic=${topic}`,
+        `MQTT publish rejected. clientId=${client?.id ?? 'unknown'} topic=${topic}`
       );
       return done(new Error('Not authorized'));
     }
@@ -132,7 +142,10 @@ export class MqttHandlers implements OnModuleInit {
   private onAuthorizeSubscribe(
     client: any,
     sub: { topic: string; qos?: 0 | 1 | 2 },
-    done: (error: Error | null, granted?: { topic: string; qos?: 0 | 1 | 2 } | null) => void,
+    done: (
+      error: Error | null,
+      granted?: { topic: string; qos?: 0 | 1 | 2 } | null
+    ) => void
   ) {
     const topic = sub?.topic ?? '';
     const clientMac = client?.deviceMac;
@@ -145,10 +158,11 @@ export class MqttHandlers implements OnModuleInit {
     // Enforce ownership only for direct devices path subscriptions.
     if (
       this.isDevicesTopic(topic) &&
-      (!clientMac || !this.isAuthorizedDevicesSubscriptionFilter(clientMac, topic))
+      (!clientMac ||
+        !this.isAuthorizedDevicesSubscriptionFilter(clientMac, topic))
     ) {
       this.logger.warn(
-        `MQTT subscribe rejected. clientId=${client?.id ?? 'unknown'} topic=${topic}`,
+        `MQTT subscribe rejected. clientId=${client?.id ?? 'unknown'} topic=${topic}`
       );
       return done(null, null);
     }
@@ -156,17 +170,14 @@ export class MqttHandlers implements OnModuleInit {
     return done(null, sub);
   }
 
-  private onAuthorizeForward(
-    client: any,
-    packet: { topic?: string },
-  ) {
+  private onAuthorizeForward(client: any, packet: { topic?: string }) {
     const topic = packet?.topic ?? '';
     if (!this.isDevicesTopic(topic)) return packet;
 
     const clientMac = client?.deviceMac;
     if (!clientMac || !this.isAuthorizedForDevicesTopic(clientMac, topic)) {
       this.logger.warn(
-        `MQTT forward blocked. clientId=${client?.id ?? 'unknown'} topic=${topic}`,
+        `MQTT forward blocked. clientId=${client?.id ?? 'unknown'} topic=${topic}`
       );
       return null;
     }

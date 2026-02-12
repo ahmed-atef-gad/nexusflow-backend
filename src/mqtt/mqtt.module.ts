@@ -20,6 +20,22 @@ import { MqttHandlers } from './mqtt.handlers';
       maxClientsIdLength: 64,
       connectTimeout: 15000,
       heartbeatInterval: 60000,
+      ws: {
+        enabled: true,
+        port: Number.parseInt(process.env.MQTT_WS_PORT || '', 10) || 8884,
+        path: process.env.MQTT_WS_PATH || '/mqtt-ws',
+      },
+      // wss: {
+      //   enabled: true,
+      //   port: Number.parseInt(process.env.MQTT_WSS_PORT || '', 10) || 8883,
+      //   path: process.env.MQTT_WSS_PATH || '/mqtt-ws',
+      //   tls: {
+      //     key: process.env.MQTT_WSS_KEY,
+      //     cert: process.env.MQTT_WSS_CERT,
+      //     ca: process.env.MQTT_WSS_CA,
+      //     passphrase: process.env.MQTT_WSS_PASSPHRASE,
+      //   },
+      // },
     }),
   ],
 
