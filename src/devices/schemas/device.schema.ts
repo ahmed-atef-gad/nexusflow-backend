@@ -19,6 +19,10 @@ export class Device {
   @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
   ownerId: Types.ObjectId;
 
+  // Reference to the currently active Flow for this device (if any)
+  @Prop({ type: Types.ObjectId, ref: 'Flow' })
+  activeFlowId?: Types.ObjectId;
+
   // Status: active or revoked
   @Prop({ default: 'active', enum: ['active', 'revoked'] })
   status: string;

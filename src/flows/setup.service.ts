@@ -4,6 +4,7 @@ import { Model } from 'mongoose';
 import { Setup, SetupDocument } from './schemas/setup.schema';
 import { SetupPayload } from './types/flow.types';
 import { Flow, FlowDocument } from './schemas/flow.schema';
+import { DeviceDocument } from 'src/devices/schemas/device.schema';
 
 @Injectable()
 export class SetupService {
@@ -32,58 +33,62 @@ export class SetupService {
     return this.setupModel.findOne({ flowId }).exec();
   }
 
-  async findForDeviceContext(device: {
-    macAddress?: string;
-    flowId?: string;
-    ownerId?: unknown;
-  }): Promise<Setup | null> {
-    if (!device) return null;
+  // async findForDeviceContext(device: {
+  //   macAddress?: string;
+  //   flowId?: string;
+  //   ownerId?: unknown;
+  // }): Promise<Setup | null> {
+  //   if (!device) return null;
 
-    if (device.flowId) {
-      return this.setupModel.findOne({ flowId: device.flowId }).exec();
-    }
+  //   if (device.flowId) {
+  //     return this.setupModel.findOne({ flowId: device.flowId }).exec();
+  //   }
 
-    const normalizedMac = device.macAddress?.trim().toUpperCase();
-    const ownerId = device.ownerId;
-    let resolvedFlowId: string | null = null;
+  //   const normalizedMac = device.macAddress?.trim().toUpperCase();
+  //   const ownerId = device.ownerId;
+  //   let resolvedFlowId: string | null = null;
 
-    if (normalizedMac) {
-      const flowByMac = await this.flowModel
-        .findOne({
-          ...(ownerId ? { userId: ownerId } : {}),
-          $or: [
-            { 'nodes.data.variables.macAddress': normalizedMac },
-            { 'nodes.data.variables.deviceMac': normalizedMac },
-            { 'nodes.data.variables.mac': normalizedMac },
-          ],
-        })
-        .sort({ updatedAt: -1 })
-        .select('_id')
-        .lean()
-        .exec();
+  //   if (normalizedMac) {
+  //     const flowByMac = await this.flowModel
+  //       .findOne({
+  //         ...(ownerId ? { userId: ownerId } : {}),
+  //         $or: [
+  //           { 'nodes.data.variables.macAddress': normalizedMac },
+  //           { 'nodes.data.variables.deviceMac': normalizedMac },
+  //           { 'nodes.data.variables.mac': normalizedMac },
+  //         ],
+  //       })
+  //       .sort({ updatedAt: -1 })
+  //       .select('_id')
+  //       .lean()
+  //       .exec();
 
-      if (flowByMac?._id) {
-        resolvedFlowId = flowByMac._id.toString();
-      }
-    }
+  //     if (flowByMac?._id) {
+  //       resolvedFlowId = flowByMac._id.toString();
+  //     }
+  //   }
 
-    if (!resolvedFlowId && ownerId) {
-      const latestOwnerFlow = await this.flowModel
-        .findOne({ userId: ownerId })
-        .sort({ updatedAt: -1 })
-        .select('_id')
-        .lean()
-        .exec();
+  //   if (!resolvedFlowId && ownerId) {
+  //     const latestOwnerFlow = await this.flowModel
+  //       .findOne({ userId: ownerId })
+  //       .sort({ updatedAt: -1 })
+  //       .select('_id')
+  //       .lean()
+  //       .exec();
 
-      if (latestOwnerFlow?._id) {
-        resolvedFlowId = latestOwnerFlow._id.toString();
-      }
-    }
+  //     if (latestOwnerFlow?._id) {
+  //       resolvedFlowId = latestOwnerFlow._id.toString();
+  //     }
+  //   }
 
-    if (!resolvedFlowId) return null;
+  //   if (!resolvedFlowId) return null;
 
-    return this.setupModel.findOne({ flowId: resolvedFlowId }).exec();
-  }
+  //   return this.setupModel.findOne({ flowId: resolvedFlowId }).exec();
+  // }
+  async findForDeviceContext(device: DeviceDocument) {
+  if (!device.activeFlowId) return null;
+  return this.setupModel.findOne({ flowId: device.activeFlowId }).exec();
+ }
 
   async update(id: string, data: Partial<SetupPayload>): Promise<Setup> {
     const updated = await this.setupModel

@@ -145,6 +145,48 @@ export class DevicesService {
     return device;
   }
 
+  async updateDeviceFlow(deviceId: string, flowId: string) {
+  return this.deviceModel.findByIdAndUpdate(
+    deviceId,
+    { activeFlowId: new Types.ObjectId(flowId) },
+    { new: true }
+  );
+  }
+
+  async getDeviceStatus(deviceId: string) {
+    const lastSync = await this.auditModel
+      .findOne({
+        deviceId: new Types.ObjectId(deviceId),
+        action: 'GET /setups/device/sync',
+      })
+      .sort({ createdAt: -1 })
+      .exec();
+
+  
+    let lastSeen = lastSync ? lastSync.createdAt : null;
+    let status = lastSync?.statusCode === 200 ? 'online' : 'offline';
+
+    if (!lastSeen) {
+    
+      const tokenDoc = await this.tokenModel
+        .findOne({ deviceId: new Types.ObjectId(deviceId) })
+        .sort({ lastUsedAt: -1 });
+
+      if (tokenDoc && tokenDoc.lastUsedAt) {
+        lastSeen = tokenDoc.lastUsedAt;
+     
+        const isRecent =
+          new Date().getTime() - new Date(lastSeen).getTime() < 2 * 60 * 1000;
+        status = isRecent ? 'online' : 'offline';
+      }
+    }
+
+    return {
+      deviceId,
+      lastSeen,
+      status,
+    };
+  }
 
   // Log device activity for auditing
   async logActivity(data: {

@@ -30,6 +30,9 @@ export class DeviceAudit {
   // Additional metadata for the audit log
   @Prop({ type: Object })
   metadata: any;
+
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 // Create Mongoose schema from class

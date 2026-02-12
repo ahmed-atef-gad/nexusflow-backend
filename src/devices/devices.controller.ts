@@ -6,6 +6,8 @@ import {
   UseGuards,
   Param,
   Delete,
+  Patch,
+  Get,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -258,5 +260,41 @@ export class DevicesController {
   @Delete('token/:tokenId')
   async revokeToken(@Param('tokenId') tokenId: string) {
     return this.devicesService.revokeToken(tokenId);
+  }
+
+
+
+@ApiOperation({ summary: 'Link device to a Flow' })
+  @ApiResponse({ status: 200, description: 'Device linked to flow successfully' })
+  @Patch(':id/flow')
+  async linkFlow(
+    @Req() req,
+    @Param('id') deviceId: string, 
+    @Body('flowId') flowId: string
+  ) {
+    
+    const device = await this.devicesService.findOne(deviceId);
+    if (device.ownerId.toString() !== req.user.sub) {
+       
+       throw new UnauthorizedException('You do not own this device');
+    }
+
+    return this.devicesService.updateDeviceFlow(deviceId, flowId);
+  }
+
+  /**
+   * Check device connection status (Online/Offline)
+   */
+  @ApiOperation({ summary: 'Get device status' })
+  @ApiResponse({ status: 200, description: 'Returns device status and last seen' })
+  @Get(':id/status')
+  async getStatus(@Req() req, @Param('id') deviceId: string) {
+    
+    const device = await this.devicesService.findOne(deviceId);
+    if (device.ownerId.toString() !== req.user.sub) {
+       throw new UnauthorizedException('You do not own this device');
+    }
+
+    return this.devicesService.getDeviceStatus(deviceId);
   }
 }
