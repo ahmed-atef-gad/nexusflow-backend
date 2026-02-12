@@ -10,6 +10,7 @@ import * as bcrypt from 'bcrypt';
 import { v4 as uuidv4 } from 'uuid';
 import * as crypto from 'crypto';
 import { Device, DeviceDocument } from './schemas/device.schema';
+import { MqttService } from '../mqtt/mqtt.service';
 import {
   DeviceToken,
   DeviceTokenDocument,
@@ -26,11 +27,21 @@ export class DevicesService {
     @InjectModel(DeviceToken.name)
     private tokenModel: Model<DeviceTokenDocument>,
     @InjectModel(DeviceAudit.name)
-    private auditModel: Model<DeviceAuditDocument>
+    private auditModel: Model<DeviceAuditDocument>,
+    private readonly mqttService: MqttService
   ) {}
 
+  private normalizeMacAddress(macAddress: string): string {
+    return macAddress.trim().toUpperCase();
+  }
+
   // Register a new device or update existing one
-  async registerDevice(userId: string, macAddress: string, name?: string) {
+  async registerDevice(
+    userId: string,
+    macAddress: string,
+    name?: string,
+    mqttPass?: string
+  ) {
     // Normalize MAC address
     const normalizedMac = macAddress.trim().toUpperCase();
 
@@ -46,7 +57,20 @@ export class DevicesService {
       }
       // Update device name if provided
       device.name = name || device.name;
+
+      if (mqttPass) {
+        device.mqtt_pass = mqttPass;
+      } else if (!device.mqtt_pass) {
+        throw new BadRequestException(
+          'mqtt_pass is required and must be complex'
+        );
+      }
+
       return device.save();
+    }
+
+    if (!mqttPass) {
+      throw new BadRequestException('mqtt_pass is required');
     }
 
     // Create new device
@@ -54,8 +78,24 @@ export class DevicesService {
       macAddress: normalizedMac,
       ownerId: new Types.ObjectId(userId),
       name: name || `ESP-${normalizedMac}`,
+      mqtt_pass: mqttPass,
     });
     return device.save();
+  }
+
+  // Authenticate device over MQTT credentials (mac + password)
+  async authenticateByMacAndPassword(macAddress: string, mqttPass: string) {
+    const normalizedMac = this.normalizeMacAddress(macAddress);
+
+    const device = await this.deviceModel
+      .findOne({ macAddress: normalizedMac })
+      .select('+mqtt_pass');
+    if (!device || !device.mqtt_pass) return null;
+
+    const isMatch = await bcrypt.compare(mqttPass, device.mqtt_pass);
+    if (!isMatch) return null;
+
+    return device;
   }
 
   // Generate a token for device authentication (format: tokenId.secret)

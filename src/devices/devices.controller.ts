@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import { DevicesService } from './devices.service';
 import { AuthGuard } from '../gaurds/auth/auth.guard';
+import { CreateDeviceDto } from './dto/create-device.dto';
 import {
   ApiTags,
   ApiOperation,
@@ -34,7 +35,7 @@ import {
 @UseGuards(AuthGuard)
 @Controller('devices')
 export class DevicesController {
-  constructor(private readonly devicesService: DevicesService) {}
+  constructor(private readonly devicesService: DevicesService) { }
 
   /**
    * Register a new ESP device by MAC address
@@ -69,22 +70,8 @@ export class DevicesController {
   })
   @ApiBody({
     description: 'Device registration data',
-    schema: {
-      type: 'object',
-      required: ['macAddress'],
-      properties: {
-        macAddress: {
-          type: 'string',
-          description: 'MAC address of the device (e.g., AA:BB:CC:DD:EE:FF)',
-          example: 'AA:BB:CC:DD:EE:FF',
-        },
-        name: {
-          type: 'string',
-          description: 'Optional friendly name for the device',
-          example: 'Living Room Sensor',
-        },
-      },
-    },
+    type: CreateDeviceDto,
+
   })
   @ApiResponse({
     status: 201,
@@ -119,12 +106,14 @@ export class DevicesController {
   @Post('register')
   async register(
     @Req() req,
-    @Body() body: { macAddress: string; name?: string }
+    @Body() body: CreateDeviceDto
   ) {
     return this.devicesService.registerDevice(
       req.user.sub,
       body.macAddress,
-      body.name
+      body.name,
+      body.mqtt_pass
+
     );
   }
 
@@ -264,19 +253,19 @@ export class DevicesController {
 
 
 
-@ApiOperation({ summary: 'Link device to a Flow' })
+  @ApiOperation({ summary: 'Link device to a Flow' })
   @ApiResponse({ status: 200, description: 'Device linked to flow successfully' })
   @Patch(':id/flow')
   async linkFlow(
     @Req() req,
-    @Param('id') deviceId: string, 
+    @Param('id') deviceId: string,
     @Body('flowId') flowId: string
   ) {
-    
+
     const device = await this.devicesService.findOne(deviceId);
     if (device.ownerId.toString() !== req.user.sub) {
-       
-       throw new UnauthorizedException('You do not own this device');
+
+      throw new UnauthorizedException('You do not own this device');
     }
 
     return this.devicesService.updateDeviceFlow(deviceId, flowId);
@@ -289,10 +278,10 @@ export class DevicesController {
   @ApiResponse({ status: 200, description: 'Returns device status and last seen' })
   @Get(':id/status')
   async getStatus(@Req() req, @Param('id') deviceId: string) {
-    
+
     const device = await this.devicesService.findOne(deviceId);
     if (device.ownerId.toString() !== req.user.sub) {
-       throw new UnauthorizedException('You do not own this device');
+      throw new UnauthorizedException('You do not own this device');
     }
 
     return this.devicesService.getDeviceStatus(deviceId);
