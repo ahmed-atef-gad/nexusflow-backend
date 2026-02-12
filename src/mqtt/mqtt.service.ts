@@ -59,4 +59,38 @@ export class MqttService {
       { qos: 1, retain: true },
     );
   }
+
+  async publishDeviceFlowChanged(
+    macAddress: string,
+    flowId: string,
+    updatedAt: Date | string,
+  ) {
+    const normalizedMac = macAddress.trim().toUpperCase();
+    const topic = `/devices/${normalizedMac}/flowchanged`;
+    const packet = {
+      cmd: 'publish',
+      topic,
+      payload: Buffer.from(
+        JSON.stringify({
+          flow_id: flowId,
+          client_id: macAddress,
+          updatedAt:
+            updatedAt instanceof Date ? updatedAt.toISOString() : updatedAt,
+
+        }),
+      ),
+      qos: 1 as const,
+      retain: true,
+    };
+
+    this.logger.log(`Publishing flow changed to topic: ${topic} as ${normalizedMac}`);
+    return this.pigeonService.publish(packet);
+    // const broker = this.pigeonService.getBrokerInstance();
+    // return new Promise((resolve, reject) => {
+    //   broker.publish(packet, { id: normalizedMac }, (error: Error | null) => {
+    //     if (error) return reject(error);
+    //     return resolve(packet);
+    //   });
+    // });
+  }
 }
