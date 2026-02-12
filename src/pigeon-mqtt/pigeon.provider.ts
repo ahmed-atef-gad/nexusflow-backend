@@ -1,6 +1,7 @@
 import { Provider, Logger } from '@nestjs/common';
 import Aedes from 'aedes';
 import { createServer } from 'net';
+import { createServer as createTlsServer } from 'tls';
 import { createServer as createHttpServer } from 'http';
 import { createServer as createHttpsServer } from 'https';
 import { readFileSync } from 'fs';
@@ -14,7 +15,7 @@ export function createClientProvider(): Provider {
     provide: INSTANCE_BROKER,
     useFactory: async (options: PigeonModuleOptions) => {
       const logger = new Logger('PigeonMqtt');
-     
+
       const broker = new (Aedes as any)(options);
 
       const loadPem = (value?: string | Buffer) => {
@@ -29,10 +30,29 @@ export function createClientProvider(): Provider {
       };
 
       if (options.transport === Transport.TCP) {
-        const server = createServer(broker.handle);
-        server.listen(options.port || 1883, () => {
-          logger.log('Pigeon MQTT Server listening on port ' + (options.port || 1883));
-        });
+        const port = options.port || 1883;
+        const tls = options.tls ?? {};
+        const tlsOptions = {
+          key: loadPem(tls.key),
+          cert: loadPem(tls.cert),
+          ca: loadPem(tls.ca),
+          passphrase: tls.passphrase,
+        };
+
+        if (tlsOptions.key && tlsOptions.cert) {
+          const tlsServer = createTlsServer(tlsOptions, broker.handle);
+          tlsServer.listen(port, () => {
+            logger.log('Pigeon MQTT TLS Server listening on port ' + port);
+          });
+        } else {
+          if (tls.key || tls.cert || tls.ca || tls.passphrase) {
+            logger.warn('Pigeon MQTT TLS disabled: missing TLS key or cert');
+          }
+          const server = createServer(broker.handle);
+          server.listen(port, () => {
+            logger.log('Pigeon MQTT Server listening on port ' + port);
+          });
+        }
       }
 
       if (options.ws?.enabled) {
@@ -40,9 +60,14 @@ export function createClientProvider(): Provider {
         const wsPath = options.ws.path ?? '/mqtt';
         const wsServer = createHttpServer();
 
-        websocketStream.createServer({ server: wsServer, path: wsPath }, broker.handle);
+        websocketStream.createServer(
+          { server: wsServer, path: wsPath },
+          broker.handle
+        );
         wsServer.listen(wsPort, () => {
-          logger.log(`Pigeon MQTT WS Server listening on port ${wsPort} path ${wsPath}`);
+          logger.log(
+            `Pigeon MQTT WS Server listening on port ${wsPort} path ${wsPath}`
+          );
         });
       }
 
@@ -66,7 +91,9 @@ export function createClientProvider(): Provider {
             broker.handle
           );
           wssServer.listen(wssPort, () => {
-            logger.log(`Pigeon MQTT WSS Server listening on port ${wssPort} path ${wssPath}`);
+            logger.log(
+              `Pigeon MQTT WSS Server listening on port ${wssPort} path ${wssPath}`
+            );
           });
         }
       }

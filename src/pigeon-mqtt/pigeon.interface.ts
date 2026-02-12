@@ -10,6 +10,7 @@ export interface PigeonModuleOptions {
   maxClientsIdLength?: number;
   connectTimeout?: number;
   heartbeatInterval?: number;
+  tls?: PigeonTlsOptions;
   ws?: PigeonWsOptions;
   wss?: PigeonWssOptions;
   [key: string]: any;
@@ -28,6 +29,13 @@ export interface PigeonWssOptions extends PigeonWsOptions {
     ca?: string | Buffer;
     passphrase?: string;
   };
+}
+
+export interface PigeonTlsOptions {
+  key?: string | Buffer;
+  cert?: string | Buffer;
+  ca?: string | Buffer;
+  passphrase?: string;
 }
 
 export interface PigeonModuleAsyncOptions extends Pick<ModuleMetadata, 'imports'> {
