@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PigeonService } from '../pigeon-mqtt/pigeon.service';
+import { MQTT_TOPICS } from './mqtt.constants';
 
 type PublishOptions = {
   qos?: 0 | 1 | 2;
@@ -43,7 +44,9 @@ export class MqttService {
   async publishFlowLastUpdateChanged(
     flowId: string,
     lastUpdate: Date | string,
-    topic = 'flows/lastupdate',
+    
+    topic = MQTT_TOPICS.FLOWS_LAST_UPDATE
+    
   ) {
     return this.publish(
       topic,
