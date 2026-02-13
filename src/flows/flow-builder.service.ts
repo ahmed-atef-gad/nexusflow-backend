@@ -53,7 +53,6 @@ const CMD_MAP: Record<string, number> = {
   MQ2_READ: 0x22,
   SOIL_READ: 0x23,
   DAC_WRITE: 0x24,
-  
 };
 
 /**
@@ -332,7 +331,10 @@ export class FlowBuilderService {
           // Build setup item
 
           const setupItem: SetupItem = {
-            cmd:  pinNumber == 25 || pinNumber == 26 ? CMD_MAP['SET_DAC'] : CMD_MAP['SET_PIN_MODE'],
+            cmd:
+              pinNumber == 25 || pinNumber == 26
+                ? CMD_MAP['SET_DAC']
+                : CMD_MAP['SET_PIN_MODE'],
             pin: pinNumber,
             mode: pinMode,
           };
@@ -494,6 +496,7 @@ export class FlowBuilderService {
             moduleName: module.name,
             alias: module.alias,
             pin: pinNumber,
+            moduleType: 'output',
             topic: `esp/cmd`,
           });
         }
@@ -502,6 +505,7 @@ export class FlowBuilderService {
           moduleId: module.moduleId,
           moduleName: module.name,
           alias: module.alias,
+          moduleType: 'input',
           topic: `esp/${node.id}`,
         });
       }
@@ -552,7 +556,10 @@ export class FlowBuilderService {
             // Value is taken from previous step result at runtime
             if (pinMode === 'PWM' || pinMode === 'DAC') {
               command = {
-                cmd: pinMode === 'PWM' ? CMD_MAP['ANALOG_WRITE'] : CMD_MAP['DAC_WRITE'],
+                cmd:
+                  pinMode === 'PWM'
+                    ? CMD_MAP['ANALOG_WRITE']
+                    : CMD_MAP['DAC_WRITE'],
                 pin,
                 value: '$prev',
                 topic,

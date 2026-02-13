@@ -1,6 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { ApiProperty } from '@nestjs/swagger';
-import { Schema as MongooseSchema } from 'mongoose';
 
 @Schema({ _id: false })
 export class UiItem {
@@ -28,6 +27,12 @@ export class UiItem {
   @ApiProperty({ type: String, description: 'Topic for this UI item' })
   @Prop()
   topic: string;
+  @ApiProperty({
+    type: String,
+    description: 'Type of module (input, output, etc.)',
+  })
+  @Prop()
+  moduleType: 'input' | 'output' | 'other';
 
   @ApiProperty({
     required: false,
