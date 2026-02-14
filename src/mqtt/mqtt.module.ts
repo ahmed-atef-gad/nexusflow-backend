@@ -6,11 +6,13 @@ import { PigeonModule } from '../pigeon-mqtt/pigeon.module';
 import { Transport } from '../pigeon-mqtt/enum/pigeon.transport.enum';
 import { DevicesModule } from '../devices/devices.module';
 import { MqttHandlers } from './mqtt.handlers';
+import { UsersModule } from '../users/users.module';
 
 @Global()
 @Module({
   imports: [
     DevicesModule,
+    UsersModule,
     PigeonModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
@@ -24,7 +26,7 @@ import { MqttHandlers } from './mqtt.handlers';
         heartbeatInterval: 60000,
         ws: {
           enabled: true,
-          port: Number.parseInt(configService.get('MQTT_WS_PORT', ''), 10) || 8884,
+          port: Number.parseInt(configService.get('MQTT_WS_PORT', ''), 10) || 8885,
           path: configService.get('MQTT_WS_PATH', '/mqtt-ws'),
         },
         tls: {
@@ -39,6 +41,6 @@ import { MqttHandlers } from './mqtt.handlers';
 
   controllers: [MqttController],
   providers: [MqttService, MqttHandlers],
-  exports: [MqttService],
+  exports: [MqttService, MqttHandlers],
 })
 export class MqttModule {}

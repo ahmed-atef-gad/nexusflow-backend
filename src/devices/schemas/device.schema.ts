@@ -60,7 +60,7 @@ export class Device {
 
 // Create Mongoose schema from class
 export const DeviceSchema = SchemaFactory.createForClass(Device);
-DeviceSchema.index({ macAddress: 1 }, { unique: true });
+//DeviceSchema.index({ macAddress: 1 }, { unique: true });
 
 DeviceSchema.pre('save', async function (next) {
   if (!this.isModified('mqtt_pass') || !this.mqtt_pass) return next();
