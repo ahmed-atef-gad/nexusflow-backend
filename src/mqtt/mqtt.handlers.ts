@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { PigeonService } from '../pigeon-mqtt/pigeon.service';
 import { DevicesService } from '../devices/devices.service';
 import { UsersService } from '../users/users.service';
+import { MqttService } from './mqtt.service';
 
 @Injectable()
 export class MqttHandlers implements OnModuleInit {
@@ -11,6 +12,7 @@ export class MqttHandlers implements OnModuleInit {
     private readonly pigeonService: PigeonService,
     private readonly devicesService: DevicesService,
     private readonly usersService: UsersService
+    private readonly mqttService: MqttService
   ) {}
 
   onModuleInit() {
@@ -19,6 +21,7 @@ export class MqttHandlers implements OnModuleInit {
     broker.authorizePublish = this.onAuthorizePublish.bind(this);
     broker.authorizeSubscribe = this.onAuthorizeSubscribe.bind(this);
     broker.authorizeForward = this.onAuthorizeForward.bind(this);
+    broker.on('clientDisconnect', this.onClientDisconnect.bind(this));
     broker.on('publish', (packet: any, client: any) => {
       this.logger.log(
         `MQTT message published. client=${client ? `clientId=${client.id} type=${client?.attributes?.clientType ?? 'unknown'} mac=${client.deviceMac ?? '(no mac)'}` : 'unknown'} topic=${packet?.topic ?? '(no topic)'}`
@@ -318,5 +321,15 @@ export class MqttHandlers implements OnModuleInit {
       `MQTT forward blocked. clientId=${client?.id ?? 'unknown'} topic=${topic}`
     );
     return null;
+  }
+  private async onClientDisconnect(client: any) {
+    const clientId = client?.id?.toString?.() ?? '';
+    if (clientId) {
+      await this.mqttService.publish(`client/${clientId}/online`, {
+        online: false,
+        timestamp: new Date().toISOString(),
+      });
+      this.logger.debug(`MQTT client disconnected. clientId=${clientId}`);
+    }
   }
 }

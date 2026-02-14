@@ -199,30 +199,15 @@ export class DevicesService {
     return updatedDevice;
   }
   async getDeviceStatus(deviceId: string) {
-    const lastSync = await this.auditModel
-      .findOne({
-        deviceId: new Types.ObjectId(deviceId),
-        action: 'GET /setups/device/sync',
-      })
-      .sort({ createdAt: -1 })
-      .exec();
-
-    let lastSeen = lastSync ? lastSync.createdAt : null;
-    let status = lastSync?.statusCode === 200 ? 'online' : 'offline';
-
-    if (!lastSeen) {
-      const tokenDoc = await this.tokenModel
-        .findOne({ deviceId: new Types.ObjectId(deviceId) })
-        .sort({ lastUsedAt: -1 });
-
-      if (tokenDoc && tokenDoc.lastUsedAt) {
-        lastSeen = tokenDoc.lastUsedAt;
-
-        const isRecent =
-          new Date().getTime() - new Date(lastSeen).getTime() < 2 * 60 * 1000;
-        status = isRecent ? 'online' : 'offline';
-      }
+    const device = await this.deviceModel.findById(deviceId).exec();
+    if (!device) {
+      throw new NotFoundException(`Device with ID ${deviceId} not found`);
     }
+
+    const normalizedMac = this.normalizeMacAddress(device.macAddress);
+    const isOnline = this.mqttService.isClientConnected(normalizedMac);
+    const lastSeen = isOnline ? new Date() : null;
+    const status = isOnline ? 'online' : 'offline';
 
     return {
       deviceId,
