@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { UsersService } from 'src/users/users.service';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import { RegisterUserDto } from './dto/register-user.dto';
 
 @Injectable()
@@ -35,6 +36,11 @@ export class AuthService {
    */
   async login(user: any) {
     await this.usersService.updateLastLogin(user._id);
+
+    const plainMqttPass = crypto.randomBytes(8).toString('hex');
+    const salt = await bcrypt.genSalt();
+    const hashedMqttPass = await bcrypt.hash(plainMqttPass, salt);
+    await this.usersService.update(user._id, { mqtt_pass_hash: hashedMqttPass } as any);
     const payload = {
       email: user.email,
       sub: user._id,
@@ -43,6 +49,8 @@ export class AuthService {
     };
     return {
       access_token: this.jwtService.sign(payload),
+      mqtt_password: plainMqttPass, 
+      mqtt_username: user.username
     };
   }
 

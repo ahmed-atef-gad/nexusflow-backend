@@ -32,6 +32,9 @@ export class User {
 
   @Prop({ type: Date, nullable: true })
   last_login?: Date;
+
+  @Prop({ type: String, select: false }) 
+  mqtt_pass_hash?: string;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
