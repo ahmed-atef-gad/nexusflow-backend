@@ -35,7 +35,7 @@ export class DevicesService {
     return macAddress.trim().toUpperCase();
   }
 
-  // Register a new device or update existing one
+  // Register a new device
   async registerDevice(
     userId: string,
     macAddress: string,
@@ -46,27 +46,21 @@ export class DevicesService {
     const normalizedMac = macAddress.trim().toUpperCase();
 
     // Check if device already exists
-    let device = await this.deviceModel.findOne({ macAddress: normalizedMac });
+    const existingDevice = await this.deviceModel.findOne({
+      macAddress: normalizedMac,
+    });
 
-    if (device) {
-      // Verify the device belongs to this user
-      if (device.ownerId.toString() !== userId) {
+    if (existingDevice) {
+      // Device already registered to another user
+      if (existingDevice.ownerId.toString() !== userId) {
         throw new BadRequestException(
           'Device already registered to another user'
         );
       }
-      // Update device name if provided
-      device.name = name || device.name;
-
-      if (mqttPass) {
-        device.mqtt_pass = mqttPass;
-      } else if (!device.mqtt_pass) {
-        throw new BadRequestException(
-          'mqtt_pass is required and must be complex'
-        );
-      }
-
-      return device.save();
+      // Device already registered to this user
+      throw new BadRequestException(
+        'Device already registered to your account'
+      );
     }
 
     if (!mqttPass) {
@@ -74,7 +68,7 @@ export class DevicesService {
     }
 
     // Create new device
-    device = new this.deviceModel({
+    const device = new this.deviceModel({
       macAddress: normalizedMac,
       ownerId: new Types.ObjectId(userId),
       name: name || `ESP-${normalizedMac}`,
@@ -154,11 +148,11 @@ export class DevicesService {
     const twoMinutes = 2 * 60 * 1000;
     const lastUsed = tokenDoc.lastUsedAt ? tokenDoc.lastUsedAt.getTime() : 0;
     if (new Date().getTime() - lastUsed > twoMinutes) {
-        await this.tokenModel.updateOne(
+      await this.tokenModel.updateOne(
         { _id: tokenDoc._id },
         { lastUsedAt: new Date() }
-        );
-  }
+      );
+    }
 
     // Return device info
     return this.deviceModel.findById(tokenDoc.deviceId);
@@ -169,15 +163,15 @@ export class DevicesService {
     return this.tokenModel.updateOne({ tokenId }, { revokedAt: new Date() });
   }
 
-    // Find device by ID
-    async findOne(deviceId: string): Promise<DeviceDocument> {
+  // Find device by ID
+  async findOne(deviceId: string): Promise<DeviceDocument> {
     // Validate device ID format
     if (!Types.ObjectId.isValid(deviceId)) {
       throw new BadRequestException('Invalid Device ID');
     }
 
     const device = await this.deviceModel.findById(deviceId).exec();
-    
+
     if (!device) {
       throw new NotFoundException(`Device with ID ${deviceId} not found`);
     }
@@ -213,19 +207,17 @@ export class DevicesService {
       .sort({ createdAt: -1 })
       .exec();
 
-  
     let lastSeen = lastSync ? lastSync.createdAt : null;
     let status = lastSync?.statusCode === 200 ? 'online' : 'offline';
 
     if (!lastSeen) {
-    
       const tokenDoc = await this.tokenModel
         .findOne({ deviceId: new Types.ObjectId(deviceId) })
         .sort({ lastUsedAt: -1 });
 
       if (tokenDoc && tokenDoc.lastUsedAt) {
         lastSeen = tokenDoc.lastUsedAt;
-     
+
         const isRecent =
           new Date().getTime() - new Date(lastSeen).getTime() < 2 * 60 * 1000;
         status = isRecent ? 'online' : 'offline';
@@ -247,5 +239,38 @@ export class DevicesService {
     statusCode: number;
   }) {
     return this.auditModel.create(data);
+  }
+
+  // Get all devices for a specific user
+  async findAllByUserId(userId: string): Promise<DeviceDocument[]> {
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new BadRequestException('Invalid User ID');
+    }
+
+    return this.deviceModel
+      .find({ ownerId: new Types.ObjectId(userId) })
+      .sort({ createdAt: -1 })
+      .exec();
+  }
+
+  // Delete a device and its associated tokens
+  async deleteDevice(deviceId: string): Promise<void> {
+    if (!Types.ObjectId.isValid(deviceId)) {
+      throw new BadRequestException('Invalid Device ID');
+    }
+
+    const device = await this.deviceModel.findById(deviceId);
+
+    if (!device) {
+      throw new NotFoundException(`Device with ID ${deviceId} not found`);
+    }
+
+    // Delete all tokens associated with this device
+    await this.tokenModel.deleteMany({
+      deviceId: new Types.ObjectId(deviceId),
+    });
+
+    // Delete the device
+    await this.deviceModel.findByIdAndDelete(deviceId);
   }
 }

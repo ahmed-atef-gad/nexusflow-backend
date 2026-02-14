@@ -35,7 +35,7 @@ import {
 @UseGuards(AuthGuard)
 @Controller('devices')
 export class DevicesController {
-  constructor(private readonly devicesService: DevicesService) { }
+  constructor(private readonly devicesService: DevicesService) {}
 
   /**
    * Register a new ESP device by MAC address
@@ -71,7 +71,6 @@ export class DevicesController {
   @ApiBody({
     description: 'Device registration data',
     type: CreateDeviceDto,
-
   })
   @ApiResponse({
     status: 201,
@@ -90,12 +89,23 @@ export class DevicesController {
   })
   @ApiResponse({
     status: 400,
-    description: 'Bad Request - Device already registered to another user',
+    description: 'Bad Request - Device already registered',
     schema: {
-      example: {
-        statusCode: 400,
-        message: 'Device already registered to another user',
-        error: 'Bad Request',
+      examples: {
+        alreadyRegisteredToUser: {
+          value: {
+            statusCode: 400,
+            message: 'Device already registered to your account',
+            error: 'Bad Request',
+          },
+        },
+        alreadyRegisteredToOther: {
+          value: {
+            statusCode: 400,
+            message: 'Device already registered to another user',
+            error: 'Bad Request',
+          },
+        },
       },
     },
   })
@@ -104,16 +114,12 @@ export class DevicesController {
     description: 'Unauthorized - Invalid or missing user token',
   })
   @Post('register')
-  async register(
-    @Req() req,
-    @Body() body: CreateDeviceDto
-  ) {
+  async register(@Req() req, @Body() body: CreateDeviceDto) {
     return this.devicesService.registerDevice(
       req.user.sub,
       body.macAddress,
       body.name,
       body.mqtt_pass
-
     );
   }
 
@@ -251,20 +257,19 @@ export class DevicesController {
     return this.devicesService.revokeToken(tokenId);
   }
 
-
-
   @ApiOperation({ summary: 'Link device to a Flow' })
-  @ApiResponse({ status: 200, description: 'Device linked to flow successfully' })
+  @ApiResponse({
+    status: 200,
+    description: 'Device linked to flow successfully',
+  })
   @Patch(':id/flow')
   async linkFlow(
     @Req() req,
     @Param('id') deviceId: string,
     @Body('flowId') flowId: string
   ) {
-
     const device = await this.devicesService.findOne(deviceId);
     if (device.ownerId.toString() !== req.user.sub) {
-
       throw new UnauthorizedException('You do not own this device');
     }
 
@@ -275,15 +280,159 @@ export class DevicesController {
    * Check device connection status (Online/Offline)
    */
   @ApiOperation({ summary: 'Get device status' })
-  @ApiResponse({ status: 200, description: 'Returns device status and last seen' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns device status and last seen',
+  })
   @Get(':id/status')
   async getStatus(@Req() req, @Param('id') deviceId: string) {
-
     const device = await this.devicesService.findOne(deviceId);
     if (device.ownerId.toString() !== req.user.sub) {
       throw new UnauthorizedException('You do not own this device');
     }
 
     return this.devicesService.getDeviceStatus(deviceId);
+  }
+
+  /**
+   * Get all devices for the authenticated user
+   *
+   * @route GET /devices
+   * @auth AuthGuard (User access token required)
+   * @returns Array of device objects belonging to the user
+   *
+   * @example
+   * // Request
+   * GET /devices
+   * Headers: Authorization: Bearer <user-access-token>
+   *
+   * // Response (200 OK)
+   * [
+   *   {
+   *     "_id": "507f1f77bcf86cd799439011",
+   *     "macAddress": "AA:BB:CC:DD:EE:FF",
+   *     "name": "Living Room Sensor",
+   *     "ownerId": "507f1f77bcf86cd799439012",
+   *     "status": "active",
+   *     "createdAt": "2024-02-10T10:30:00Z",
+   *     "updatedAt": "2024-02-10T10:30:00Z"
+   *   },
+   *   {
+   *     "_id": "507f1f77bcf86cd799439013",
+   *     "macAddress": "11:22:33:44:55:66",
+   *     "name": "Bedroom Sensor",
+   *     "ownerId": "507f1f77bcf86cd799439012",
+   *     "status": "active",
+   *     "createdAt": "2024-02-11T14:20:00Z",
+   *     "updatedAt": "2024-02-11T14:20:00Z"
+   *   }
+   * ]
+   */
+  @ApiOperation({
+    summary: 'Get all devices for the authenticated user',
+    description:
+      'Returns a list of all devices registered by the authenticated user, sorted by creation date (newest first).',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'List of devices retrieved successfully',
+    schema: {
+      example: [
+        {
+          _id: '507f1f77bcf86cd799439011',
+          macAddress: 'AA:BB:CC:DD:EE:FF',
+          name: 'Living Room Sensor',
+          ownerId: '507f1f77bcf86cd799439012',
+          status: 'active',
+          createdAt: '2024-02-10T10:30:00Z',
+          updatedAt: '2024-02-10T10:30:00Z',
+        },
+      ],
+    },
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - Invalid or missing user token',
+  })
+  @Get()
+  async getAllDevices(@Req() req) {
+    return this.devicesService.findAllByUserId(req.user.sub);
+  }
+
+  /**
+   * Delete a device
+   *
+   * @route DELETE /devices/:id
+   * @auth AuthGuard (User access token required)
+   * @param deviceId - The MongoDB ID of the device to delete
+   * @returns Confirmation message
+   *
+   * @example
+   * // Request
+   * DELETE /devices/507f1f77bcf86cd799439011
+   * Headers: Authorization: Bearer <user-access-token>
+   *
+   * // Response (200 OK)
+   * {
+   *   "message": "Device deleted successfully"
+   * }
+   *
+   * @note Deleting a device also removes all associated tokens
+   */
+  @ApiOperation({
+    summary: 'Delete a device',
+    description:
+      'Deletes a device and all its associated tokens. Only the device owner can delete it.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'MongoDB ID of the device to delete',
+    example: '507f1f77bcf86cd799439011',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Device deleted successfully',
+    schema: {
+      example: {
+        message: 'Device deleted successfully',
+      },
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Not Found - Device does not exist',
+    schema: {
+      example: {
+        statusCode: 404,
+        message: 'Device with ID 507f1f77bcf86cd799439011 not found',
+        error: 'Not Found',
+      },
+    },
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - User does not own this device',
+    schema: {
+      example: {
+        statusCode: 401,
+        message: 'You do not own this device',
+        error: 'Unauthorized',
+      },
+    },
+  })
+  @Delete(':id')
+  async deleteDevice(@Req() req, @Param('id') deviceId: string) {
+    const userId = req.user.sub;
+
+    // Verify device exists and belongs to the user
+    const device = await this.devicesService.findOne(deviceId);
+
+    if (device.ownerId.toString() !== userId) {
+      throw new UnauthorizedException('You do not own this device');
+    }
+
+    await this.devicesService.deleteDevice(deviceId);
+
+    return { message: 'Device deleted successfully' };
   }
 }
