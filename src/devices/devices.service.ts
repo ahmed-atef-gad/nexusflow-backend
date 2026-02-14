@@ -35,7 +35,7 @@ export class DevicesService {
     return macAddress.trim().toUpperCase();
   }
 
-  // Register a new device or update existing one
+  // Register a new device
   async registerDevice(
     userId: string,
     macAddress: string,
@@ -46,27 +46,21 @@ export class DevicesService {
     const normalizedMac = macAddress.trim().toUpperCase();
 
     // Check if device already exists
-    let device = await this.deviceModel.findOne({ macAddress: normalizedMac });
+    const existingDevice = await this.deviceModel.findOne({
+      macAddress: normalizedMac,
+    });
 
-    if (device) {
-      // Verify the device belongs to this user
-      if (device.ownerId.toString() !== userId) {
+    if (existingDevice) {
+      // Device already registered to another user
+      if (existingDevice.ownerId.toString() !== userId) {
         throw new BadRequestException(
           'Device already registered to another user'
         );
       }
-      // Update device name if provided
-      device.name = name || device.name;
-
-      if (mqttPass) {
-        device.mqtt_pass = mqttPass;
-      } else if (!device.mqtt_pass) {
-        throw new BadRequestException(
-          'mqtt_pass is required and must be complex'
-        );
-      }
-
-      return device.save();
+      // Device already registered to this user
+      throw new BadRequestException(
+        'Device already registered to your account'
+      );
     }
 
     if (!mqttPass) {
@@ -74,7 +68,7 @@ export class DevicesService {
     }
 
     // Create new device
-    device = new this.deviceModel({
+    const device = new this.deviceModel({
       macAddress: normalizedMac,
       ownerId: new Types.ObjectId(userId),
       name: name || `ESP-${normalizedMac}`,

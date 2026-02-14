@@ -89,12 +89,23 @@ export class DevicesController {
   })
   @ApiResponse({
     status: 400,
-    description: 'Bad Request - Device already registered to another user',
+    description: 'Bad Request - Device already registered',
     schema: {
-      example: {
-        statusCode: 400,
-        message: 'Device already registered to another user',
-        error: 'Bad Request',
+      examples: {
+        alreadyRegisteredToUser: {
+          value: {
+            statusCode: 400,
+            message: 'Device already registered to your account',
+            error: 'Bad Request',
+          },
+        },
+        alreadyRegisteredToOther: {
+          value: {
+            statusCode: 400,
+            message: 'Device already registered to another user',
+            error: 'Bad Request',
+          },
+        },
       },
     },
   })
