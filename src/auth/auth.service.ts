@@ -11,12 +11,17 @@ export class AuthService {
     private jwtService: JwtService
   ) {}
 
+  private normalizeEmail(email: string): string {
+    return email.trim().toLowerCase();
+  }
+
   /**
    * Validates a user by email and password.
    * Called by LocalStrategy (which we'll make).
    */
   async validateUser(email: string, pass: string): Promise<any> {
-    const user = await this.usersService.findOneByEmail(email);
+    const normalizedEmail = this.normalizeEmail(email);
+    const user = await this.usersService.findOneByEmail(normalizedEmail);
     if (user && (await bcrypt.compare(pass, user.password))) {
       const { password, ...result } = user.toObject(); // Don't return hash
       return result;
@@ -60,6 +65,7 @@ export class AuthService {
    * Called by the AuthController.
    */
   async register(registerDto: RegisterUserDto) {
+    const normalizedEmail = this.normalizeEmail(registerDto.email);
     // Hash the password
     const saltOrRounds = 10;
     const hashedPassword = await bcrypt.hash(
@@ -69,6 +75,7 @@ export class AuthService {
 
     const userCreationData = {
       ...registerDto,
+      email: normalizedEmail,
       password: hashedPassword, // Use the hash, not the plain password
     };
 
