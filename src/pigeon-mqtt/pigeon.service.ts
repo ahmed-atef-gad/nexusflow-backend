@@ -4,9 +4,7 @@ import { PubPacket } from './pigeon.interface';
 
 @Injectable()
 export class PigeonService {
-  constructor(
-    @Inject(INSTANCE_BROKER) private readonly broker: any,
-  ) {}
+  constructor(@Inject(INSTANCE_BROKER) private readonly broker: any) {}
 
   publish(packet: PubPacket): Promise<PubPacket> {
     return new Promise<any>((resolve, reject) => {
