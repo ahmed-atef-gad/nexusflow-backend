@@ -49,6 +49,9 @@ export class Device {
   @Prop({ default: 'active', enum: ['active', 'revoked'] })
   status: string;
 
+  @Prop({ type: Date })
+  lastActiveAt?: Date;
+
   // Timestamp when device was revoked
   @Prop()
   revokedAt?: Date;

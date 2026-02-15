@@ -203,6 +203,14 @@ export class DevicesService {
     return device;
   }
 
+  async updateLastActiveByMacAddress(macAddress: string) {
+    const normalizedMac = this.normalizeMacAddress(macAddress);
+    await this.deviceModel.updateOne(
+      { macAddress: normalizedMac },
+      { lastActiveAt: new Date() }
+    );
+  }
+
   async updateDeviceFlow(deviceId: string, flowId: string, userId: string) {
     let flow;
     try {
