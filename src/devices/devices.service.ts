@@ -3,6 +3,8 @@ import {
   UnauthorizedException,
   BadRequestException,
   NotFoundException,
+  forwardRef,
+  Inject,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -11,6 +13,7 @@ import { v4 as uuidv4 } from 'uuid';
 import * as crypto from 'crypto';
 import { Device, DeviceDocument } from './schemas/device.schema';
 import { MqttService } from '../mqtt/mqtt.service';
+import { FlowsService } from '../flows/flows.service';
 import {
   DeviceToken,
   DeviceTokenDocument,
@@ -28,7 +31,9 @@ export class DevicesService {
     private tokenModel: Model<DeviceTokenDocument>,
     @InjectModel(DeviceAudit.name)
     private auditModel: Model<DeviceAuditDocument>,
-    private readonly mqttService: MqttService
+    private readonly mqttService: MqttService,
+    @Inject(forwardRef(() => FlowsService))
+    private readonly flowsService: FlowsService
   ) {}
 
   private normalizeMacAddress(macAddress: string): string {
@@ -179,7 +184,31 @@ export class DevicesService {
     return device;
   }
 
-  async updateDeviceFlow(deviceId: string, flowId: string) {
+  // Find one device by activeFlowId
+  async findByActiveFlowId(activeFlowId: string): Promise<DeviceDocument> {
+    if (!Types.ObjectId.isValid(activeFlowId)) {
+      throw new BadRequestException('Invalid activeFlowId');
+    }
+
+    const device = await this.deviceModel
+      .findOne({ activeFlowId: new Types.ObjectId(activeFlowId) })
+      .exec();
+
+    if (!device) {
+      throw new NotFoundException(
+        `Device with activeFlowId ${activeFlowId} not found`
+      );
+    }
+
+    return device;
+  }
+
+  async updateDeviceFlow(deviceId: string, flowId: string ,) {
+    const flow  = await this.flowsService.findFlowById(flowId).catch(() => null);
+    if (!flow) {
+      throw new NotFoundException(`Flow with ID ${flowId} not found`);
+    }
+    
     const updatedDevice = await this.deviceModel.findByIdAndUpdate(
       deviceId,
       { activeFlowId: new Types.ObjectId(flowId) },

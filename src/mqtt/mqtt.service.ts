@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PigeonService } from '../pigeon-mqtt/pigeon.service';
 import { MQTT_TOPICS } from './mqtt.constants';
+import { normalize } from 'path';
+import { Client } from '@nestjs/microservices';
 
 type PublishOptions = {
   qos?: 0 | 1 | 2;
@@ -11,7 +13,7 @@ type PublishOptions = {
 export class MqttService {
   private readonly logger = new Logger(MqttService.name);
 
-  constructor(private readonly pigeonService: PigeonService) {}
+  constructor(private readonly pigeonService: PigeonService) { }
 
   async publish(topic: string, payload: unknown, options: PublishOptions = {}) {
     const packet = {
@@ -38,21 +40,31 @@ export class MqttService {
   }
   // flow id and its last update time
   async publishFlowLastUpdateChanged(
+   macAddress: string,
     flowId: string,
-    lastUpdate: Date | string,
-
-    topic = MQTT_TOPICS.FLOWS_LAST_UPDATE
+    updatedAt: Date | string
   ) {
-    return this.publish(
+    const normalizedMac = macAddress.trim().toUpperCase();
+    const topic = MQTT_TOPICS.FLOW_LAST_UPDATE(normalizedMac);
+    const packet = {
+      cmd: 'publish',
       topic,
-      {
-        flowId,
-        lastUpdate:
-          lastUpdate instanceof Date ? lastUpdate.toISOString() : lastUpdate,
-        message: `Flow ${flowId} has changed`,
-      },
-      { qos: 1, retain: true }
+      payload: Buffer.from(
+        JSON.stringify({
+          flow_id: flowId,
+          clientId: macAddress,
+          updatedAt:
+            updatedAt instanceof Date ? updatedAt.toISOString() : updatedAt,
+        })
+      ),
+      qos: 1 as const,
+      retain: true,
+    };
+
+    this.logger.log(
+      `Publishing flow updated to topic: ${topic} as ${normalizedMac}`
     );
+    return this.pigeonService.publish(packet);
   }
 
   async publishDeviceFlowChanged(
@@ -61,14 +73,14 @@ export class MqttService {
     updatedAt: Date | string
   ) {
     const normalizedMac = macAddress.trim().toUpperCase();
-    const topic = `/devices/${normalizedMac}/flowchanged`;
+    const topic = MQTT_TOPICS.DEVICE_FLOW_CHANGED(normalizedMac);
     const packet = {
       cmd: 'publish',
       topic,
       payload: Buffer.from(
         JSON.stringify({
           flow_id: flowId,
-          client_id: macAddress,
+          clientId: macAddress,
           updatedAt:
             updatedAt instanceof Date ? updatedAt.toISOString() : updatedAt,
         })
@@ -81,13 +93,7 @@ export class MqttService {
       `Publishing flow changed to topic: ${topic} as ${normalizedMac}`
     );
     return this.pigeonService.publish(packet);
-    // const broker = this.pigeonService.getBrokerInstance();
-    // return new Promise((resolve, reject) => {
-    //   broker.publish(packet, { id: normalizedMac }, (error: Error | null) => {
-    //     if (error) return reject(error);
-    //     return resolve(packet);
-    //   });
-    // });
+  
   }
 
   isClientConnected(clientId: string): boolean {

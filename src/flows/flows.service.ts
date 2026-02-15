@@ -2,6 +2,8 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { isValidObjectId, Model } from 'mongoose';
 import { InjectModel } from '@nestjs/mongoose';
@@ -11,6 +13,7 @@ import { ModuleNode } from './types/flow.types';
 import { SetupService } from './setup.service';
 import { LogicService } from './logic.service';
 import { MqttService } from 'src/mqtt/mqtt.service';
+import { DevicesService } from 'src/devices/devices.service';
 import { UiService } from './ui.service';
 
 @Injectable()
@@ -21,8 +24,12 @@ export class FlowsService {
     private readonly setupService: SetupService,
     private readonly uiService: UiService,
     private readonly logicService: LogicService,
-    private readonly mqttService: MqttService
-  ) {}
+    private readonly mqttService: MqttService,
+    @Inject(forwardRef(() => DevicesService))
+    private readonly devicesService: DevicesService
+
+
+  ) { }
 
   async create(flow: Flow, userId: string): Promise<any> {
     const createdFlow = new this.flowModel({
@@ -102,6 +109,24 @@ export class FlowsService {
     };
   }
 
+  async findFlowById(id: string): Promise<any> {
+    if (!isValidObjectId(id)) {
+      throw new BadRequestException('Invalid id format');
+    }
+
+    const flow = await this.flowModel.findById(id).exec();
+    if (!flow) {
+      throw new NotFoundException(`Flow with ID ${id} not found`);
+    }
+
+
+
+    return {
+      id
+
+    };
+  }
+
   async update(id: string, userId: string, updatedFlow: Flow): Promise<any> {
     if (!isValidObjectId(id)) {
       throw new BadRequestException('Invalid id format');
@@ -139,7 +164,7 @@ export class FlowsService {
       await this.logicService.upsertByFlowId(id, logicData);
 
       // this.mqttService.publish(`esp/setup`, setupData);
-    
+
 
     } else {
       const s = await this.setupService.findByFlowId(id);
@@ -149,7 +174,14 @@ export class FlowsService {
       const u = await this.uiService.findByFlowId(id);
       uiData = u?.uiItems;
     }
-    await this.mqttService.publishFlowLastUpdateChanged(id, flow.updatedAt?.toISOString() || '');
+    const device = await this.devicesService.findByActiveFlowId(id);
+    if (device) {
+      await this.mqttService.publishFlowLastUpdateChanged(
+      device.macAddress,
+      id,
+      flow.updatedAt ?? new Date()
+    );
+  }
 
 
     return {
