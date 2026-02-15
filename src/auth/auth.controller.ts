@@ -37,16 +37,23 @@ export class AuthController {
     @Body() registerUserDto: RegisterUserDto
   ) {
     const user = await this.authService.register(registerUserDto);
-    const token = await this.authService.login(user);
+    const loginResult = await this.authService.login(user);
     // Set token in HttpOnly cookie
-    response.cookie('jwt', token.access_token, {
+    response.cookie('jwt', loginResult.access_token, {
       httpOnly: true,
       maxAge: 604800000, // 7 days
       path: '/',
       secure: true,
       sameSite: 'none',
     });
-    return { message: 'Registration successful' };
+    return {
+      message: 'Registration successful',
+      mqtt: {
+        username: loginResult.mqtt_username,
+        password: loginResult.mqtt_password,
+        clientId: loginResult.mqtt_username,
+      },
+    };
   }
 
   @Post('login')
@@ -67,17 +74,24 @@ export class AuthController {
       throw new UnauthorizedException('Invalid credentials');
     }
     // If valid, return a JWT
-    const token = await this.authService.login(user);
+    const loginResult = await this.authService.login(user);
 
     // Set token in HttpOnly cookie
-    response.cookie('jwt', token.access_token, {
+    response.cookie('jwt', loginResult.access_token, {
       httpOnly: true,
       maxAge: 604800000, // 7 days
       path: '/',
       secure: true,
       sameSite: 'none',
     });
-    return { message: 'Login successful' };
+    return {
+      message: 'Login successful',
+      mqtt: {
+        username: loginResult.mqtt_username,
+        password: loginResult.mqtt_password,
+        clientId: loginResult.mqtt_username,
+      },
+    };
   }
   @Post('logout')
   logout(@Res({ passthrough: true }) response: Response) {

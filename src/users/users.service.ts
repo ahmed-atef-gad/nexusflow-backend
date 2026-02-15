@@ -17,6 +17,42 @@ export class UsersService {
   async findOneByEmail(email: string): Promise<UserDocument | null> {
     return this.userModel.findOne({ email: email }).exec();
   }
+
+  async findOneByUsername(username: string): Promise<UserDocument | null> {
+    return this.userModel.findOne({ username: username }).exec();
+  }
+
+  async authenticateMqttUser(
+    username: string,
+    mqttPassword: string
+  ): Promise<UserDocument | null> {
+    const normalizedUsername = username.trim();
+    if (!normalizedUsername || !mqttPassword) return null;
+
+    const user = await this.userModel
+      .findOne({ username: normalizedUsername })
+      .select('+mqtt_pass_hash')
+      .exec();
+    if (!user || !user.mqtt_pass_hash) return null;
+
+    const isMatch = await bcrypt.compare(mqttPassword, user.mqtt_pass_hash);
+    if (!isMatch) return null;
+
+    return user;
+  }
+
+  async updateMqttPasswordHash(
+    @Param('id') userId: string,
+    mqttPassHash: string
+  ): Promise<UserDocument | null> {
+    const isValidId = Types.ObjectId.isValid(userId);
+    if (!isValidId) {
+      throw new HttpException('User not found', 404);
+    }
+    return this.userModel
+      .findByIdAndUpdate(userId, { mqtt_pass_hash: mqttPassHash }, { new: true })
+      .exec();
+  }
   async register(registerUserDto: RegisterUserDto): Promise<UserDocument> {
     const createdUser = new this.userModel(registerUserDto);
     createdUser.roles = [Role.User]; // Default role

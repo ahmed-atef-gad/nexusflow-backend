@@ -40,7 +40,7 @@ export class AuthService {
     const plainMqttPass = crypto.randomBytes(8).toString('hex');
     const salt = await bcrypt.genSalt();
     const hashedMqttPass = await bcrypt.hash(plainMqttPass, salt);
-    await this.usersService.update(user._id, { mqtt_pass_hash: hashedMqttPass } as any);
+    await this.usersService.updateMqttPasswordHash(user._id, hashedMqttPass);
     const payload = {
       email: user.email,
       sub: user._id,

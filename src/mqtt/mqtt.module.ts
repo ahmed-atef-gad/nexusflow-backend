@@ -6,11 +6,13 @@ import { PigeonModule } from '../pigeon-mqtt/pigeon.module';
 import { Transport } from '../pigeon-mqtt/enum/pigeon.transport.enum';
 import { DevicesModule } from '../devices/devices.module';
 import { MqttHandlers } from './mqtt.handlers';
+import { UsersModule } from '../users/users.module';
 
 @Global()
 @Module({
   imports: [
     DevicesModule,
+    UsersModule,
     PigeonModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
@@ -39,6 +41,6 @@ import { MqttHandlers } from './mqtt.handlers';
 
   controllers: [MqttController],
   providers: [MqttService, MqttHandlers],
-  exports: [MqttService],
+  exports: [MqttService, MqttHandlers],
 })
 export class MqttModule {}
