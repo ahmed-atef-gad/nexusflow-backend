@@ -121,6 +121,7 @@ export class FlowsService {
 
     return {
       id: flow.id,
+      userId: flow.userId,
     };
   }
 

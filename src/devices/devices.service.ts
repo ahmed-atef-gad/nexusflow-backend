@@ -203,22 +203,12 @@ export class DevicesService {
     return device;
   }
 
-  async updateDeviceFlow(deviceId: string, flowId: string ,) {
-    // Validate IDs format to distinguish bad input from not-found
-    if (!Types.ObjectId.isValid(deviceId)) {
-      throw new BadRequestException('Invalid Device ID');
-    }
-    if (!Types.ObjectId.isValid(flowId)) {
-      throw new BadRequestException('Invalid flowId');
-    }
-
+  async updateDeviceFlow(deviceId: string, flowId: string, userId: string) {
     let flow;
     try {
       flow = await this.flowsService.findFlowById(flowId);
     } catch (error) {
-      // Let BadRequestException and other unexpected errors propagate
       if (error instanceof NotFoundException) {
-        // Normalize flow not-found message
         throw new NotFoundException(`Flow with ID ${flowId} not found`);
       }
       throw error;
@@ -226,7 +216,14 @@ export class DevicesService {
     if (!flow) {
       throw new NotFoundException(`Flow with ID ${flowId} not found`);
     }
-    
+
+    // Verify that the flow belongs to the same user who owns the device
+    if (flow.userId.toString() !== userId) {
+      throw new UnauthorizedException(
+        'Cannot link device to a flow owned by another user'
+      );
+    }
+
     const updatedDevice = await this.deviceModel.findByIdAndUpdate(
       deviceId,
       { activeFlowId: new Types.ObjectId(flowId) },

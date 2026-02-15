@@ -273,7 +273,7 @@ export class DevicesController {
       throw new UnauthorizedException('You do not own this device');
     }
 
-    return this.devicesService.updateDeviceFlow(deviceId, flowId);
+    return this.devicesService.updateDeviceFlow(deviceId, flowId, req.user.sub);
   }
 
   /**
