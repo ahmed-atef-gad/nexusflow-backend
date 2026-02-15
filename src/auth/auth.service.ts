@@ -49,8 +49,8 @@ export class AuthService {
     };
     return {
       access_token: this.jwtService.sign(payload),
-      mqtt_password: plainMqttPass, 
-      mqtt_username: user.username
+      mqtt_password: plainMqttPass,
+      mqtt_username: user.username,
     };
   }
 
@@ -62,7 +62,15 @@ export class AuthService {
         throw new UnauthorizedException('User not found');
       }
       const { password, ...result } = user.toObject(); // Exclude password
-      return result;
+      // update the mqtt password on each profile request to ensure it changes regularly
+      const plainMqttPass = crypto.randomBytes(8).toString('hex');
+      const salt = await bcrypt.genSalt();
+      const hashedMqttPass = await bcrypt.hash(plainMqttPass, salt);
+      await this.usersService.updateMqttPasswordHash(
+        decoded.sub,
+        hashedMqttPass
+      );
+      return { ...result, mqtt_password: plainMqttPass };
     } catch (error) {
       throw new UnauthorizedException('Invalid token');
     }

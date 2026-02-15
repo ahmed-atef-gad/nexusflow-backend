@@ -162,14 +162,14 @@ export class MqttHandlers implements OnModuleInit {
         return done(null, true);
       }
 
-      // User path: mqtt clientId must match user username.
-      if (!mqttUsername || clientId !== mqttUsername) {
-        return this.rejectAuth(
-          clientId,
-          `reason=clientId must equal mqtt username username=${mqttUsername || '(empty)'}`,
-          done
-        );
-      }
+      // // User path: mqtt clientId must match user username.
+      // if (!mqttUsername || clientId !== mqttUsername) {
+      //   return this.rejectAuth(
+      //     clientId,
+      //     `reason=clientId must equal mqtt username username=${mqttUsername || '(empty)'}`,
+      //     done
+      //   );
+      // }
 
       const user = await this.usersService.authenticateMqttUser(
         mqttUsername,

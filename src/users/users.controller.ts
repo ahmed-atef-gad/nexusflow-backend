@@ -1,9 +1,25 @@
-import { Body, Controller, Delete, Get, Param, Post, Request, Req, UseGuards, Patch, UnauthorizedException } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Request,
+  Req,
+  UseGuards,
+  Patch,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { AuthGuard } from '../gaurds/auth/auth.guard';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UsersService } from './users.service';
-import { ApiBadRequestResponse, ApiCreatedResponse, ApiUnauthorizedResponse } from '@nestjs/swagger';
+import {
+  ApiBadRequestResponse,
+  ApiCreatedResponse,
+  ApiUnauthorizedResponse,
+} from '@nestjs/swagger';
 import { Roles } from './../auth/decorators/roles.decorator';
 import { RolesGuard } from '../gaurds/auth/roles.guard';
 import { Role } from './enums/role.enum';
@@ -42,7 +58,7 @@ export class UsersController {
   @Patch(':id')
   async updateUser(
     @Param('id') id: string,
-    @Body() updateUserDto: UpdateUserDto,
+    @Body() updateUserDto: UpdateUserDto
   ) {
     return this.userService.update(id, updateUserDto);
   }
