@@ -204,7 +204,25 @@ export class DevicesService {
   }
 
   async updateDeviceFlow(deviceId: string, flowId: string ,) {
-    const flow  = await this.flowsService.findFlowById(flowId).catch(() => null);
+    // Validate IDs format to distinguish bad input from not-found
+    if (!Types.ObjectId.isValid(deviceId)) {
+      throw new BadRequestException('Invalid Device ID');
+    }
+    if (!Types.ObjectId.isValid(flowId)) {
+      throw new BadRequestException('Invalid flowId');
+    }
+
+    let flow;
+    try {
+      flow = await this.flowsService.findFlowById(flowId);
+    } catch (error) {
+      // Let BadRequestException and other unexpected errors propagate
+      if (error instanceof NotFoundException) {
+        // Normalize flow not-found message
+        throw new NotFoundException(`Flow with ID ${flowId} not found`);
+      }
+      throw error;
+    }
     if (!flow) {
       throw new NotFoundException(`Flow with ID ${flowId} not found`);
     }
