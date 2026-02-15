@@ -119,11 +119,8 @@ export class FlowsService {
       throw new NotFoundException(`Flow with ID ${id} not found`);
     }
 
-
-
     return {
-      id
-
+      id: flow.id,
     };
   }
 
