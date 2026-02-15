@@ -27,6 +27,15 @@ export class UiItem {
   @ApiProperty({ type: String, description: 'Topic for this UI item' })
   @Prop()
   topic: string;
+
+  @ApiProperty({
+    required: false,
+    description: 'Optional MQTT topic to receive responses for this UI item',
+  })
+  @Prop()
+  responseTopic?: string;
+
+
   @ApiProperty({
     type: String,
     description: 'Type of module (input, output, etc.)',
