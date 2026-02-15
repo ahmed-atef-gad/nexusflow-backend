@@ -11,7 +11,7 @@ export class MqttHandlers implements OnModuleInit {
   constructor(
     private readonly pigeonService: PigeonService,
     private readonly devicesService: DevicesService,
-    private readonly usersService: UsersService
+    private readonly usersService: UsersService,
     private readonly mqttService: MqttService
   ) {}
 
