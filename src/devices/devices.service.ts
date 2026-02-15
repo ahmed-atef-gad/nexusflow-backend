@@ -204,7 +204,15 @@ export class DevicesService {
   }
 
   async updateDeviceFlow(deviceId: string, flowId: string, userId: string) {
-    const flow = await this.flowsService.findFlowById(flowId).catch(() => null);
+    let flow;
+    try {
+      flow = await this.flowsService.findFlowById(flowId);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw new NotFoundException(`Flow with ID ${flowId} not found`);
+      }
+      throw error;
+    }
     if (!flow) {
       throw new NotFoundException(`Flow with ID ${flowId} not found`);
     }
