@@ -1,8 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PigeonService } from '../pigeon-mqtt/pigeon.service';
 import { MQTT_TOPICS } from './mqtt.constants';
-import { normalize } from 'path';
-import { Client } from '@nestjs/microservices';
 
 type PublishOptions = {
   qos?: 0 | 1 | 2;
