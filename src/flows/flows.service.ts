@@ -171,14 +171,22 @@ export class FlowsService {
       const u = await this.uiService.findByFlowId(id);
       uiData = u?.uiItems;
     }
-    const device = await this.devicesService.findByActiveFlowId(id);
+    let device;
+    try {
+      device = await this.devicesService.findByActiveFlowId(id);
+    } catch (error) {
+      if (!(error instanceof NotFoundException)) {
+        throw error;
+      }
+      device = null;
+    }
     if (device) {
       await this.mqttService.publishFlowLastUpdateChanged(
-      device.macAddress,
-      id,
-      flow.updatedAt ?? new Date()
-    );
-  }
+        device.macAddress,
+        id,
+        flow.updatedAt ?? new Date()
+      );
+    }
 
 
     return {
