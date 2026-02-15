@@ -496,6 +496,7 @@ export class FlowBuilderService {
             moduleName: module.name,
             alias: module.alias,
             pin: pinNumber,
+            responseTopic: `esp/${node.id}/response`,
             moduleType: 'output',
             topic: `esp/cmd`,
           });

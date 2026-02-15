@@ -22,11 +22,7 @@ export class MqttHandlers implements OnModuleInit {
     broker.authorizeSubscribe = this.onAuthorizeSubscribe.bind(this);
     broker.authorizeForward = this.onAuthorizeForward.bind(this);
     broker.on('clientDisconnect', this.onClientDisconnect.bind(this));
-    broker.on('publish', (packet: any, client: any) => {
-      this.logger.log(
-        `MQTT message published. client=${client ? `clientId=${client.id} type=${client?.attributes?.clientType ?? 'unknown'} mac=${client.deviceMac ?? '(no mac)'}` : 'unknown'} topic=${packet?.topic ?? '(no topic)'}`
-      );
-    });
+    broker.on('publish', this.onClientPublish.bind(this));
   }
 
   private normalizeMacAddress(value: string): string {
@@ -115,7 +111,11 @@ export class MqttHandlers implements OnModuleInit {
       const clientId = (client?.id ?? '').toString().trim();
 
       if (!clientId || !mqttPassword) {
-        return this.rejectAuth(clientId || 'unknown', 'reason=missing credentials', done);
+        return this.rejectAuth(
+          clientId || 'unknown',
+          'reason=missing credentials',
+          done
+        );
       }
 
       // ESP path: if clientId is a MAC address, this is an ESP client.
@@ -191,9 +191,7 @@ export class MqttHandlers implements OnModuleInit {
         );
       }
 
-      const userDevices = await this.devicesService.findAllByUserId(
-        userId
-      );
+      const userDevices = await this.devicesService.findAllByUserId(userId);
       client.authorizedDeviceMacs = userDevices.map((device) =>
         this.normalizeMacAddress(device.macAddress)
       );
@@ -238,7 +236,10 @@ export class MqttHandlers implements OnModuleInit {
       }
     }
 
-    if (client?.isUserClient && this.isUserAuthorizedForDevicesTopic(client, topic)) {
+    if (
+      client?.isUserClient &&
+      this.isUserAuthorizedForDevicesTopic(client, topic)
+    ) {
       return done(null);
     }
 
@@ -259,7 +260,10 @@ export class MqttHandlers implements OnModuleInit {
     const topic = sub?.topic ?? '';
 
     // For /devices/* topics: allow wildcard subscriptions for ESP only.
-    if (this.isDevicesTopic(topic) && (topic.includes('#') || topic.includes('+'))) {
+    if (
+      this.isDevicesTopic(topic) &&
+      (topic.includes('#') || topic.includes('+'))
+    ) {
       if (client?.isEsp) {
         return done(null, sub);
       }
@@ -313,7 +317,10 @@ export class MqttHandlers implements OnModuleInit {
       }
     }
 
-    if (client?.isUserClient && this.isUserAuthorizedForDevicesTopic(client, topic)) {
+    if (
+      client?.isUserClient &&
+      this.isUserAuthorizedForDevicesTopic(client, topic)
+    ) {
       return packet;
     }
 
@@ -324,12 +331,23 @@ export class MqttHandlers implements OnModuleInit {
   }
   private async onClientDisconnect(client: any) {
     const clientId = client?.id?.toString?.() ?? '';
-    if (clientId) {
+    if (clientId && client?.isEsp) {
       await this.mqttService.publish(`client/${clientId}/online`, {
         online: false,
         timestamp: new Date().toISOString(),
       });
-      this.logger.debug(`MQTT client disconnected. clientId=${clientId}`);
+      await this.devicesService.updateLastActiveByMacAddress(clientId);
+    }
+    this.logger.debug(`MQTT client disconnected. clientId=${clientId}`);
+  }
+  private onClientPublish(packet: any, client: any) {
+    const topic = packet?.topic ?? '';
+    const clientId = client?.id?.toString?.() ?? '';
+
+    if (topic && clientId) {
+      this.logger.debug(
+        `MQTT message published. clientId=${clientId} topic=${topic}`
+      );
     }
   }
 }

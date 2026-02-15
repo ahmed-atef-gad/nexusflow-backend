@@ -22,6 +22,7 @@ import {
   ApiResponse,
   ApiParam,
 } from '@nestjs/swagger';
+import { last } from 'rxjs';
 
 /**
  * DevicesController
@@ -344,6 +345,7 @@ export class DevicesController {
           name: 'Living Room Sensor',
           ownerId: '507f1f77bcf86cd799439012',
           status: 'active',
+          lastActiveAt: '2024-02-15T12:00:00Z',
           createdAt: '2024-02-10T10:30:00Z',
           updatedAt: '2024-02-10T10:30:00Z',
         },
