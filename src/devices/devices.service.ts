@@ -213,9 +213,6 @@ export class DevicesService {
       }
       throw error;
     }
-    if (!flow) {
-      throw new NotFoundException(`Flow with ID ${flowId} not found`);
-    }
 
     // Verify that the flow belongs to the same user who owns the device
     if (flow.userId.toString() !== userId) {
