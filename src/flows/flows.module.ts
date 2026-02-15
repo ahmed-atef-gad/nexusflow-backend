@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module , forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AuthModule } from '../auth/auth.module';
 import { DevicesModule } from '../devices/devices.module';
@@ -21,6 +21,7 @@ import { Ui, UiSchema } from './schemas/ui.schema';
 
 @Module({
   imports: [
+     forwardRef(() => FlowsModule),
     MongooseModule.forFeature([
       { name: Flow.name, schema: FlowSchema },
       { name: Setup.name, schema: SetupSchema },
@@ -43,5 +44,6 @@ import { Ui, UiSchema } from './schemas/ui.schema';
     LogicService,
     UiService,
   ],
+  exports: [FlowsService],
 })
 export class FlowsModule {}
