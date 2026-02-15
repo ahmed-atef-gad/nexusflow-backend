@@ -203,12 +203,19 @@ export class DevicesService {
     return device;
   }
 
-  async updateDeviceFlow(deviceId: string, flowId: string ,) {
-    const flow  = await this.flowsService.findFlowById(flowId).catch(() => null);
+  async updateDeviceFlow(deviceId: string, flowId: string, userId: string) {
+    const flow = await this.flowsService.findFlowById(flowId).catch(() => null);
     if (!flow) {
       throw new NotFoundException(`Flow with ID ${flowId} not found`);
     }
-    
+
+    // Verify that the flow belongs to the same user who owns the device
+    if (flow.userId.toString() !== userId) {
+      throw new UnauthorizedException(
+        'Cannot link device to a flow owned by another user'
+      );
+    }
+
     const updatedDevice = await this.deviceModel.findByIdAndUpdate(
       deviceId,
       { activeFlowId: new Types.ObjectId(flowId) },
