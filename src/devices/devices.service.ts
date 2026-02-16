@@ -255,7 +255,9 @@ export class DevicesService {
 
     const normalizedMac = this.normalizeMacAddress(device.macAddress);
     const isOnline = this.mqttService.isClientConnected(normalizedMac);
-    const lastSeen = isOnline ? new Date() : null;
+    const lastSeen = device.lastActiveAt
+      ? device.lastActiveAt
+      : device.createdAt;
     const status = isOnline ? 'online' : 'offline';
 
     return {
