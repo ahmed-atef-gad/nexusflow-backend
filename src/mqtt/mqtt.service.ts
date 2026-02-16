@@ -56,7 +56,7 @@ export class MqttService {
         })
       ),
       qos: 1 as const,
-      retain: true,
+      retain: false,
     };
 
     this.logger.log(
@@ -84,7 +84,7 @@ export class MqttService {
         })
       ),
       qos: 1 as const,
-      retain: true,
+      retain: false,
     };
 
     this.logger.log(
