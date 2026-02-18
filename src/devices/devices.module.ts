@@ -8,6 +8,7 @@ import { DeviceAudit, DeviceAuditSchema } from './schemas/device-audit.schema';
 import { DeviceAuthGuard } from '../gaurds/device-auth.guard';
 import { AuthModule } from '../auth/auth.module';
 import { FlowsModule } from 'src/flows/flows.module';
+import { UsersModule } from 'src/users/users.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { FlowsModule } from 'src/flows/flows.module';
       { name: DeviceAudit.name, schema: DeviceAuditSchema },
     ]),
     AuthModule,
+    UsersModule,
   ],
   
   controllers: [DevicesController],
