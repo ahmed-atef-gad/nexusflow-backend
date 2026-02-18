@@ -41,7 +41,10 @@ export class UsersController {
     if (!user.sub) {
       throw new UnauthorizedException('User not authenticated');
     }
-    return this.userService.generateMqttOTP(user.sub);
+    const plainMqttPass = await this.userService.generateMqttOTP(user.sub);
+    return {
+      mqtt_password: plainMqttPass,
+    };
   }
 
   @Get('profile')
