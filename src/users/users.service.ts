@@ -7,6 +7,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { Role } from './enums/role.enum';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 
 
 @Injectable()
@@ -97,5 +98,16 @@ export class UsersService {
       { _id: userId },
       { $set: { last_login: new Date() } }
     ).exec();
+  }
+
+  async generateMqttOTP(userId: string): Promise<string> {
+    const plainMqttPass = crypto.randomBytes(8).toString('hex');
+          const salt = await bcrypt.genSalt();
+          const hashedMqttPass = await bcrypt.hash(plainMqttPass, salt);
+          await this.updateMqttPasswordHash(
+            userId,
+            hashedMqttPass
+          );
+    return plainMqttPass;
   }
 }

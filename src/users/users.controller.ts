@@ -30,6 +30,20 @@ import { IsOwner } from 'src/auth/decorators/owner.decorator';
 @Controller('users')
 export class UsersController {
   constructor(private userService: UsersService) {}
+
+  @ApiCreatedResponse({ description: 'Generate MQTT OTP' })
+  @ApiBadRequestResponse({ description: 'Bad Request' })
+  @ApiUnauthorizedResponse({ description: 'Unauthorized' })
+  @Get('mqtt-otp')
+  @UseGuards(AuthGuard)
+  async mqttOTP(@Request() req) {
+    const user = req.user;
+    if (!user.sub) {
+      throw new UnauthorizedException('User not authenticated');
+    }
+    return this.userService.generateMqttOTP(user.sub);
+  }
+
   @Get('profile')
   //@IsOwner()
   async getProfile(@Req() req) {
