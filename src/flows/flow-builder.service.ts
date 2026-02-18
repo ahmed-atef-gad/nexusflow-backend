@@ -24,6 +24,24 @@ import { Edge as RFEdge } from './types/flow.types';
 import { Node } from './schemas/node.schema';
 import { UiItem } from './schemas/uiItem.schema';
 
+// | Name | Dec | Hex | Implemented in runtime command handler |
+// | --- | --- | --- | --- |
+// | `INSTANT_EXE` | `1` | `0x01` | Special handling in MQTT callback |
+// | `CMD_SET_DAC` | `9` | `0x09` | Setup flow (`executorSetup`) |
+// | `CMD_SET_PIN_MODE` | `16` | `0x10` | Setup flow (`executorSetup`) |
+// | `CMD_SET_PIN_VALUE` | `17` | `0x11` | Yes |
+// | `CMD_GET_PIN_VALUE` | `18` | `0x12` | Yes |
+// | `CMD_TOGGLE_PIN_VALUE` | `19` | `0x13` | Yes |
+// | `CMD_ANALOG_READ` | `32` | `0x20` | Yes |
+// | `CMD_ANALOG_WRITE` | `33` | `0x21` | Yes |
+// | `CMD_PWM_READ` | `34` | `0x22` | Yes |
+// | `CMD_DAC_WRITE` | `36` | `0x24` | Yes |
+// | `CMD_DAC_READ` | `37` | `0x25` | Yes |
+// | `CMD_DHT_READ` | `48` | `0x30` | Defined but not handled in `executorLogic` |
+// | `CMD_FC28_READ` | `49` | `0x31` | Yes |
+// | `CMD_RAIN_READ` | `51` | `0x33` | Yes |
+// | `CMD_MQ2_READ` | `52` | `0x34` | Yes |
+
 /**
  * Maps human-readable pin modes (from UI) to numeric protocol codes
  * used by the ESP32 firmware.
@@ -50,9 +68,13 @@ const CMD_MAP: Record<string, number> = {
   TOGGLE_PIN_VALUE: 0x13,
   ANALOG_READ: 0x20,
   ANALOG_WRITE: 0x21,
-  MQ2_READ: 0x22,
-  SOIL_READ: 0x23,
+  PWM_READ: 0x22,
   DAC_WRITE: 0x24,
+  DAC_READ: 0x25,
+  DHT_READ: 0x30,
+  FC28_READ: 0x31,
+  RAIN_READ: 0x33,
+  MQ2_READ: 0x34,
 };
 
 /**
@@ -307,7 +329,7 @@ export class FlowBuilderService {
     const setupPins: Record<number, SetupItem> = {};
     const gpioTask: Task = {
       taskName: 'GpioTask',
-      intervalMs: 3000,
+      intervalMs: 1000,
       commands: [],
     };
     const sensorsTask: Record<string, Task[]> = {};
@@ -367,6 +389,29 @@ export class FlowBuilderService {
               pin: pinNumber,
               topic: `esp/${node.id}`,
             });
+          } else if (module.moduleId.startsWith('ESP32-gpio-output')) {
+            let cmd = 0;
+            switch (module.moduleId) {
+              case 'ESP32-gpio-output':
+              case 'ESP32-gpio-output-led':
+                cmd = CMD_MAP['GET_PIN_VALUE'];
+                break;
+              case 'ESP32-gpio-output-pwm':
+                cmd = CMD_MAP['PWM_READ'];
+                break;
+              case 'ESP32-gpio-output-dac':
+                cmd = CMD_MAP['DAC_READ'];
+                break;
+              default:
+                throw new BadRequestException(
+                  `Unsupported module ${module?.alias || module.name}`
+                );
+            }
+            gpioTask.commands!.push({
+              cmd: cmd,
+              pin: pinNumber,
+              topic: `esp/${node.id}/response`,
+            });
           }
         } else {
           throw new BadRequestException(
@@ -397,6 +442,10 @@ export class FlowBuilderService {
             pin: pinNumber,
             type,
           });
+        } else {
+          throw new BadRequestException(
+            `Missing pin configuration for  ${module?.alias || module.name}`
+          );
         }
       }
       if (module.moduleId.startsWith('PIR-Sensor')) {
@@ -418,6 +467,10 @@ export class FlowBuilderService {
             topic: `esp/${node.id}`,
             pin: pinNumber,
           });
+        } else {
+          throw new BadRequestException(
+            `Missing pin configuration for  ${module?.alias || module.name}`
+          );
         }
       }
       if (
@@ -463,6 +516,10 @@ export class FlowBuilderService {
             useDigital: isDigital,
             useAnalog: isAnalog,
           });
+        } else {
+          throw new BadRequestException(
+            `Missing pin configuration for ${module?.alias || module.name}`
+          );
         }
       }
     });
