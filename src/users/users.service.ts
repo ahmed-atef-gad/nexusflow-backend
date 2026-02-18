@@ -7,6 +7,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { Role } from './enums/role.enum';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 
 
 @Injectable()
@@ -31,12 +32,21 @@ export class UsersService {
 
     const user = await this.userModel
       .findOne({ username: normalizedUsername })
-      .select('+mqtt_pass_hash')
+      .select('+mqtt_pass_hash +mqtt_pass_used_at')
       .exec();
     if (!user || !user.mqtt_pass_hash) return null;
+    if (user.mqtt_pass_used_at) return null;
 
     const isMatch = await bcrypt.compare(mqttPassword, user.mqtt_pass_hash);
     if (!isMatch) return null;
+
+    const markUsedResult = await this.userModel
+      .updateOne(
+        { _id: user._id, mqtt_pass_used_at: null, mqtt_pass_hash: user.mqtt_pass_hash },
+        { $set: { mqtt_pass_used_at: new Date() } }
+      )
+      .exec();
+    if (!markUsedResult || markUsedResult.modifiedCount !== 1) return null;
 
     return user;
   }
@@ -50,7 +60,11 @@ export class UsersService {
       throw new HttpException('User not found', 404);
     }
     return this.userModel
-      .findByIdAndUpdate(userId, { mqtt_pass_hash: mqttPassHash }, { new: true })
+      .findByIdAndUpdate(
+        userId,
+        { mqtt_pass_hash: mqttPassHash, mqtt_pass_used_at: null },
+        { new: true }
+      )
       .exec();
   }
   async register(registerUserDto: RegisterUserDto): Promise<UserDocument> {
@@ -97,5 +111,16 @@ export class UsersService {
       { _id: userId },
       { $set: { last_login: new Date() } }
     ).exec();
+  }
+
+  async generateMqttOTP(userId: string): Promise<string> {
+    const plainMqttPass = crypto.randomBytes(8).toString('hex');
+          const salt = await bcrypt.genSalt();
+          const hashedMqttPass = await bcrypt.hash(plainMqttPass, salt);
+          await this.updateMqttPasswordHash(
+            userId,
+            hashedMqttPass
+          );
+    return plainMqttPass;
   }
 }
