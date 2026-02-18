@@ -41,11 +41,16 @@ export class AuthService {
     const salt = await bcrypt.genSalt();
     const hashedMqttPass = await bcrypt.hash(plainMqttPass, salt);
     await this.usersService.updateMqttPasswordHash(user._id, hashedMqttPass);
+    const tokenVersion =
+      typeof user.token_version === 'number'
+        ? user.token_version
+        : await this.usersService.getTokenVersionById(user._id);
     const payload = {
       email: user.email,
       sub: user._id,
       roles: user.roles,
       username: user.username,
+      token_version: tokenVersion ?? 0,
     };
     return {
       access_token: this.jwtService.sign(payload),
@@ -57,6 +62,15 @@ export class AuthService {
   async getProfile(token: string) {
     try {
       const decoded = this.jwtService.verify(token);
+      const tokenVersion = await this.usersService.getTokenVersionById(
+        decoded.sub
+      );
+      if (
+        tokenVersion === null ||
+        decoded.token_version !== tokenVersion
+      ) {
+        throw new UnauthorizedException('Invalid token');
+      }
       const user = await this.usersService.getUserById(decoded.sub);
       if (!user) {
         throw new UnauthorizedException('User not found');
@@ -73,6 +87,18 @@ export class AuthService {
       return { ...result, mqtt_password: plainMqttPass };
     } catch (error) {
       throw new UnauthorizedException('Invalid token');
+    }
+  }
+
+  async logout(token?: string) {
+    if (!token) return;
+    try {
+      const decoded = this.jwtService.verify(token);
+      if (!decoded?.sub) return;
+      await this.usersService.incrementTokenVersion(decoded.sub);
+    } catch {
+      // Swallow errors to avoid leaking auth details on logout
+      return;
     }
   }
 

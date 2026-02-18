@@ -94,7 +94,12 @@ export class AuthController {
     };
   }
   @Post('logout')
-  logout(@Res({ passthrough: true }) response: Response) {
+  async logout(
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response
+  ) {
+    const token = request.cookies?.['jwt'];
+    await this.authService.logout(token);
     response.clearCookie('jwt', {
       httpOnly: true,
       path: '/',

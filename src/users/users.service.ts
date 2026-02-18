@@ -113,6 +113,26 @@ export class UsersService {
     ).exec();
   }
 
+  async getTokenVersionById(userId: string): Promise<number | null> {
+    const isValidId = Types.ObjectId.isValid(userId);
+    if (!isValidId) return null;
+    const user = await this.userModel
+      .findById(userId)
+      .select('token_version')
+      .exec();
+    if (!user) return null;
+    return typeof user.token_version === 'number' ? user.token_version : 0;
+  }
+
+  async incrementTokenVersion(userId: string): Promise<boolean> {
+    const isValidId = Types.ObjectId.isValid(userId);
+    if (!isValidId) return false;
+    const result = await this.userModel
+      .updateOne({ _id: userId }, { $inc: { token_version: 1 } })
+      .exec();
+    return result.modifiedCount === 1;
+  }
+
   async generateMqttOTP(userId: string): Promise<string> {
     const plainMqttPass = crypto.randomBytes(8).toString('hex');
           const salt = await bcrypt.genSalt();

@@ -2,6 +2,7 @@ import { Module , forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AuthModule } from '../auth/auth.module';
 import { DevicesModule } from '../devices/devices.module';
+import { UsersModule } from '../users/users.module';
 
 import { FlowsController } from './flows.controller';
 import { FlowsService } from './flows.service';
@@ -30,6 +31,7 @@ import { Ui, UiSchema } from './schemas/ui.schema';
     ]),
     AuthModule,
     DevicesModule,
+    UsersModule,
   ],
   controllers: [
     FlowsController,

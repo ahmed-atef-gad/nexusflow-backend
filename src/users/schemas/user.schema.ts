@@ -33,6 +33,10 @@ export class User {
   @Prop({ type: Date, nullable: true })
   last_login?: Date;
 
+  // Increment to invalidate existing JWTs (e.g. on logout)
+  @Prop({ default: 0 })
+  token_version: number;
+
   @Prop({ type: String, select: false }) 
   mqtt_pass_hash?: string;
 
