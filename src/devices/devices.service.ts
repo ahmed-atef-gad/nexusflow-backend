@@ -229,9 +229,23 @@ export class DevicesService {
       );
     }
 
+    const flowObjectId = new Types.ObjectId(flowId);
+    const deviceObjectId = new Types.ObjectId(deviceId);
+    const userObjectId = new Types.ObjectId(userId);
+
+    // Ensure the flow is linked to only one device by unlinking others
+    await this.deviceModel.updateMany(
+      {
+        ownerId: userObjectId,
+        activeFlowId: flowObjectId,
+        _id: { $ne: deviceObjectId },
+      },
+      { $unset: { activeFlowId: 1 } }
+    );
+
     const updatedDevice = await this.deviceModel.findByIdAndUpdate(
-      deviceId,
-      { activeFlowId: new Types.ObjectId(flowId) },
+      deviceObjectId,
+      { activeFlowId: flowObjectId },
       { new: true }
     );
 
