@@ -1,61 +1,144 @@
-import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
-import { IS_OWNER_CHECK_KEY } from '../../auth/decorators/owner.decorator'; // Assuming you use this decorator
+import { InjectConnection } from '@nestjs/mongoose';
+import { Connection, Types } from 'mongoose';
+import {
+  IS_OWNER_CHECK_KEY,
+  OWNER_PARAM_KEY,
+  OWNER_RESOURCE_KEY,
+  OwnerResource,
+} from '../../auth/decorators/owner.decorator';
+import { Flow, FlowDocument } from '../../flows/schemas/flow.schema';
+import { Device, DeviceDocument } from '../../devices/schemas/device.schema';
+import {
+  DeviceToken,
+  DeviceTokenDocument,
+} from '../../devices/schemas/device-token.schema';
 
-// Define the structure of the JWT claims (request.user)
 interface AuthUserClaims {
   email: string;
-  sub: string; // 🔑 User ID is here (matching your payload)
+  sub: string;
   roles: string[];
 }
 
 @Injectable()
 export class OwnerGuard implements CanActivate {
-  constructor(private reflector: Reflector) {}
+  constructor(
+    private reflector: Reflector,
+    @InjectConnection() private readonly connection: Connection
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const isOwnerCheckRequired = this.reflector.get<boolean>(
+    const isOwnerCheckRequired = this.reflector.getAllAndOverride<boolean>(
       IS_OWNER_CHECK_KEY,
-      context.getHandler(),
+      [context.getHandler(), context.getClass()]
     );
-    
-    // 1. Check if the @IsOwner() decorator is even used
+
     if (!isOwnerCheckRequired) {
       return true;
     }
 
     const request: Request = context.switchToHttp().getRequest();
-    
-    // 2. Extract the user claims (JWT payload)
-    // This relies on your AuthGuard setting request['user'] = payload
-    const user = request.user as AuthUserClaims; 
-    
-    // 3. Get the ID from the URL parameter (e.g., /resource/123)
-    const resourceIdParam = request.params.id; 
+    const user = request.user as AuthUserClaims;
 
-    // Defensive Checks (Should be caught by AuthGuard, but good practice)
     if (!user || !user.sub) {
-      throw new ForbiddenException('Authentication data (User ID) is missing.');
+      throw new ForbiddenException(
+        'Authentication data (User ID) is missing.'
+      );
     }
+
+    const paramKey =
+      this.reflector.getAllAndOverride<string>(OWNER_PARAM_KEY, [
+        context.getHandler(),
+        context.getClass(),
+      ]) ?? 'id';
+
+    const resource =
+      this.reflector.getAllAndOverride<OwnerResource>(OWNER_RESOURCE_KEY, [
+        context.getHandler(),
+        context.getClass(),
+      ]) ?? 'user';
+
+    const resourceIdParam =
+      request.params?.[paramKey] ??
+      request.params?.id ??
+      request.params?.userId;
+
     if (!resourceIdParam) {
-      // Log this as a configuration issue
-      console.error(`OwnerGuard: Route missing 'id' parameter in URL for ${request.url}`);
-      return false; 
+      console.error(
+        `OwnerGuard: Route missing '${paramKey}' parameter in URL for ${request.url}`
+      );
+      return false;
     }
 
-    // 4. Perform the ID Comparison
-    // Both IDs (user.sub and resourceIdParam) are treated as strings.
-    // If your IDs are MongoDB ObjectIDs, string comparison is correct.
-    const authenticatedUserId = user.sub; // 🔑 Extracted from the 'sub' claim
-    const resourceId = resourceIdParam;
-    
-    const isOwner = authenticatedUserId === resourceId;
+    const ownershipResult = await this.checkOwnership(
+      resource,
+      resourceIdParam,
+      user.sub
+    );
 
-    if (!isOwner) {
-      throw new ForbiddenException('Access to this resource is restricted: You must be the owner.');
+    if (!ownershipResult) {
+      throw new ForbiddenException(
+        'Access to this resource is restricted: You must be the owner.'
+      );
     }
 
     return true;
+  }
+
+  private async checkOwnership(
+    resource: OwnerResource,
+    resourceId: string,
+    userId: string
+  ): Promise<boolean> {
+    if (resource === 'user') {
+      return userId === resourceId;
+    }
+
+    switch (resource) {
+      case 'flow': {
+        if (!Types.ObjectId.isValid(resourceId)) return false;
+        const FlowModel = this.connection.model<FlowDocument>(Flow.name);
+        const flow = await FlowModel.findById(resourceId)
+          .select('userId')
+          .exec();
+        if (!flow) return false;
+        return flow.userId?.toString() === userId;
+      }
+      case 'device': {
+        if (!Types.ObjectId.isValid(resourceId)) return false;
+        const DeviceModel = this.connection.model<DeviceDocument>(Device.name);
+        const device = await DeviceModel.findById(resourceId)
+          .select('ownerId')
+          .exec();
+        if (!device) return false;
+        return device.ownerId?.toString() === userId;
+      }
+      case 'deviceToken': {
+        const DeviceTokenModel =
+          this.connection.model<DeviceTokenDocument>(DeviceToken.name);
+        const tokenId = resourceId.includes('.')
+          ? resourceId.split('.')[0]
+          : resourceId;
+        const token = await DeviceTokenModel.findOne({ tokenId })
+          .select('deviceId')
+          .exec();
+        if (!token?.deviceId) return false;
+        const DeviceModel = this.connection.model<DeviceDocument>(Device.name);
+        const device = await DeviceModel.findById(token.deviceId)
+          .select('ownerId')
+          .exec();
+        if (!device) return false;
+        return device.ownerId?.toString() === userId;
+      }
+      default:
+        return false;
+    }
   }
 }

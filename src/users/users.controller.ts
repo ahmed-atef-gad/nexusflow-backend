@@ -51,7 +51,6 @@ export class UsersController {
   }
 
   @Get('profile')
-  //@IsOwner()
   async getProfile(@Req() req) {
     const user = req.user;
 

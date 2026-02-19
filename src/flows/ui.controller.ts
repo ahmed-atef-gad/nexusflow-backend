@@ -20,10 +20,12 @@ import {
 } from '@nestjs/swagger';
 import { AuthGuard } from '../gaurds/auth/auth.guard';
 import { Ui } from './schemas/ui.schema';
+import { IsOwner } from '../auth/decorators/owner.decorator';
+import { OwnerGuard } from '../gaurds/auth/owner.guard';
 
 @ApiTags('UI (User Interface)')
 @ApiCookieAuth('jwt')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, OwnerGuard)
 @Controller('ui')
 export class UiController {
   constructor(private readonly uiService: UiService) {}
@@ -31,6 +33,7 @@ export class UiController {
   @ApiOperation({ summary: 'Get Ui by Flow ID' })
   @ApiParam({ name: 'flowId' })
   @ApiResponse({ status: 200, type: Ui })
+  @IsOwner({ resource: 'flow', paramKey: 'flowId' })
   @Get('flow/:flowId')
   findByFlowId(@Param('flowId') flowId: string) {
     return this.uiService.findByFlowId(flowId);

@@ -9,6 +9,7 @@ import { DeviceAuthGuard } from '../gaurds/device-auth.guard';
 import { AuthModule } from '../auth/auth.module';
 import { FlowsModule } from 'src/flows/flows.module';
 import { UsersModule } from 'src/users/users.module';
+import { OwnerGuard } from '../gaurds/auth/owner.guard';
 
 @Module({
   imports: [
@@ -23,7 +24,7 @@ import { UsersModule } from 'src/users/users.module';
   ],
   
   controllers: [DevicesController],
-  providers: [DevicesService, DeviceAuthGuard],
+  providers: [DevicesService, DeviceAuthGuard, OwnerGuard],
   exports: [DevicesService, DeviceAuthGuard], 
 })
 export class DevicesModule {}
