@@ -1,13 +1,20 @@
 import { 
   Controller, Get, Post, Body, Param, Delete, 
-  Patch
+  Patch, UseGuards
 } from '@nestjs/common';
-import { ApiTags, ApiOkResponse, ApiBadRequestResponse, ApiNotFoundResponse, ApiInternalServerErrorResponse } from '@nestjs/swagger';
+import { ApiTags, ApiOkResponse, ApiBadRequestResponse, ApiNotFoundResponse, ApiInternalServerErrorResponse, ApiCookieAuth } from '@nestjs/swagger';
 import { ModulesService } from './modules.service';
 import { CreateModuleDto } from './dto/create-module.dto';
 import { UpdateModuleDto } from './dto/update-module.dto';
+import { AuthGuard } from '../gaurds/auth/auth.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { RolesGuard } from '../gaurds/auth/roles.guard';
+import { Role } from '../users/enums/role.enum';
 
 @ApiTags('Modules')
+@ApiCookieAuth('jwt')
+@UseGuards(AuthGuard, RolesGuard)
+@Roles(Role.Admin)
 @Controller('modules')
 export class ModulesController {
   constructor(private readonly modulesService: ModulesService) {}

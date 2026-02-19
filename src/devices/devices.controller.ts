@@ -17,7 +17,7 @@ import { CreateDeviceDto } from './dto/create-device.dto';
 import {
   ApiTags,
   ApiOperation,
-  ApiBearerAuth,
+  ApiCookieAuth,
   ApiBody,
   ApiResponse,
   ApiParam,
@@ -32,7 +32,7 @@ import { last } from 'rxjs';
  * Used by mobile applications to manage IoT devices.
  */
 @ApiTags('Devices Management (Mobile App)')
-@ApiBearerAuth('access-token')
+@ApiCookieAuth('jwt')
 @UseGuards(AuthGuard)
 @Controller('devices')
 export class DevicesController {

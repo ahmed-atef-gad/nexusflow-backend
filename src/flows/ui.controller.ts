@@ -15,14 +15,14 @@ import {
   ApiOperation,
   ApiResponse,
   ApiParam,
-  ApiBearerAuth,
+  ApiCookieAuth,
   ApiBody,
 } from '@nestjs/swagger';
 import { AuthGuard } from '../gaurds/auth/auth.guard';
 import { Ui } from './schemas/ui.schema';
 
 @ApiTags('UI (User Interface)')
-@ApiBearerAuth('access-token')
+@ApiCookieAuth('jwt')
 @UseGuards(AuthGuard)
 @Controller('ui')
 export class UiController {

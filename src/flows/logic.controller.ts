@@ -1,13 +1,17 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards } from '@nestjs/common';
 import { LogicService } from './logic.service';
 import { LogicPayload } from './types/flow.types';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiCookieAuth, ApiBody } from '@nestjs/swagger';
 import { AuthGuard } from '../gaurds/auth/auth.guard';
 import { Logic } from './schemas/logic.schema';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { RolesGuard } from '../gaurds/auth/roles.guard';
+import { Role } from '../users/enums/role.enum';
 
 @ApiTags('Logics (Execution Program)')
-@ApiBearerAuth('access-token')
-@UseGuards(AuthGuard)
+@ApiCookieAuth('jwt')
+@UseGuards(AuthGuard, RolesGuard)
+@Roles(Role.Admin)
 @Controller('logics')
 export class LogicController {
   constructor(private readonly logicService: LogicService) {}
