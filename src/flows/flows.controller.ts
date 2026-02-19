@@ -15,7 +15,7 @@ import { Flow } from './schemas/flow.schema';
 import { AuthGuard } from '../gaurds/auth/auth.guard';
 import {
   ApiTags,
-  ApiBearerAuth,
+  ApiCookieAuth,
   ApiOperation,
   ApiResponse,
   ApiParam,
@@ -24,7 +24,7 @@ import {
 } from '@nestjs/swagger';
 
 @ApiTags('flows')
-@ApiBearerAuth('access-token')
+@ApiCookieAuth('jwt')
 @UseGuards(AuthGuard)
 @Controller('flows')
 export class FlowsController {

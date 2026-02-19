@@ -54,5 +54,5 @@ export class CreateUserDto {
   @IsOptional()
   @IsArray()
   @IsEnum(Role, { each: true, message: 'Each role must be a valid Role enum value.' })
-  roles?: Role.Admin | Role.User;
+  roles?: Role[];
 }

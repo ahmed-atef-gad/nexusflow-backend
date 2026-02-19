@@ -53,8 +53,8 @@ export class UpdateUserDto {
 
   @IsOptional()
   @IsArray()
- @IsEnum(Role, { each: true, message: 'Each role must be a valid Role enum value.' })
-  roles?: Role.Admin | Role.User;
+  @IsEnum(Role, { each: true, message: 'Each role must be a valid Role enum value.' })
+  roles?: Role[];
   
   // NOTE: refresh_token and last_login are typically handled by service logic
   // and not passed via DTO, but for completeness in a full admin update DTO:

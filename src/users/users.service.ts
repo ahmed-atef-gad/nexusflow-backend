@@ -95,6 +95,10 @@ export class UsersService {
     if (!isValidId) {
       throw new HttpException('User not found', 404);
     }
+    if (updateUserDto.password) {
+      const saltOrRounds = 10;
+      updateUserDto.password = await bcrypt.hash(updateUserDto.password, saltOrRounds);
+    }
     return this.userModel.findByIdAndUpdate(id, updateUserDto, { new: true }).exec();
   }
   async delete(@Param('id') id: string): Promise<{ deleted: boolean }> {

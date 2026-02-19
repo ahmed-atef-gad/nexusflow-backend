@@ -14,11 +14,13 @@ import {
 import { AuthGuard } from '../gaurds/auth/auth.guard';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { UpdateRolesDto } from './dto/update-roles.dto';
 import { UsersService } from './users.service';
 import {
   ApiBadRequestResponse,
   ApiCreatedResponse,
   ApiUnauthorizedResponse,
+  ApiCookieAuth,
 } from '@nestjs/swagger';
 import { Roles } from './../auth/decorators/roles.decorator';
 import { RolesGuard } from '../gaurds/auth/roles.guard';
@@ -27,6 +29,7 @@ import { OwnerGuard } from '../gaurds/auth/owner.guard';
 import { IsOwner } from 'src/auth/decorators/owner.decorator';
 
 @UseGuards(AuthGuard, RolesGuard, OwnerGuard)
+@ApiCookieAuth('jwt')
 @Controller('users')
 export class UsersController {
   constructor(private userService: UsersService) {}
@@ -48,7 +51,6 @@ export class UsersController {
   }
 
   @Get('profile')
-  //@IsOwner()
   async getProfile(@Req() req) {
     const user = req.user;
 
@@ -66,6 +68,7 @@ export class UsersController {
   @ApiBadRequestResponse({ description: 'Bad Request' })
   @ApiUnauthorizedResponse({ description: 'Unauthorized' })
   @Post()
+  @Roles(Role.Admin)
   async createUser(@Body() createUserDto: CreateUserDto) {
     return this.userService.create(createUserDto);
   }
@@ -73,17 +76,29 @@ export class UsersController {
   @ApiBadRequestResponse({ description: 'Bad Request' })
   @ApiUnauthorizedResponse({ description: 'Unauthorized' })
   @Patch(':id')
+  @Roles(Role.Admin)
   async updateUser(
     @Param('id') id: string,
     @Body() updateUserDto: UpdateUserDto
   ) {
     return this.userService.update(id, updateUserDto);
   }
+  @ApiCreatedResponse({ description: 'Updated user roles' })
+  @ApiBadRequestResponse({ description: 'Bad Request' })
+  @ApiUnauthorizedResponse({ description: 'Unauthorized' })
+  @Patch(':id/roles')
+  @Roles(Role.Admin)
+  async updateUserRoles(
+    @Param('id') id: string,
+    @Body() updateRolesDto: UpdateRolesDto
+  ) {
+    return this.userService.update(id, { roles: updateRolesDto.roles });
+  }
   @ApiCreatedResponse({ description: 'show all users' })
   @ApiBadRequestResponse({ description: 'Not Valid ID' })
   @ApiUnauthorizedResponse({ description: 'Unauthorized' })
   @Get()
-  //@Roles(Role.Admin)
+  @Roles(Role.Admin)
   async getUsers() {
     return this.userService.findAll();
   }
@@ -91,6 +106,7 @@ export class UsersController {
   @ApiBadRequestResponse({ description: 'Not Valid ID' })
   @ApiUnauthorizedResponse({ description: 'Unauthorized' })
   @Get(':id')
+  @Roles(Role.Admin)
   async getUserById(@Param('id') id: string) {
     return this.userService.getUserById(id);
   }

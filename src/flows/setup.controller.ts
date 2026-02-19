@@ -16,7 +16,7 @@ import {
   ApiOperation,
   ApiResponse,
   ApiParam,
-  ApiBearerAuth,
+  ApiCookieAuth,
   ApiBody,
   ApiSecurity,
   ApiHeader,
@@ -24,6 +24,9 @@ import {
 import { AuthGuard } from '../gaurds/auth/auth.guard';
 import { Setup } from './schemas/setup.schema';
 import { DeviceAuthGuard } from '../gaurds/device-auth.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { RolesGuard } from '../gaurds/auth/roles.guard';
+import { Role } from '../users/enums/role.enum';
 
 /**
  * SetupController
@@ -32,7 +35,6 @@ import { DeviceAuthGuard } from '../gaurds/device-auth.guard';
  * Manages CRUD operations for setup documents and device synchronization.
  */
 @ApiTags('Setups (Device Configuration)')
-@ApiBearerAuth('access-token')
 @Controller('setups')
 export class SetupController {
   constructor(private readonly setupService: SetupService) {}
@@ -43,7 +45,9 @@ export class SetupController {
    * @param body - The setup payload containing configuration data
    * @returns The created setup document
    */
-  @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles(Role.Admin)
+  @ApiCookieAuth('jwt')
   @ApiOperation({ summary: 'Create a Setup document manually' })
   @ApiBody({ type: SetupPayload })
   @ApiResponse({ status: 201, description: 'Setup created', type: Setup })
@@ -57,7 +61,9 @@ export class SetupController {
    *
    * @returns Array of all setup documents
    */
-  @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles(Role.Admin)
+  @ApiCookieAuth('jwt')
   @ApiOperation({ summary: 'Get all setups' })
   @ApiResponse({ status: 200, type: [Setup] })
   @Get()
@@ -71,7 +77,9 @@ export class SetupController {
    * @param id - The setup document ID
    * @returns The setup document matching the provided ID
    */
-  @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles(Role.Admin)
+  @ApiCookieAuth('jwt')
   @ApiOperation({ summary: 'Get setup by ID' })
   @ApiParam({ name: 'id' })
   @ApiResponse({ status: 200, type: Setup })
@@ -86,7 +94,9 @@ export class SetupController {
    * @param flowId - The flow document ID
    * @returns The setup document linked to the specified flow
    */
-  @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles(Role.Admin)
+  @ApiCookieAuth('jwt')
   @ApiOperation({ summary: 'Get setup by Flow ID' })
   @ApiParam({ name: 'flowId' })
   @ApiResponse({ status: 200, type: Setup })
@@ -102,7 +112,9 @@ export class SetupController {
    * @param body - Partial setup payload with fields to update
    * @returns The updated setup document
    */
-  @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles(Role.Admin)
+  @ApiCookieAuth('jwt')
   @ApiOperation({ summary: 'Update setup by ID' })
   @ApiParam({ name: 'id' })
   @ApiBody({ type: SetupPayload })
@@ -117,7 +129,9 @@ export class SetupController {
    *
    * @param id - The setup document ID to delete
    */
-  @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles(Role.Admin)
+  @ApiCookieAuth('jwt')
   @ApiOperation({ summary: 'Delete setup by ID' })
   @ApiParam({ name: 'id' })
   @Delete(':id')

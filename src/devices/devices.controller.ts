@@ -13,16 +13,18 @@ import {
 } from '@nestjs/common';
 import { DevicesService } from './devices.service';
 import { AuthGuard } from '../gaurds/auth/auth.guard';
+import { OwnerGuard } from '../gaurds/auth/owner.guard';
 import { CreateDeviceDto } from './dto/create-device.dto';
 import {
   ApiTags,
   ApiOperation,
-  ApiBearerAuth,
+  ApiCookieAuth,
   ApiBody,
   ApiResponse,
   ApiParam,
 } from '@nestjs/swagger';
 import { last } from 'rxjs';
+import { IsOwner } from '../auth/decorators/owner.decorator';
 
 /**
  * DevicesController
@@ -32,8 +34,8 @@ import { last } from 'rxjs';
  * Used by mobile applications to manage IoT devices.
  */
 @ApiTags('Devices Management (Mobile App)')
-@ApiBearerAuth('access-token')
-@UseGuards(AuthGuard)
+@ApiCookieAuth('jwt')
+@UseGuards(AuthGuard, OwnerGuard)
 @Controller('devices')
 export class DevicesController {
   constructor(private readonly devicesService: DevicesService) {}
@@ -253,6 +255,7 @@ export class DevicesController {
     status: 401,
     description: 'Unauthorized - Invalid or missing user token',
   })
+  @IsOwner({ resource: 'deviceToken', paramKey: 'tokenId' })
   @Delete('token/:tokenId')
   async revokeToken(@Param('tokenId') tokenId: string) {
     return this.devicesService.revokeToken(tokenId);
