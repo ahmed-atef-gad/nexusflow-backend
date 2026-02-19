@@ -13,11 +13,21 @@ export class DefaultAdminSeed implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
-    const email =
-      this.configService.get<string>('DEFAULT_ADMIN_EMAIL')?.trim().toLowerCase() ??
-      'admin@nexusflow';
+    const email = this.configService
+      .get<string>('DEFAULT_ADMIN_EMAIL')
+      ?.trim()
+      .toLowerCase();
+
+    if (!email) {
+      this.logger.warn(
+        'Default admin seed skipped: DEFAULT_ADMIN_EMAIL is missing.'
+      );
+      return;
+    }
+
     const username =
-      this.configService.get<string>('DEFAULT_ADMIN_USERNAME')?.trim() ?? 'admin';
+      this.configService.get<string>('DEFAULT_ADMIN_USERNAME')?.trim() ??
+      'admin';
     const password = this.configService.get<string>('DEFAULT_ADMIN_PASSWORD');
 
     if (!password) {
@@ -33,7 +43,8 @@ export class DefaultAdminSeed implements OnModuleInit {
       return;
     }
 
-    const existingByUsername = await this.usersService.findOneByUsername(username);
+    const existingByUsername =
+      await this.usersService.findOneByUsername(username);
     if (existingByUsername) {
       this.logger.warn(
         `Default admin seed skipped: username "${username}" already exists.`
