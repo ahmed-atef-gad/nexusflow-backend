@@ -9,6 +9,7 @@ import { ModulesModule } from './modules/modules.module';
 import { FlowsModule } from './flows/flows.module';
 import { MqttModule } from './mqtt/mqtt.module';
 import { DevicesModule } from './devices/devices.module';
+import { VerificationModule } from './verification/verification.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { DevicesModule } from './devices/devices.module';
     FlowsModule,
     MqttModule,
     DevicesModule,
+    VerificationModule,
   ],
   controllers: [AppController],
   providers: [AppService],
