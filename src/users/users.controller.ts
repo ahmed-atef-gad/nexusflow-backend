@@ -14,6 +14,7 @@ import {
 import { AuthGuard } from '../gaurds/auth/auth.guard';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { UpdateRolesDto } from './dto/update-roles.dto';
 import { UsersService } from './users.service';
 import {
   ApiBadRequestResponse,
@@ -82,6 +83,17 @@ export class UsersController {
     @Body() updateUserDto: UpdateUserDto
   ) {
     return this.userService.update(id, updateUserDto);
+  }
+  @ApiCreatedResponse({ description: 'Updated user roles' })
+  @ApiBadRequestResponse({ description: 'Bad Request' })
+  @ApiUnauthorizedResponse({ description: 'Unauthorized' })
+  @Patch(':id/roles')
+  @Roles(Role.Admin)
+  async updateUserRoles(
+    @Param('id') id: string,
+    @Body() updateRolesDto: UpdateRolesDto
+  ) {
+    return this.userService.update(id, { roles: updateRolesDto.roles });
   }
   @ApiCreatedResponse({ description: 'show all users' })
   @ApiBadRequestResponse({ description: 'Not Valid ID' })

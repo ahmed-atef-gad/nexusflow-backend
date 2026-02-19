@@ -26,7 +26,7 @@ import { UsersModule } from '../users/users.module';
         heartbeatInterval: 60000,
         ws: {
           enabled: true,
-          port: Number.parseInt(configService.get('MQTT_WS_PORT', ''), 10) || 8884,
+          port: Number.parseInt(configService.get('MQTT_WS_PORT', ''), 10) || 8885,
           path: configService.get('MQTT_WS_PATH', '/mqtt-ws'),
         },
         tls: {
