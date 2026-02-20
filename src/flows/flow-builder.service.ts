@@ -535,8 +535,11 @@ export class FlowBuilderService {
     return { setup: Object.values(setupPins), tasks };
   }
 
-  buildUiFromNodes(nodes: Node[]): UiItem[] {
+  buildUiFromNodes(nodes: Node[], deviceMac?: string): UiItem[] {
     const uiElements: UiItem[] = [];
+    const resolvedMac =
+      this.normalizeMacAddress(deviceMac) ?? this.resolveDeviceMac(nodes);
+    const commandTopic = resolvedMac ? `esp/${resolvedMac}/cmd` : 'esp/cmd';
     nodes.forEach((node) => {
       const module = node.data;
       if (module.moduleId.startsWith('ESP32-gpio-output')) {
@@ -555,7 +558,7 @@ export class FlowBuilderService {
             pin: pinNumber,
             responseTopic: `esp/${node.id}/response`,
             moduleType: 'output',
-            topic: `esp/cmd`,
+            topic: commandTopic,
           });
         }
       } else {
@@ -569,6 +572,30 @@ export class FlowBuilderService {
       }
     });
     return uiElements;
+  }
+
+  private normalizeMacAddress(macAddress?: string): string | undefined {
+    if (!macAddress) return undefined;
+    const trimmed = macAddress.trim();
+    if (!trimmed) return undefined;
+    return trimmed.toUpperCase();
+  }
+
+  private resolveDeviceMac(nodes: Node[]): string | undefined {
+    for (const node of nodes) {
+      const vars = node.data?.variables as Record<string, unknown> | undefined;
+      if (!vars) continue;
+      const candidate =
+        vars['macAddress'] ||
+        vars['deviceMac'] ||
+        vars['mac'] ||
+        vars['mac_address'];
+      if (typeof candidate === 'string') {
+        const normalized = this.normalizeMacAddress(candidate);
+        if (normalized) return normalized;
+      }
+    }
+    return undefined;
   }
 
   /**
