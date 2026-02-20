@@ -18,5 +18,6 @@ import { VerificationService } from './verification.service';
   ],
   controllers: [VerificationController],
   providers: [VerificationService, SmtpMailService],
+  exports: [VerificationService],
 })
 export class VerificationModule {}
