@@ -537,6 +537,8 @@ export class FlowBuilderService {
 
   buildUiFromNodes(nodes: Node[]): UiItem[] {
     const uiElements: UiItem[] = [];
+    const deviceMac = this.resolveDeviceMac(nodes);
+    const commandTopic = deviceMac ? `esp/${deviceMac}/cmd` : 'esp/cmd';
     nodes.forEach((node) => {
       const module = node.data;
       if (module.moduleId.startsWith('ESP32-gpio-output')) {
@@ -555,7 +557,7 @@ export class FlowBuilderService {
             pin: pinNumber,
             responseTopic: `esp/${node.id}/response`,
             moduleType: 'output',
-            topic: `esp/cmd`,
+            topic: commandTopic,
           });
         }
       } else {
@@ -569,6 +571,22 @@ export class FlowBuilderService {
       }
     });
     return uiElements;
+  }
+
+  private resolveDeviceMac(nodes: Node[]): string | undefined {
+    for (const node of nodes) {
+      const vars = node.data?.variables as Record<string, unknown> | undefined;
+      if (!vars) continue;
+      const candidate =
+        vars['macAddress'] ||
+        vars['deviceMac'] ||
+        vars['mac'] ||
+        vars['mac_address'];
+      if (typeof candidate === 'string' && candidate.trim().length > 0) {
+        return candidate.trim().toUpperCase();
+      }
+    }
+    return undefined;
   }
 
   /**
