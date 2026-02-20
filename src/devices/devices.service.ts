@@ -253,6 +253,11 @@ export class DevicesService {
       throw new NotFoundException(`Device with ID ${deviceId} not found`);
     }
 
+    await this.flowsService.rebuildUiForFlow(
+      flowId,
+      updatedDevice.macAddress
+    );
+
     await this.mqttService.publishDeviceFlowChanged(
       updatedDevice.macAddress,
       flowId,

@@ -125,6 +125,24 @@ export class FlowsService {
     };
   }
 
+  async rebuildUiForFlow(flowId: string, deviceMac?: string): Promise<any> {
+    if (!isValidObjectId(flowId)) {
+      throw new BadRequestException('Invalid id format');
+    }
+
+    const flow = await this.flowModel.findById(flowId).exec();
+    if (!flow) {
+      throw new NotFoundException(`Flow with ID ${flowId} not found`);
+    }
+
+    const uiData = this.flowBuilderService.buildUiFromNodes(
+      flow.nodes ?? [],
+      deviceMac
+    );
+    await this.uiService.upsertByFlowId(flowId, uiData);
+    return uiData;
+  }
+
   async update(id: string, userId: string, updatedFlow: Flow): Promise<any> {
     if (!isValidObjectId(id)) {
       throw new BadRequestException('Invalid id format');
@@ -138,6 +156,16 @@ export class FlowsService {
 
     if (!flow) {
       throw new NotFoundException(`Flow with ID ${id} not found`);
+    }
+
+    let device: { macAddress: string } | null = null;
+    try {
+      device = await this.devicesService.findByActiveFlowId(id);
+    } catch (error) {
+      if (!(error instanceof NotFoundException)) {
+        throw error;
+      }
+      device = null;
     }
 
     // Explicitly type these variables so TypeScript knows they aren't just "null"
@@ -154,7 +182,10 @@ export class FlowsService {
         updatedFlow.nodes,
         updatedFlow.edges
       );
-      uiData = this.flowBuilderService.buildUiFromNodes(updatedFlow.nodes);
+      uiData = this.flowBuilderService.buildUiFromNodes(
+        updatedFlow.nodes,
+        device?.macAddress
+      );
 
       // Extract the setup array and pass it to upsertByFlowId
       await this.setupService.upsertByFlowId(id, setupData);
@@ -171,15 +202,6 @@ export class FlowsService {
       logicData = l?.program;
       const u = await this.uiService.findByFlowId(id);
       uiData = u?.uiItems;
-    }
-    let device;
-    try {
-      device = await this.devicesService.findByActiveFlowId(id);
-    } catch (error) {
-      if (!(error instanceof NotFoundException)) {
-        throw error;
-      }
-      device = null;
     }
     if (device) {
       await this.mqttService.publishFlowLastUpdateChanged(
