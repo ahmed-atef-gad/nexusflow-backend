@@ -4,12 +4,14 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { RegisterUserDto } from './dto/register-user.dto';
+import { VerificationService } from 'src/verification/verification.service';
 
 @Injectable()
 export class AuthService {
   constructor(
     private usersService: UsersService,
-    private jwtService: JwtService
+    private jwtService: JwtService,
+    private verificationService: VerificationService
   ) {}
 
   private normalizeEmail(email: string): string {
@@ -65,10 +67,7 @@ export class AuthService {
       const tokenVersion = await this.usersService.getTokenVersionById(
         decoded.sub
       );
-      if (
-        tokenVersion === null ||
-        decoded.token_version !== tokenVersion
-      ) {
+      if (tokenVersion === null || decoded.token_version !== tokenVersion) {
         throw new UnauthorizedException('Invalid token');
       }
       const user = await this.usersService.getUserById(decoded.sub);
@@ -126,6 +125,11 @@ export class AuthService {
       const createdUser = await this.usersService.register(userCreationData);
       // Don't return the password hash
       const { password, ...result } = createdUser.toObject();
+
+      await this.verificationService.generateOtpForEmail({
+        email: normalizedEmail,
+      });
+
       return result;
     } catch (error) {
       // Handle errors (e.g., unique email constraint)
