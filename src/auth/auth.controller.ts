@@ -34,54 +34,6 @@ import type { Response, Request } from 'express';
 export class AuthController {
   constructor(private authService: AuthService) {}
 
-  /**
-   * Get the authenticated user's profile.
-   *
-   * @route GET /auth/profile
-   * @auth Cookie `jwt` (HttpOnly)
-   * @returns User profile with a fresh MQTT password
-   */
-  @ApiOperation({
-    summary: 'Get current user profile',
-    description:
-      'Returns the authenticated user profile based on the `jwt` cookie and refreshes the MQTT password.',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'User profile fetched successfully',
-    schema: {
-      example: {
-        _id: '507f1f77bcf86cd799439011',
-        username: 'john_doe',
-        email: 'john@example.com',
-        roles: ['User'],
-        is_active: true,
-        email_verified: false,
-        mqtt_password: 'a1b2c3d4e5f6g7h8',
-        createdAt: '2024-02-10T10:30:00Z',
-        updatedAt: '2024-02-10T10:30:00Z',
-      },
-    },
-  })
-  @ApiUnauthorizedResponse({
-    description: 'Unauthorized - Invalid or missing token',
-    schema: {
-      example: {
-        statusCode: 401,
-        message: 'Invalid token',
-        error: 'Unauthorized',
-      },
-    },
-  })
-  @Get('profile')
-  async getProfile(@Req() request: Request) {
-    const token = request.cookies['jwt'];
-    if (!token) {
-      throw new UnauthorizedException('No token found');
-    }
-    const userProfile = await this.authService.getProfile(token);
-    return userProfile;
-  }
 
   /**
    * Register a new user and set auth cookie.
