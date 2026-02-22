@@ -212,9 +212,11 @@ export class SetupController {
     const setupConfig = await this.setupService.findForDeviceContext(device);
 
     return {
-      message: 'Here is your config',
+      message: setupConfig
+        ? 'Here is your config'
+        : 'No config found for this device',
       device: { macAddress: device.macAddress },
-      setup: setupConfig?.elements ?? [],
+      setup: setupConfig?.elements ?? null,
     };
   }
 }
