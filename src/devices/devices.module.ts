@@ -2,6 +2,7 @@ import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { DevicesService } from './devices.service';
 import { DevicesController } from './devices.controller';
+import { DeviceRegistrationController } from './device-registration.controller';
 import { Device, DeviceSchema } from './schemas/device.schema';
 import { DeviceToken, DeviceTokenSchema } from './schemas/device-token.schema';
 import { DeviceAudit, DeviceAuditSchema } from './schemas/device-audit.schema';
@@ -31,7 +32,7 @@ import { OwnerGuard } from '../gaurds/auth/owner.guard';
     UsersModule,
   ],
 
-  controllers: [DevicesController],
+  controllers: [DevicesController, DeviceRegistrationController],
   providers: [DevicesService, DeviceAuthGuard, OwnerGuard],
   exports: [DevicesService, DeviceAuthGuard],
 })
