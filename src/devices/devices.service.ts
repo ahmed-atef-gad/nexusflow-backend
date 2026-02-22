@@ -22,6 +22,10 @@ import {
   DeviceAudit,
   DeviceAuditDocument,
 } from './schemas/device-audit.schema';
+import {
+  DeviceRegistrationCode,
+  DeviceRegistrationCodeDocument,
+} from './schemas/device-registration-code.schema';
 
 @Injectable()
 export class DevicesService {
@@ -31,6 +35,8 @@ export class DevicesService {
     private tokenModel: Model<DeviceTokenDocument>,
     @InjectModel(DeviceAudit.name)
     private auditModel: Model<DeviceAuditDocument>,
+    @InjectModel(DeviceRegistrationCode.name)
+    private registrationCodeModel: Model<DeviceRegistrationCodeDocument>,
     private readonly mqttService: MqttService,
     @Inject(forwardRef(() => FlowsService))
     private readonly flowsService: FlowsService
@@ -38,6 +44,115 @@ export class DevicesService {
 
   private normalizeMacAddress(macAddress: string): string {
     return macAddress.trim().toUpperCase();
+  }
+
+  private generateRegistrationCode(): string {
+    return crypto.randomBytes(4).toString('hex').toUpperCase();
+  }
+
+  async createRegistrationCode(userId: string, expiresInMinutes = 10) {
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new BadRequestException('Invalid User ID');
+    }
+
+    await this.registrationCodeModel.updateMany(
+      {
+        ownerId: new Types.ObjectId(userId),
+        consumedAt: null,
+        expiresAt: { $gt: new Date() },
+      },
+      { $set: { consumedAt: new Date() } }
+    );
+
+    for (let i = 0; i < 5; i++) {
+      const code = this.generateRegistrationCode();
+      const expiresAt = new Date(Date.now() + expiresInMinutes * 60_000);
+
+      const existingActiveCode = await this.registrationCodeModel.findOne({
+        code,
+        consumedAt: null,
+        expiresAt: { $gt: new Date() },
+      });
+
+      if (existingActiveCode) {
+        continue;
+      }
+
+      await this.registrationCodeModel.create({
+        code,
+        ownerId: new Types.ObjectId(userId),
+        expiresAt,
+      });
+
+      return {
+        code,
+        expiresAt,
+        expiresInMinutes,
+      };
+    }
+
+    throw new BadRequestException('Failed to generate registration code');
+  }
+
+  async registerDeviceWithCode(
+    code: string,
+    macAddress: string,
+    name?: string,
+    mqttPass?: string
+  ) {
+    const normalizedCode = code.trim().toUpperCase();
+
+    const registrationCode = await this.registrationCodeModel
+      .findOne({
+        code: normalizedCode,
+        consumedAt: null,
+        expiresAt: { $gt: new Date() },
+      })
+      .sort({ createdAt: -1 });
+
+    if (!registrationCode) {
+      throw new UnauthorizedException('Invalid or expired registration code');
+    }
+    let device;
+    // cheack if device with same mac address already exists    const existingDevice = await this.deviceModel.findOne({
+    const normalizedMac = this.normalizeMacAddress(macAddress);
+    const existingDevice = await this.deviceModel.findOne({
+      macAddress: normalizedMac,
+    });
+
+    if (existingDevice) {
+      if (
+        existingDevice.ownerId.toString() ===
+        registrationCode.ownerId.toString()
+      ) {
+        existingDevice.name = name || existingDevice.name;
+        existingDevice.mqtt_pass = mqttPass || existingDevice.mqtt_pass;
+        await existingDevice.save();
+        device = existingDevice;
+      } else {
+        throw new BadRequestException(
+          'Device with this MAC address already registered to another user'
+        );
+      }
+    } else {
+      device = await this.registerDevice(
+        registrationCode.ownerId.toString(),
+        macAddress,
+        name,
+        mqttPass
+      );
+    }
+
+    await this.registrationCodeModel.updateOne(
+      { _id: registrationCode._id },
+      { $set: { consumedAt: new Date() } }
+    );
+    //generate access token for the device
+    const token = await this.generateDeviceToken(
+      device?._id?.toString() as string
+    );
+
+    return { ...device.toObject(), token };
   }
 
   // Register a new device
@@ -253,10 +368,7 @@ export class DevicesService {
       throw new NotFoundException(`Device with ID ${deviceId} not found`);
     }
 
-    await this.flowsService.rebuildUiForFlow(
-      flowId,
-      updatedDevice.macAddress
-    );
+    await this.flowsService.rebuildUiForFlow(flowId, updatedDevice.macAddress);
 
     await this.mqttService.publishDeviceFlowChanged(
       updatedDevice.macAddress,
