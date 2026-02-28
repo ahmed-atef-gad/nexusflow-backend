@@ -463,7 +463,7 @@ export class FlowBuilderService {
           const taskName = `read${module.moduleId.replace(/-/g, '_')}_${pinNumber}`;
           sensorsTask['PIR'].push({
             taskName,
-            intervalMs: 3000,
+            intervalMs: 1000,
             topic: `esp/${node.id}`,
             pin: pinNumber,
           });
@@ -540,17 +540,31 @@ export class FlowBuilderService {
     const resolvedMac =
       this.normalizeMacAddress(deviceMac) ?? this.resolveDeviceMac(nodes);
     const commandTopic = resolvedMac ? `esp/${resolvedMac}/cmd` : 'esp/cmd';
+
+    const parsePin = (
+      value: string | undefined,
+      moduleName: string,
+      pinKind: 'pin' | 'digital pin' | 'analog pin'
+    ): number | undefined => {
+      if (!value) return undefined;
+      const parsed = parseInt(value, 10);
+      if (isNaN(parsed)) {
+        throw new BadRequestException(
+          `Invalid ${pinKind} configuration for ${moduleName}`
+        );
+      }
+      return parsed;
+    };
+
     nodes.forEach((node) => {
       const module = node.data;
       if (module.moduleId.startsWith('ESP32-gpio-output')) {
-        const pinNumberStr = module.variables?.['pinNumber'];
-        if (pinNumberStr) {
-          const pinNumber = parseInt(pinNumberStr, 10);
-          if (isNaN(pinNumber)) {
-            throw new BadRequestException(
-              `Invalid pin configuration for ${module?.alias || module.name}`
-            );
-          }
+        const pinNumber = parsePin(
+          module.variables?.['pinNumber'],
+          module?.alias || module.name,
+          'pin'
+        );
+        if (pinNumber !== undefined) {
           uiElements.push({
             moduleId: module.moduleId,
             moduleName: module.name,
@@ -561,6 +575,71 @@ export class FlowBuilderService {
             topic: commandTopic,
           });
         }
+        return;
+      }
+
+      if (
+        module.moduleId.startsWith('MQ2-Sensor') ||
+        module.moduleId.startsWith('Rain-Sensor') ||
+        module.moduleId.startsWith('Soil-Sensor')
+      ) {
+        const isDigital = module.variables?.['isDigital'] === 'true';
+        const isAnalog = module.variables?.['isAnalog'] === 'true';
+
+        const digitalPin = parsePin(
+          module.variables?.['digitalPin'],
+          module?.alias || module.name,
+          'digital pin'
+        );
+        const analogPin = parsePin(
+          module.variables?.['analogPin'],
+          module?.alias || module.name,
+          'analog pin'
+        );
+
+        if ((isDigital && digitalPin === undefined) || (isAnalog && analogPin === undefined)) {
+          throw new BadRequestException(
+            `Missing pin configuration for ${module?.alias || module.name}`
+          );
+        }
+
+        uiElements.push({
+          moduleId: module.moduleId,
+          moduleName: module.name,
+          alias: module.alias,
+          moduleType: 'input',
+          topic: `esp/${node.id}`,
+          pin: isDigital ? digitalPin : analogPin,
+          digitalPin,
+          analogPin,
+          isDigital,
+          isAnalog,
+        });
+        return;
+      }
+
+      if (
+        module.moduleId.startsWith('DHT-Sensor') ||
+        module.moduleId.startsWith('PIR-Sensor')
+      ) {
+        const pinNumber = parsePin(
+          module.variables?.['pinNumber'],
+          module?.alias || module.name,
+          'pin'
+        );
+        if (pinNumber === undefined) {
+          throw new BadRequestException(
+            `Missing pin configuration for ${module?.alias || module.name}`
+          );
+        }
+        uiElements.push({
+          moduleId: module.moduleId,
+          moduleName: module.name,
+          alias: module.alias,
+          moduleType: 'input',
+          pin: pinNumber,
+          topic: `esp/${node.id}`,
+        });
       } else {
         uiElements.push({
           moduleId: module.moduleId,

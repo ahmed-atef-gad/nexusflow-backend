@@ -52,6 +52,20 @@ export class UiItem {
 
   @ApiProperty({
     required: false,
+    description: 'Optional digital pin number for dual-mode sensors',
+  })
+  @Prop()
+  digitalPin?: number;
+
+  @ApiProperty({
+    required: false,
+    description: 'Optional analog pin number for dual-mode sensors',
+  })
+  @Prop()
+  analogPin?: number;
+
+  @ApiProperty({
+    required: false,
     description: 'Indicates if this UI item uses a digital pin',
   })
   @Prop()
