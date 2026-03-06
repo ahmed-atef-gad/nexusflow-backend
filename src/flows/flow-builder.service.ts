@@ -20,34 +20,11 @@
   - Output modules use "$prev" to reference the prior step's value.
 */
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Edge as RFEdge } from './types/flow.types';
 import { Node } from './schemas/node.schema';
 import { UiItem } from './schemas/uiItem.schema';
 import { randomInt } from 'crypto';
-
-const readEnvNumber = (name: string, fallback: number): number => {
-  const raw = process.env[name];
-  if (!raw) return fallback;
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
-  return Math.trunc(parsed);
-};
-
-const MIN_INTERVAL_MS = readEnvNumber('MIN_INTERVAL_MS', 250);
-const MAX_INTERVAL_MS = readEnvNumber('MAX_INTERVAL_MS', 60000);
-const DEFAULT_GPIO_INTERVAL_MS = readEnvNumber(
-  'DEFAULT_GPIO_INTERVAL_MS',
-  1000
-);
-const DEFAULT_GPIO_OUTPUT_INTERVAL_MS = readEnvNumber(
-  'DEFAULT_GPIO_OUTPUT_INTERVAL_MS',
-  10000
-);
-const DEFAULT_SENSOR_INTERVAL_MS = readEnvNumber(
-  'DEFAULT_SENSOR_INTERVAL_MS',
-  5000
-);
-const DEFAULT_PIR_INTERVAL_MS = readEnvNumber('DEFAULT_PIR_INTERVAL_MS', 1000);
 
 /**
  * Maps human-readable pin modes (from UI) to numeric protocol codes
@@ -176,6 +153,42 @@ type Task = {
 
 @Injectable()
 export class FlowBuilderService {
+  private readonly minIntervalMs: number;
+  private readonly maxIntervalMs: number;
+  private readonly defaultGpioIntervalMs: number;
+  private readonly defaultGpioOutputIntervalMs: number;
+  private readonly defaultSensorIntervalMs: number;
+  private readonly defaultPirIntervalMs: number;
+
+  constructor(private readonly configService: ConfigService) {
+    this.minIntervalMs = this.readConfigNumber('MIN_INTERVAL_MS', 250);
+    this.maxIntervalMs = this.readConfigNumber('MAX_INTERVAL_MS', 60000);
+    this.defaultGpioIntervalMs = this.readConfigNumber(
+      'DEFAULT_GPIO_INTERVAL_MS',
+      1000
+    );
+    this.defaultGpioOutputIntervalMs = this.readConfigNumber(
+      'DEFAULT_GPIO_OUTPUT_INTERVAL_MS',
+      10000
+    );
+    this.defaultSensorIntervalMs = this.readConfigNumber(
+      'DEFAULT_SENSOR_INTERVAL_MS',
+      5000
+    );
+    this.defaultPirIntervalMs = this.readConfigNumber(
+      'DEFAULT_PIR_INTERVAL_MS',
+      1000
+    );
+  }
+
+  private readConfigNumber(name: string, fallback: number): number {
+    const raw = this.configService.get<string | number>(name);
+    if (raw === undefined || raw === null || raw === '') return fallback;
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+    return Math.trunc(parsed);
+  }
+
   private toOptionalNumber(value: unknown): number | undefined {
     if (value === undefined || value === null || value === '') return undefined;
     if (typeof value === 'number') {
@@ -199,7 +212,10 @@ export class FlowBuilderService {
     if (parsed === undefined) return fallback;
     const normalized = Math.trunc(parsed);
     if (!Number.isFinite(normalized) || normalized <= 0) return fallback;
-    return Math.min(MAX_INTERVAL_MS, Math.max(MIN_INTERVAL_MS, normalized));
+    return Math.min(
+      this.maxIntervalMs,
+      Math.max(this.minIntervalMs, normalized)
+    );
   }
 
   /**
@@ -217,12 +233,12 @@ export class FlowBuilderService {
     const setupPins: Record<number, SetupItem> = {};
     const gpioTask: Task = {
       taskName: 'GpioTask',
-      intervalMs: DEFAULT_GPIO_INTERVAL_MS,
+      intervalMs: this.defaultGpioIntervalMs,
       commands: [],
     };
     const outputTask: Task = {
       taskName: 'GpioOutput',
-      intervalMs: DEFAULT_GPIO_OUTPUT_INTERVAL_MS,
+      intervalMs: this.defaultGpioOutputIntervalMs,
       commands: [],
     };
     let hasGpioIntervalOverride = false;
@@ -267,7 +283,7 @@ export class FlowBuilderService {
             if (moduleInterval !== undefined) {
               const effectiveInterval = this.resolveInterval(
                 moduleInterval,
-                DEFAULT_GPIO_INTERVAL_MS
+                this.defaultGpioIntervalMs
               );
               if (!hasGpioIntervalOverride) {
                 gpioTask.intervalMs = effectiveInterval;
@@ -308,7 +324,7 @@ export class FlowBuilderService {
             if (moduleInterval !== undefined) {
               const effectiveInterval = this.resolveInterval(
                 moduleInterval,
-                DEFAULT_GPIO_OUTPUT_INTERVAL_MS
+                this.defaultGpioOutputIntervalMs
               );
               if (!hasOutputIntervalOverride) {
                 outputTask.intervalMs = effectiveInterval;
@@ -364,7 +380,7 @@ export class FlowBuilderService {
             taskName,
             intervalMs: this.resolveInterval(
               module.variables?.intervalMs,
-              DEFAULT_SENSOR_INTERVAL_MS
+              this.defaultSensorIntervalMs
             ),
             topic: `esp/${node.id}`,
             pin: pinNumber,
@@ -387,7 +403,7 @@ export class FlowBuilderService {
             taskName,
             intervalMs: this.resolveInterval(
               module.variables?.intervalMs,
-              DEFAULT_PIR_INTERVAL_MS
+              this.defaultPirIntervalMs
             ),
             topic: `esp/${node.id}`,
             pin: pinNumber,
@@ -424,7 +440,7 @@ export class FlowBuilderService {
             taskName,
             intervalMs: this.resolveInterval(
               module.variables?.intervalMs,
-              DEFAULT_SENSOR_INTERVAL_MS
+              this.defaultSensorIntervalMs
             ),
             topic: `esp/${node.id}`,
             digitalPin: digitalPin,
