@@ -1,7 +1,18 @@
-import { APP_FILTER } from '@nestjs/core';
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { ApiProperty } from '@nestjs/swagger';
 import { Schema as MongooseSchema } from 'mongoose';
+
+@Schema({ _id: false })
+export class NodeDataVariables {
+  @ApiProperty() @Prop() id: string;
+  @ApiProperty() @Prop() pinNumber?: number;
+  @ApiProperty() @Prop() analogPin?: number;
+  @ApiProperty() @Prop() digitalPin?: number;
+  @ApiProperty() @Prop() intervalMs?: number;
+  @ApiProperty() @Prop() isDigital?: boolean;
+  @ApiProperty() @Prop() isAnalog?: boolean;
+}
+const NodeDataVariablesSchema = SchemaFactory.createForClass(NodeDataVariables);
 
 @Schema({ _id: false })
 export class NodeData {
@@ -19,8 +30,8 @@ export class NodeData {
   @Prop({ type: MongooseSchema.Types.Mixed })
   options: any;
   @ApiProperty({ required: false })
-  @Prop({ type: MongooseSchema.Types.Mixed })
-  variables: any;
+  @Prop({ type: NodeDataVariablesSchema, default: {} })
+  variables: NodeDataVariables;
 }
 const NodeDataSchema = SchemaFactory.createForClass(NodeData);
 

@@ -23,24 +23,31 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { Edge as RFEdge } from './types/flow.types';
 import { Node } from './schemas/node.schema';
 import { UiItem } from './schemas/uiItem.schema';
+import { randomInt } from 'crypto';
 
-// | Name | Dec | Hex | Implemented in runtime command handler |
-// | --- | --- | --- | --- |
-// | `INSTANT_EXE` | `1` | `0x01` | Special handling in MQTT callback |
-// | `CMD_SET_DAC` | `9` | `0x09` | Setup flow (`executorSetup`) |
-// | `CMD_SET_PIN_MODE` | `16` | `0x10` | Setup flow (`executorSetup`) |
-// | `CMD_SET_PIN_VALUE` | `17` | `0x11` | Yes |
-// | `CMD_GET_PIN_VALUE` | `18` | `0x12` | Yes |
-// | `CMD_TOGGLE_PIN_VALUE` | `19` | `0x13` | Yes |
-// | `CMD_ANALOG_READ` | `32` | `0x20` | Yes |
-// | `CMD_ANALOG_WRITE` | `33` | `0x21` | Yes |
-// | `CMD_PWM_READ` | `34` | `0x22` | Yes |
-// | `CMD_DAC_WRITE` | `36` | `0x24` | Yes |
-// | `CMD_DAC_READ` | `37` | `0x25` | Yes |
-// | `CMD_DHT_READ` | `48` | `0x30` | Defined but not handled in `executorLogic` |
-// | `CMD_FC28_READ` | `49` | `0x31` | Yes |
-// | `CMD_RAIN_READ` | `51` | `0x33` | Yes |
-// | `CMD_MQ2_READ` | `52` | `0x34` | Yes |
+const readEnvNumber = (name: string, fallback: number): number => {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.trunc(parsed);
+};
+
+const MIN_INTERVAL_MS = readEnvNumber('MIN_INTERVAL_MS', 250);
+const MAX_INTERVAL_MS = readEnvNumber('MAX_INTERVAL_MS', 60000);
+const DEFAULT_GPIO_INTERVAL_MS = readEnvNumber(
+  'DEFAULT_GPIO_INTERVAL_MS',
+  1000
+);
+const DEFAULT_GPIO_OUTPUT_INTERVAL_MS = readEnvNumber(
+  'DEFAULT_GPIO_OUTPUT_INTERVAL_MS',
+  10000
+);
+const DEFAULT_SENSOR_INTERVAL_MS = readEnvNumber(
+  'DEFAULT_SENSOR_INTERVAL_MS',
+  5000
+);
+const DEFAULT_PIR_INTERVAL_MS = readEnvNumber('DEFAULT_PIR_INTERVAL_MS', 1000);
 
 /**
  * Maps human-readable pin modes (from UI) to numeric protocol codes
@@ -95,7 +102,7 @@ export type SetupItem = {
 export type FlowStep = {
   id: string;
   moduleId: string;
-  variables?: Record<string, string>;
+  variables?: Record<string, string | number | boolean>;
   next?: string | null;
   topic?: string;
 };
@@ -167,166 +174,34 @@ type Task = {
   };
 };
 
-// example setup and task to be generated from nodes
-// const char* setupJson = R"({
-//   "setup":[
-//     {"cmd":16 ,"pin":33,"mode":1},
-//     {"cmd":16 ,"pin":19,"mode":5}
-//       ]
-// })";
-
-// const char* logicJson = R"({
-//   "tasks":
-//   [
-//     {
-//      "gpioOutput":{
-//         "taskName":"GpioOutput",
-//         "intervalMs":30000,
-//         "commands":[
-//         {
-//            "cmd":32,
-//            "pin":33,
-//            "topic":"esp/${node.id}/response"
-//         }]
-//       }
-  //   },
-//
-//     {
-//       "gpio":{
-//         "taskName":"GpioTask",
-//         "intervalMs":3000,
-//         "commands":[
-//         {
-//            "cmd":32,
-//            "pin":33,
-//            "topic":"esp/analog1"
-//         },
-//         {
-//            "cmd":18,
-//            "pin":19,
-//            "topic":"esp/pin19"
-//           }]
-//       }
-//     },
-//     {
-//       "sensors":[
-//       {
-//         "DHT":[{
-//         "taskName":"readDHT22",
-//         "intervalMs":3000,
-//         "topic":"esp/DHT_32",
-//         "pin":32,
-//         "type":11}
-//         ]
-//       },
-//       {
-//         "PIR":[{
-//         "taskName":"readPIR_34",
-//         "intervalMs":4000,
-//         "topic":"esp/PIR_34",
-//         "pin":14}
-//         ]
-//       }
-//       ]
-//     }
-//   ]
-// })";
-
-// export const modules: Module[] = [
-//   {
-//     moduleId: "ESP32-gpio-input",
-//     name: "Digital Input",
-//     pinMode: "INPUT",
-//     ports: "source",
-//     icon: PlugZap,
-//     color: "from-amber-300 to-orange-500",
-//     category: "Hardware",
-//     options: {},
-//   },
-//   {
-//     moduleId: "ESP32-gpio-input-pullup",
-//     name: "Digital Input (Pullup)",
-//     pinMode: "INPUT_PULLUP",
-//     ports: "source",
-//     icon: PlugZap,
-//     color: "from-amber-300 to-orange-500",
-//     category: "Hardware",
-//     options: {},
-//   },
-//   {
-//     moduleId: "ESP32-gpio-input-analog",
-//     name: "Analog Input",
-//     pinMode: "ANALOG",
-//     ports: "source",
-//     icon: PlugZap,
-//     color: "from-amber-300 to-orange-500",
-//     category: "Hardware",
-//     options: {},
-//   },
-//   {
-//     moduleId: "ESP32-gpio-output",
-//     name: "Digital Output",
-//     pinMode: "OUTPUT",
-//     ports: "target",
-//     icon: LucideZap,
-//     color: "from-green-500 to-lime-500",
-
-//     category: "Hardware",
-//     options: {},
-//   },
-//   {
-//     moduleId: "ESP32-gpio-output-pwm",
-//     name: "PWM Output",
-//     pinMode: "PWM",
-//     ports: "target",
-//     icon: LucideZap,
-//     color: "from-green-500 to-lime-500",
-//     category: "Hardware",
-//     options: {},
-//   },
-//   {
-//     moduleId: "ESP32-gpio-output-dac",
-//     name: "DAC Output",
-//     pinMode: "DAC",
-//     ports: "target",
-//     icon: LucideZap,
-//     color: "from-green-500 to-lime-500",
-//     category: "Hardware",
-//     options: {},
-//   },
-//   {
-//     moduleId: "ESP32-gpio-output-led",
-//     name: "LED",
-//     pinMode: "OUTPUT",
-//     ports: "target",
-//     //give a lightbulb icon
-//     icon: Lightbulb,
-//     color: "from-green-500 to-lime-500",
-//     category: "Hardware",
-//     options: {},
-//   },
-//   {
-//     moduleId: "DHT-Sensor-11",
-//     name: "DHT11",
-//     ports: "source",
-//     icon: Thermometer,
-//     color: "from-blue-400 to-cyan-600",
-//     category: "Sensors",
-//     options: {},
-//   },
-//   {
-//     moduleId: "DHT-Sensor-22",
-//     name: "DHT22",
-//     ports: "source",
-//     icon: Thermometer,
-//     color: "from-blue-400 to-cyan-600",
-//     category: "Sensors",
-//     options: {},
-//   },
-// ];
-
 @Injectable()
 export class FlowBuilderService {
+  private toOptionalNumber(value: unknown): number | undefined {
+    if (value === undefined || value === null || value === '') return undefined;
+    if (typeof value === 'number') {
+      return Number.isFinite(value) ? value : undefined;
+    }
+    if (typeof value === 'string') {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : undefined;
+    }
+    return undefined;
+  }
+
+  private toBoolean(value: unknown): boolean {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'string') return value.toLowerCase() === 'true';
+    return Boolean(value);
+  }
+
+  private resolveInterval(value: unknown, fallback: number): number {
+    const parsed = this.toOptionalNumber(value);
+    if (parsed === undefined) return fallback;
+    const normalized = Math.trunc(parsed);
+    if (!Number.isFinite(normalized) || normalized <= 0) return fallback;
+    return Math.min(MAX_INTERVAL_MS, Math.max(MIN_INTERVAL_MS, normalized));
+  }
+
   /**
    * Build device setup instructions from module nodes.
    * - Validates required variables (`pinNumber`, `pinMode`).
@@ -342,15 +217,16 @@ export class FlowBuilderService {
     const setupPins: Record<number, SetupItem> = {};
     const gpioTask: Task = {
       taskName: 'GpioTask',
-      intervalMs: 1000,
+      intervalMs: DEFAULT_GPIO_INTERVAL_MS,
       commands: [],
     };
-    const outputTask : Task = 
-    {
-        taskName : "GpioOutput",
-        intervalMs: 30000,
-        commands : []
-    }
+    const outputTask: Task = {
+      taskName: 'GpioOutput',
+      intervalMs: DEFAULT_GPIO_OUTPUT_INTERVAL_MS,
+      commands: [],
+    };
+    let hasGpioIntervalOverride = false;
+    let hasOutputIntervalOverride = false;
     const sensorsTask: Record<string, Task[]> = {};
     nodes.forEach((node) => {
       const module = node.data;
@@ -358,13 +234,11 @@ export class FlowBuilderService {
         module.moduleId.startsWith('ESP32-gpio-input') ||
         module.moduleId.startsWith('ESP32-gpio-output')
       ) {
-        const pinNumberStr = module.variables?.['pinNumber'];
-        // Frontend sends ModuleType (capital M); keep backwards compatibility with moduleType and pinMode variable
+        const pinNumber = this.toOptionalNumber(module.variables?.pinNumber);
         const pinModeStr = module?.pinMode;
-        if (pinNumberStr && pinModeStr) {
-          const pinNumber = parseInt(pinNumberStr, 10);
+        if (pinNumber !== undefined && pinModeStr) {
           const pinMode = MODE_MAP[pinModeStr];
-          if (isNaN(pinNumber) || pinMode === undefined) {
+          if (pinMode === undefined) {
             throw new BadRequestException(
               `Invalid pin configuration for ${module?.alias || module.name}`
             );
@@ -387,6 +261,25 @@ export class FlowBuilderService {
           setupPins[pinNumber] = setupItem;
           // Add to GPIO task commands
           if (module.moduleId.startsWith('ESP32-gpio-input')) {
+            const moduleInterval = this.toOptionalNumber(
+              module.variables?.intervalMs
+            );
+            if (moduleInterval !== undefined) {
+              const effectiveInterval = this.resolveInterval(
+                moduleInterval,
+                DEFAULT_GPIO_INTERVAL_MS
+              );
+              if (!hasGpioIntervalOverride) {
+                gpioTask.intervalMs = effectiveInterval;
+                hasGpioIntervalOverride = true;
+              } else {
+                gpioTask.intervalMs = Math.min(
+                  gpioTask.intervalMs,
+                  effectiveInterval
+                );
+              }
+            }
+
             let cmd = 0;
 
             switch (module.moduleId) {
@@ -409,6 +302,25 @@ export class FlowBuilderService {
               topic: `esp/${node.id}`,
             });
           } else if (module.moduleId.startsWith('ESP32-gpio-output')) {
+            const moduleInterval = this.toOptionalNumber(
+              module.variables?.intervalMs
+            );
+            if (moduleInterval !== undefined) {
+              const effectiveInterval = this.resolveInterval(
+                moduleInterval,
+                DEFAULT_GPIO_OUTPUT_INTERVAL_MS
+              );
+              if (!hasOutputIntervalOverride) {
+                outputTask.intervalMs = effectiveInterval;
+                hasOutputIntervalOverride = true;
+              } else {
+                outputTask.intervalMs = Math.min(
+                  outputTask.intervalMs,
+                  effectiveInterval
+                );
+              }
+            }
+
             let cmd = 0;
             switch (module.moduleId) {
               case 'ESP32-gpio-output':
@@ -440,23 +352,20 @@ export class FlowBuilderService {
       }
 
       if (module.moduleId.startsWith('DHT-Sensor')) {
-        const pinNumberStr = module.variables?.['pinNumber'];
-        if (pinNumberStr) {
-          const pinNumber = parseInt(pinNumberStr, 10);
-          if (isNaN(pinNumber)) {
-            throw new BadRequestException(
-              `Invalid pin configuration for ${module?.alias || module.name}`
-            );
-          }
+        const pinNumber = this.toOptionalNumber(module.variables?.pinNumber);
+        if (pinNumber !== undefined) {
           // Add to DHT sensors task
           if (!sensorsTask['DHT']) {
             sensorsTask['DHT'] = [];
           }
-          const taskName = `read${module.moduleId.replace(/-/g, '_')}_${pinNumber}`;
+          const taskName = this.generateTaskName(module.moduleId, pinNumber);
           const type = module.moduleId === 'DHT-Sensor-11' ? 11 : 22;
           sensorsTask['DHT'].push({
             taskName,
-            intervalMs: 3000,
+            intervalMs: this.resolveInterval(
+              module.variables?.intervalMs,
+              DEFAULT_SENSOR_INTERVAL_MS
+            ),
             topic: `esp/${node.id}`,
             pin: pinNumber,
             type,
@@ -468,21 +377,18 @@ export class FlowBuilderService {
         }
       }
       if (module.moduleId.startsWith('PIR-Sensor')) {
-        const pinNumberStr = module.variables?.['pinNumber'];
-        if (pinNumberStr) {
-          const pinNumber = parseInt(pinNumberStr, 10);
-          if (isNaN(pinNumber)) {
-            throw new BadRequestException(
-              `Invalid pin configuration for ${module?.alias || module.name}`
-            );
-          }
+        const pinNumber = this.toOptionalNumber(module.variables?.pinNumber);
+        if (pinNumber !== undefined) {
           if (!sensorsTask['PIR']) {
             sensorsTask['PIR'] = [];
           }
-          const taskName = `read${module.moduleId.replace(/-/g, '_')}_${pinNumber}`;
+          const taskName = this.generateTaskName(module.moduleId, pinNumber);
           sensorsTask['PIR'].push({
             taskName,
-            intervalMs: 1000,
+            intervalMs: this.resolveInterval(
+              module.variables?.intervalMs,
+              DEFAULT_PIR_INTERVAL_MS
+            ),
             topic: `esp/${node.id}`,
             pin: pinNumber,
           });
@@ -497,38 +403,29 @@ export class FlowBuilderService {
         module.moduleId.startsWith('Rain-Sensor') ||
         module.moduleId.startsWith('Soil-Sensor')
       ) {
-        const analogPinStr = module.variables?.['analogPin'];
-        const digitalPinStr = module.variables?.['digitalPin'];
-        const isDigital = module.variables?.['isDigital'] === 'true';
-        const isAnalog = module.variables?.['isAnalog'] === 'true';
-        if ((isDigital && digitalPinStr) || (isAnalog && analogPinStr)) {
-          let digitalPin: number | undefined;
-          let analogPin: number | undefined;
-          if (isDigital && digitalPinStr) {
-            digitalPin = parseInt(digitalPinStr, 10);
-            if (isNaN(digitalPin)) {
-              throw new BadRequestException(
-                `Invalid digital pin configuration for ${module?.alias || module.name}`
-              );
-            }
-          }
-          if (isAnalog && analogPinStr) {
-            analogPin = parseInt(analogPinStr, 10);
-            if (isNaN(analogPin)) {
-              throw new BadRequestException(
-                `Invalid analog pin configuration for ${module?.alias || module.name}`
-              );
-            }
-          }
+        const analogPin = this.toOptionalNumber(module.variables?.analogPin);
+        const digitalPin = this.toOptionalNumber(module.variables?.digitalPin);
+        const isDigital = this.toBoolean(module.variables?.isDigital);
+        const isAnalog = this.toBoolean(module.variables?.isAnalog);
+        if (
+          (isDigital && digitalPin !== undefined) ||
+          (isAnalog && analogPin !== undefined)
+        ) {
           const sensorType = module.moduleId.split('-')[0]; // e.g., "MQ2", "Rain", "Soil"
           // Add to MQ2 sensors task
           if (!sensorsTask[sensorType]) {
             sensorsTask[sensorType] = [];
           }
-          const taskName = `read${sensorType}_${isDigital ? 'digital' : 'analog'}_${isDigital ? digitalPin : analogPin}`;
+          const taskName = this.generateTaskName(
+            module.moduleId,
+            isDigital ? digitalPin : analogPin
+          );
           sensorsTask[sensorType].push({
             taskName,
-            intervalMs: 3000,
+            intervalMs: this.resolveInterval(
+              module.variables?.intervalMs,
+              DEFAULT_SENSOR_INTERVAL_MS
+            ),
             topic: `esp/${node.id}`,
             digitalPin: digitalPin,
             analogPin: analogPin,
@@ -556,36 +453,24 @@ export class FlowBuilderService {
 
     return { setup: Object.values(setupPins), tasks };
   }
+  private generateTaskName(
+    moduleId: string,
+    pinNumber: number | undefined
+  ): string {
+    //get the first part of the module name before any dashes
+    const baseName = moduleId.split('-')[0];
+    return `${baseName}_${pinNumber ? pinNumber : randomInt(1, 9999)}`;
+  }
 
   buildUiFromNodes(nodes: Node[], deviceMac?: string): UiItem[] {
     const uiElements: UiItem[] = [];
-    const resolvedMac =
-      this.normalizeMacAddress(deviceMac) ?? this.resolveDeviceMac(nodes);
+    const resolvedMac = this.normalizeMacAddress(deviceMac);
     const commandTopic = resolvedMac ? `esp/${resolvedMac}/cmd` : 'esp/cmd';
-
-    const parsePin = (
-      value: string | undefined,
-      moduleName: string,
-      pinKind: 'pin' | 'digital pin' | 'analog pin'
-    ): number | undefined => {
-      if (!value) return undefined;
-      const parsed = parseInt(value, 10);
-      if (isNaN(parsed)) {
-        throw new BadRequestException(
-          `Invalid ${pinKind} configuration for ${moduleName}`
-        );
-      }
-      return parsed;
-    };
 
     nodes.forEach((node) => {
       const module = node.data;
       if (module.moduleId.startsWith('ESP32-gpio-output')) {
-        const pinNumber = parsePin(
-          module.variables?.['pinNumber'],
-          module?.alias || module.name,
-          'pin'
-        );
+        const pinNumber = module.variables?.pinNumber;
         if (pinNumber !== undefined) {
           uiElements.push({
             moduleId: module.moduleId,
@@ -605,21 +490,16 @@ export class FlowBuilderService {
         module.moduleId.startsWith('Rain-Sensor') ||
         module.moduleId.startsWith('Soil-Sensor')
       ) {
-        const isDigital = module.variables?.['isDigital'] === 'true';
-        const isAnalog = module.variables?.['isAnalog'] === 'true';
+        const isDigital = module.variables?.isDigital;
+        const isAnalog = module.variables?.isAnalog;
 
-        const digitalPin = parsePin(
-          module.variables?.['digitalPin'],
-          module?.alias || module.name,
-          'digital pin'
-        );
-        const analogPin = parsePin(
-          module.variables?.['analogPin'],
-          module?.alias || module.name,
-          'analog pin'
-        );
+        const digitalPin = module.variables?.digitalPin;
+        const analogPin = module.variables?.analogPin;
 
-        if ((isDigital && digitalPin === undefined) || (isAnalog && analogPin === undefined)) {
+        if (
+          (isDigital && digitalPin === undefined) ||
+          (isAnalog && analogPin === undefined)
+        ) {
           throw new BadRequestException(
             `Missing pin configuration for ${module?.alias || module.name}`
           );
@@ -644,11 +524,7 @@ export class FlowBuilderService {
         module.moduleId.startsWith('DHT-Sensor') ||
         module.moduleId.startsWith('PIR-Sensor')
       ) {
-        const pinNumber = parsePin(
-          module.variables?.['pinNumber'],
-          module?.alias || module.name,
-          'pin'
-        );
+        const pinNumber = module.variables?.pinNumber;
         if (pinNumber === undefined) {
           throw new BadRequestException(
             `Missing pin configuration for ${module?.alias || module.name}`
@@ -682,23 +558,6 @@ export class FlowBuilderService {
     return trimmed.toUpperCase();
   }
 
-  private resolveDeviceMac(nodes: Node[]): string | undefined {
-    for (const node of nodes) {
-      const vars = node.data?.variables as Record<string, unknown> | undefined;
-      if (!vars) continue;
-      const candidate =
-        vars['macAddress'] ||
-        vars['deviceMac'] ||
-        vars['mac'] ||
-        vars['mac_address'];
-      if (typeof candidate === 'string') {
-        const normalized = this.normalizeMacAddress(candidate);
-        if (normalized) return normalized;
-      }
-    }
-    return undefined;
-  }
-
   /**
    * Convert a graph of nodes and edges into executable command steps.
    * Steps are grouped per linear path; simple fan-outs (one input → many
@@ -714,280 +573,249 @@ export class FlowBuilderService {
     nodes: Node[],
     edges: RFEdge[]
   ): CommandExtraction {
-    const { flows: linear, warnings } = this.buildFlowFromGraph(nodes, edges);
-
-    const mapStep = (s: FlowStep): CommandStep => {
-      // Topic should be the node id to uniquely route results per node
-      const topic = `esp/${s.id}`;
-      // infer command by module id
-      const vars = s.variables || {};
-      const pin = vars['pinNumber'] ? Number(vars['pinNumber']) : undefined;
-      const pinMode = vars['pinMode'];
-      let command: CommandStep['command'] | undefined;
-
-      switch (s.moduleId) {
-        case 'ESP32-gpio-input': {
-          if (pin !== undefined) {
-            const isAnalog = pinMode === 'ANALOG';
-            command = {
-              cmd: isAnalog ? CMD_MAP['ANALOG_READ'] : CMD_MAP['GET_PIN_VALUE'],
-              pin,
-              topic,
-            };
-          }
-          break;
-        }
-        case 'ESP32-gpio-output': {
-          if (pin !== undefined) {
-            // Value is taken from previous step result at runtime
-            if (pinMode === 'PWM' || pinMode === 'DAC') {
-              command = {
-                cmd:
-                  pinMode === 'PWM'
-                    ? CMD_MAP['ANALOG_WRITE']
-                    : CMD_MAP['DAC_WRITE'],
-                pin,
-                value: '$prev',
-                topic,
-              };
-            } else {
-              command = {
-                cmd: CMD_MAP['SET_PIN_VALUE'],
-                pin,
-                value: '$prev',
-                topic,
-              };
-            }
-          }
-          break;
-        }
-        case 'MQTT-publish': {
-          // Not an ESP pin command; use report topic only. Frontend can handle publish side.
-          command = undefined;
-          break;
-        }
-        default: {
-          // Unknown module; emit no command, still chain via next and topic
-          command = undefined;
-        }
-      }
-
-      return {
-        id: s.id,
-        moduleId: s.moduleId,
-        command,
-        reportTopic: topic,
-        next: s.next ?? null,
-      };
-    };
-
-    // Group linear paths that represent a simple fan-out: [input] -> [output]
-    const byFirst: Map<string, FlowStep[][]> = new Map();
-    for (const p of linear) {
-      if (p.length >= 2) {
-        const key = p[0].id;
-        if (!byFirst.has(key)) byFirst.set(key, []);
-        byFirst.get(key)!.push(p);
-      }
-    }
-
-    const groupedFirstIds = new Set<string>();
-    const outFlows: CommandStep[][] = [];
-
-    for (const [firstId, paths] of byFirst.entries()) {
-      const allAreFanout =
-        paths.length > 1 &&
-        paths.every(
-          (p) => p.length === 2 && p[1].moduleId === 'ESP32-gpio-output'
-        );
-      if (!allAreFanout) continue;
-
-      groupedFirstIds.add(firstId);
-      const first = paths[0][0];
-      const firstCmd = mapStep(first);
-
-      const fanOutCommands: NonNullable<CommandStep['commands']> = [];
-      for (const p of paths) {
-        const out = p[1];
-        const vars = out.variables || {};
-        const pin = vars['pinNumber'] ? Number(vars['pinNumber']) : undefined;
-        const pinMode = vars['pinMode'];
-        if (pin === undefined) continue;
-        if (pinMode === 'PWM' || pinMode === 'DAC') {
-          fanOutCommands.push({
-            cmd: CMD_MAP['ANALOG_WRITE'],
-            pin,
-            value: '$prev',
-            topic: out.id,
-          });
-        } else if (pinMode === 'OUTPUT_TOGGLE') {
-          fanOutCommands.push({
-            condition: '$prev === 1',
-            cmd: CMD_MAP['TOGGLE_PIN_VALUE'],
-            pin,
-            topic: out.id,
-          });
-        } else {
-          fanOutCommands.push({
-            cmd: CMD_MAP['SET_PIN_VALUE'],
-            pin,
-            value: '$prev',
-            topic: out.id,
-          });
-        }
-      }
-
-      const fanOutStep: CommandStep = {
-        id: `${first.id}::fanout`,
-        moduleId: 'fanout',
-        commands: fanOutCommands,
-        reportTopic: `${first.id}::fanout`,
-        next: null,
-      };
-
-      outFlows.push([firstCmd, fanOutStep]);
-    }
-
-    for (const p of linear) {
-      if (p.length >= 2 && groupedFirstIds.has(p[0].id)) continue; // already included in grouped
-      outFlows.push(p.map(mapStep));
-    }
-
-    return { flows: outFlows, warnings };
-  }
-
-  /**
-   * Extract linear flow paths from a directed graph.
-   * - Identifies start nodes (in-degree 0 and out-degree > 0).
-   * - DFS traverses successors; records a path for each terminal or branch.
-   * - Detects cycles, emitting warnings and cutting the path.
-   * - Includes isolated nodes as single-step flows.
-   */
-  private buildFlowFromGraph(nodes: Node[], edges: RFEdge[]): FlowExtraction {
-    const warnings: string[] = [];
-    // Map node id → node for O(1) lookup
-    const nodeMap = new Map<string, Node>();
-    for (const n of nodes) nodeMap.set(n.id, n);
-
-    // Build adjacency lists for outgoing and incoming edges
-    const outgoing = new Map<string, string[]>();
-    const incoming = new Map<string, string[]>();
-    for (const e of edges) {
-      if (!e.source || !e.target) continue;
-
-      if (!outgoing.has(e.source)) outgoing.set(e.source, []);
-
-      outgoing.get(e.source)!.push(e.target);
-
-      if (!incoming.has(e.target)) incoming.set(e.target, []);
-
-      incoming.get(e.target)!.push(e.source);
-    }
-
-    // Detect start nodes: no incoming, at least one outgoing
-    const starts: string[] = [];
-    for (const n of nodes) {
-      const inDeg = (incoming.get(n.id) || []).length;
-      const outDeg = (outgoing.get(n.id) || []).length;
-      if (inDeg === 0 && outDeg > 0) {
-        starts.push(n.id);
-      }
-    }
-
-    const flows: FlowStep[][] = [];
-
-    // Convert a ModuleNode to a basic FlowStep template
-    const getStep = (n: Node): FlowStep => {
-      const data = n.data;
-      // Normalize pin mode onto variables so downstream command mapping sees it
-      const pinMode = data?.pinMode;
-      return {
-        id: n.id,
-        moduleId: data.moduleId,
-        variables: {
-          ...data.variables,
-          ...(pinMode ? { pinMode } : {}),
-        },
-      };
-    };
-
-    // Deterministic traversal order
-    const outsOf = (id: string): string[] =>
-      (outgoing.get(id) || []).slice().sort();
-
-    // Terminal when module is MQTT-publish (publishes to topic and stops)
-    const isTerminalMqtt = (n: Node) => n.data.id === 'MQTT-publish';
-
-    // Depth-first traversal, cloning path and visited per branch
-    const dfs = (
-      currentId: string,
-      pathSoFar: FlowStep[],
-      visited: Set<string>
-    ) => {
-      if (visited.has(currentId)) {
-        warnings.push(`Detected cycle at node ${currentId}; stopping path.`);
-        if (pathSoFar.length) flows.push(pathSoFar);
-        return;
-      }
-      const n = nodeMap.get(currentId);
-      if (!n) {
-        if (pathSoFar.length) flows.push(pathSoFar);
-        return;
-      }
-
-      const outs = outsOf(currentId);
-      const stepBase = getStep(n);
-
-      if (isTerminalMqtt(n)) {
-        const step: FlowStep = {
-          ...stepBase,
-          next: null,
-          topic: n.data.variables?.['topic'] || n.data.alias || 'esp/cmd',
-        };
-        flows.push([...pathSoFar, step]);
-        return;
-      }
-
-      if (outs.length === 0) {
-        const step: FlowStep = { ...stepBase, next: null };
-        flows.push([...pathSoFar, step]);
-        return;
-      }
-
-      if (outs.length > 1) {
-        warnings.push(
-          `Node ${currentId} has ${outs.length} outgoing edges; creating branches.`
-        );
-      }
-
-      for (const nextId of outs) {
-        const step: FlowStep = { ...stepBase, next: nextId };
-        const nextPath = [...pathSoFar, step];
-        const nextVisited = new Set(visited);
-        nextVisited.add(currentId);
-        dfs(nextId, nextPath, nextVisited);
-      }
-    };
-
-    // Start DFS from each start node
-    for (const startId of starts) {
-      dfs(startId, [], new Set<string>());
-    }
-
-    // Include isolated nodes (no incoming and no outgoing)
-    for (const n of nodes) {
-      const id = n.id;
-      const inDeg = (incoming.get(id) || []).length;
-      const outDeg = (outgoing.get(id) || []).length;
-      if (inDeg === 0 && outDeg === 0) {
-        const step = getStep(n);
-        if (isTerminalMqtt(n)) {
-          step.topic = n.data.variables?.['topic'] || n.data.alias || 'esp/cmd';
-        }
-        flows.push([step]);
-      }
-    }
-
-    return { flows, warnings };
+    //   const { flows: linear, warnings } = this.buildFlowFromGraph(nodes, edges);
+    //   const mapStep = (s: FlowStep): CommandStep => {
+    //     // Topic should be the node id to uniquely route results per node
+    //     const topic = `esp/${s.id}`;
+    //     // infer command by module id
+    //     const vars = s.variables || {};
+    //     const pin = vars['pinNumber'] ? Number(vars['pinNumber']) : undefined;
+    //     const pinMode = vars['pinMode'];
+    //     let command: CommandStep['command'] | undefined;
+    //     switch (s.moduleId) {
+    //       case 'ESP32-gpio-input': {
+    //         if (pin !== undefined) {
+    //           const isAnalog = pinMode === 'ANALOG';
+    //           command = {
+    //             cmd: isAnalog ? CMD_MAP['ANALOG_READ'] : CMD_MAP['GET_PIN_VALUE'],
+    //             pin,
+    //             topic,
+    //           };
+    //         }
+    //         break;
+    //       }
+    //       case 'ESP32-gpio-output': {
+    //         if (pin !== undefined) {
+    //           // Value is taken from previous step result at runtime
+    //           if (pinMode === 'PWM' || pinMode === 'DAC') {
+    //             command = {
+    //               cmd:
+    //                 pinMode === 'PWM'
+    //                   ? CMD_MAP['ANALOG_WRITE']
+    //                   : CMD_MAP['DAC_WRITE'],
+    //               pin,
+    //               value: '$prev',
+    //               topic,
+    //             };
+    //           } else {
+    //             command = {
+    //               cmd: CMD_MAP['SET_PIN_VALUE'],
+    //               pin,
+    //               value: '$prev',
+    //               topic,
+    //             };
+    //           }
+    //         }
+    //         break;
+    //       }
+    //       case 'MQTT-publish': {
+    //         // Not an ESP pin command; use report topic only. Frontend can handle publish side.
+    //         command = undefined;
+    //         break;
+    //       }
+    //       default: {
+    //         // Unknown module; emit no command, still chain via next and topic
+    //         command = undefined;
+    //       }
+    //     }
+    //     return {
+    //       id: s.id,
+    //       moduleId: s.moduleId,
+    //       command,
+    //       reportTopic: topic,
+    //       next: s.next ?? null,
+    //     };
+    //   };
+    //   // Group linear paths that represent a simple fan-out: [input] -> [output]
+    //   const byFirst: Map<string, FlowStep[][]> = new Map();
+    //   for (const p of linear) {
+    //     if (p.length >= 2) {
+    //       const key = p[0].id;
+    //       if (!byFirst.has(key)) byFirst.set(key, []);
+    //       byFirst.get(key)!.push(p);
+    //     }
+    //   }
+    //   const groupedFirstIds = new Set<string>();
+    //   const outFlows: CommandStep[][] = [];
+    //   for (const [firstId, paths] of byFirst.entries()) {
+    //     const allAreFanout =
+    //       paths.length > 1 &&
+    //       paths.every(
+    //         (p) => p.length === 2 && p[1].moduleId === 'ESP32-gpio-output'
+    //       );
+    //     if (!allAreFanout) continue;
+    //     groupedFirstIds.add(firstId);
+    //     const first = paths[0][0];
+    //     const firstCmd = mapStep(first);
+    //     const fanOutCommands: NonNullable<CommandStep['commands']> = [];
+    //     for (const p of paths) {
+    //       const out = p[1];
+    //       const vars = out.variables || {};
+    //       const pin = vars['pinNumber'] ? Number(vars['pinNumber']) : undefined;
+    //       const pinMode = vars['pinMode'];
+    //       if (pin === undefined) continue;
+    //       if (pinMode === 'PWM' || pinMode === 'DAC') {
+    //         fanOutCommands.push({
+    //           cmd: CMD_MAP['ANALOG_WRITE'],
+    //           pin,
+    //           value: '$prev',
+    //           topic: out.id,
+    //         });
+    //       } else if (pinMode === 'OUTPUT_TOGGLE') {
+    //         fanOutCommands.push({
+    //           condition: '$prev === 1',
+    //           cmd: CMD_MAP['TOGGLE_PIN_VALUE'],
+    //           pin,
+    //           topic: out.id,
+    //         });
+    //       } else {
+    //         fanOutCommands.push({
+    //           cmd: CMD_MAP['SET_PIN_VALUE'],
+    //           pin,
+    //           value: '$prev',
+    //           topic: out.id,
+    //         });
+    //       }
+    //     }
+    //     const fanOutStep: CommandStep = {
+    //       id: `${first.id}::fanout`,
+    //       moduleId: 'fanout',
+    //       commands: fanOutCommands,
+    //       reportTopic: `${first.id}::fanout`,
+    //       next: null,
+    //     };
+    //     outFlows.push([firstCmd, fanOutStep]);
+    //   }
+    //   for (const p of linear) {
+    //     if (p.length >= 2 && groupedFirstIds.has(p[0].id)) continue; // already included in grouped
+    //     outFlows.push(p.map(mapStep));
+    //   }
+    //   return { flows: outFlows, warnings };
+    // }
+    // /**
+    //  * Extract linear flow paths from a directed graph.
+    //  * - Identifies start nodes (in-degree 0 and out-degree > 0).
+    //  * - DFS traverses successors; records a path for each terminal or branch.
+    //  * - Detects cycles, emitting warnings and cutting the path.
+    //  * - Includes isolated nodes as single-step flows.
+    //  */
+    // private buildFlowFromGraph(nodes: Node[], edges: RFEdge[]): FlowExtraction {
+    //   const warnings: string[] = [];
+    //   // Map node id → node for O(1) lookup
+    //   const nodeMap = new Map<string, Node>();
+    //   for (const n of nodes) nodeMap.set(n.id, n);
+    //   // Build adjacency lists for outgoing and incoming edges
+    //   const outgoing = new Map<string, string[]>();
+    //   const incoming = new Map<string, string[]>();
+    //   for (const e of edges) {
+    //     if (!e.source || !e.target) continue;
+    //     if (!outgoing.has(e.source)) outgoing.set(e.source, []);
+    //     outgoing.get(e.source)!.push(e.target);
+    //     if (!incoming.has(e.target)) incoming.set(e.target, []);
+    //     incoming.get(e.target)!.push(e.source);
+    //   }
+    //   // Detect start nodes: no incoming, at least one outgoing
+    //   const starts: string[] = [];
+    //   for (const n of nodes) {
+    //     const inDeg = (incoming.get(n.id) || []).length;
+    //     const outDeg = (outgoing.get(n.id) || []).length;
+    //     if (inDeg === 0 && outDeg > 0) {
+    //       starts.push(n.id);
+    //     }
+    //   }
+    //   const flows: FlowStep[][] = [];
+    //   // Convert a ModuleNode to a basic FlowStep template
+    //   const getStep = (n: Node): FlowStep => {
+    //     const data = n.data;
+    //     // Normalize pin mode onto variables so downstream command mapping sees it
+    //     const pinMode = data?.pinMode;
+    //     return {
+    //       id: n.id,
+    //       moduleId: data.moduleId,
+    //       variables: {
+    //         ...data.variables,
+    //         ...(pinMode ? { pinMode } : {}),
+    //       },
+    //     };
+    //   };
+    //   // Deterministic traversal order
+    //   const outsOf = (id: string): string[] =>
+    //     (outgoing.get(id) || []).slice().sort();
+    //   // Terminal when module is MQTT-publish (publishes to topic and stops)
+    //   const isTerminalMqtt = (n: Node) => n.data.id === 'MQTT-publish';
+    //   // Depth-first traversal, cloning path and visited per branch
+    //   const dfs = (
+    //     currentId: string,
+    //     pathSoFar: FlowStep[],
+    //     visited: Set<string>
+    //   ) => {
+    //     if (visited.has(currentId)) {
+    //       warnings.push(`Detected cycle at node ${currentId}; stopping path.`);
+    //       if (pathSoFar.length) flows.push(pathSoFar);
+    //       return;
+    //     }
+    //     const n = nodeMap.get(currentId);
+    //     if (!n) {
+    //       if (pathSoFar.length) flows.push(pathSoFar);
+    //       return;
+    //     }
+    //     const outs = outsOf(currentId);
+    //     const stepBase = getStep(n);
+    //     if (isTerminalMqtt(n)) {
+    //       const step: FlowStep = {
+    //         ...stepBase,
+    //         next: null,
+    //         topic: n.data.variables?.['topic'] || n.data.alias || 'esp/cmd',
+    //       };
+    //       flows.push([...pathSoFar, step]);
+    //       return;
+    //     }
+    //     if (outs.length === 0) {
+    //       const step: FlowStep = { ...stepBase, next: null };
+    //       flows.push([...pathSoFar, step]);
+    //       return;
+    //     }
+    //     if (outs.length > 1) {
+    //       warnings.push(
+    //         `Node ${currentId} has ${outs.length} outgoing edges; creating branches.`
+    //       );
+    //     }
+    //     for (const nextId of outs) {
+    //       const step: FlowStep = { ...stepBase, next: nextId };
+    //       const nextPath = [...pathSoFar, step];
+    //       const nextVisited = new Set(visited);
+    //       nextVisited.add(currentId);
+    //       dfs(nextId, nextPath, nextVisited);
+    //     }
+    //   };
+    //   // Start DFS from each start node
+    //   for (const startId of starts) {
+    //     dfs(startId, [], new Set<string>());
+    //   }
+    //   // Include isolated nodes (no incoming and no outgoing)
+    //   for (const n of nodes) {
+    //     const id = n.id;
+    //     const inDeg = (incoming.get(id) || []).length;
+    //     const outDeg = (outgoing.get(id) || []).length;
+    //     if (inDeg === 0 && outDeg === 0) {
+    //       const step = getStep(n);
+    //       if (isTerminalMqtt(n)) {
+    //         step.topic = n.data.variables?.['topic'] || n.data.alias || 'esp/cmd';
+    //       }
+    //       flows.push([step]);
+    //     }
+    //   }
+    //   return { flows, warnings };
+    return { flows: [], warnings: ['Flow extraction not implemented yet.'] };
   }
 }
