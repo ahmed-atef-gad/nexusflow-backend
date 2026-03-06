@@ -179,6 +179,19 @@ type Task = {
 //   "tasks":
 //   [
 //     {
+//      "gpioOutput":{
+//         "taskName":"GpioOutput",
+//         "intervalMs":30000,
+//         "commands":[
+//         {
+//            "cmd":32,
+//            "pin":33,
+//            "topic":"esp/${node.id}/response"
+//         }]
+//       }
+  //   },
+//
+//     {
 //       "gpio":{
 //         "taskName":"GpioTask",
 //         "intervalMs":3000,
@@ -332,6 +345,12 @@ export class FlowBuilderService {
       intervalMs: 1000,
       commands: [],
     };
+    const outputTask : Task = 
+    {
+        taskName : "GpioOutput",
+        intervalMs: 30000,
+        commands : []
+    }
     const sensorsTask: Record<string, Task[]> = {};
     nodes.forEach((node) => {
       const module = node.data;
@@ -407,7 +426,7 @@ export class FlowBuilderService {
                   `Unsupported module ${module?.alias || module.name}`
                 );
             }
-            gpioTask.commands!.push({
+            outputTask.commands!.push({
               cmd: cmd,
               pin: pinNumber,
               topic: `esp/${node.id}/response`,
@@ -527,6 +546,9 @@ export class FlowBuilderService {
     const tasks: Array<Record<string, any>> = [];
     if (gpioTask.commands && gpioTask.commands.length > 0) {
       tasks.push({ gpio: gpioTask });
+    }
+    if (outputTask.commands && outputTask.commands.length > 0) {
+      tasks.push({ gpioOutput: outputTask });
     }
     if (Object.keys(sensorsTask).length > 0) {
       tasks.push({ sensors: [sensorsTask] });
