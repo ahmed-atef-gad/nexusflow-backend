@@ -49,9 +49,9 @@ export class Module {
 
   @ApiProperty({
     required: false,
-    example: { pinMode: 'INPUT', pinNumber: '4' },
+    example: { pinMode: 'INPUT', pinNumber: 4, intervalMs: 3000 },
   })
-  variables?: Record<string, string>;
+  variables?: Record<string, string | number | boolean>;
 }
 
 export class ModuleNode {
