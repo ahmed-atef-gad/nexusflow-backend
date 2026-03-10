@@ -1,22 +1,13 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  Patch,
-  Param,
-  Delete,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Param, UseGuards } from '@nestjs/common';
 import { UiService } from './ui.service';
-import { UiPayload } from './types/flow.types';
 import {
   ApiTags,
   ApiOperation,
-  ApiResponse,
+  ApiOkResponse,
   ApiParam,
   ApiCookieAuth,
-  ApiBody,
+  ApiUnauthorizedResponse,
+  ApiForbiddenResponse,
 } from '@nestjs/swagger';
 import { AuthGuard } from '../gaurds/auth/auth.guard';
 import { Ui } from './schemas/ui.schema';
@@ -30,9 +21,55 @@ import { OwnerGuard } from '../gaurds/auth/owner.guard';
 export class UiController {
   constructor(private readonly uiService: UiService) {}
 
-  @ApiOperation({ summary: 'Get Ui by Flow ID' })
-  @ApiParam({ name: 'flowId' })
-  @ApiResponse({ status: 200, type: Ui })
+  @ApiOperation({
+    summary: 'Get UI configuration by flow ID',
+    description:
+      'Returns the UI document associated with the given flow. If no UI configuration has been generated or saved for that flow yet, the endpoint returns null.',
+  })
+  @ApiParam({
+    name: 'flowId',
+    description:
+      'MongoDB ObjectId of the flow whose UI configuration should be fetched',
+    example: '507f1f77bcf86cd799439011',
+  })
+  @ApiOkResponse({
+    description:
+      'UI configuration fetched successfully. The response body can be null when the flow exists but has no UI document yet.',
+    schema: {
+      nullable: true,
+      example: {
+        _id: '65f2a6a83b9b2e1a708a0d51',
+        flowId: '507f1f77bcf86cd799439011',
+        commandTopic: 'esp/AA:BB:CC:DD:EE:FF/cmd',
+        resetWifiTopic: 'esp/AA:BB:CC:DD:EE:FF/resetwifi',
+        instantExecutionTopic: 'esp/AA:BB:CC:DD:EE:FF/instant',
+        gpioInputTaskName: 'gpio',
+        gpioOutputTaskName: 'gpioOutput',
+        uiItems: [
+          {
+            moduleId: '65f2a60b3b9b2e1a708a0d42',
+            moduleName: 'Relay',
+            alias: 'Water Pump',
+            taskName: 'pump_control',
+            topic: 'esp/AA:BB:CC:DD:EE:FF/cmd/pump',
+            responseTopic: 'esp/AA:BB:CC:DD:EE:FF/state/pump',
+            moduleType: 'output',
+            pin: 12,
+            isDigital: true,
+          },
+        ],
+        createdAt: '2026-03-10T09:15:00.000Z',
+        updatedAt: '2026-03-10T09:15:00.000Z',
+      },
+    },
+    type: Ui,
+  })
+  @ApiUnauthorizedResponse({
+    description: 'Unauthorized - Missing or invalid authentication cookie',
+  })
+  @ApiForbiddenResponse({
+    description: 'Forbidden - You do not own the requested flow',
+  })
   @IsOwner({ resource: 'flow', paramKey: 'flowId' })
   @Get('flow/:flowId')
   findByFlowId(@Param('flowId') flowId: string) {
