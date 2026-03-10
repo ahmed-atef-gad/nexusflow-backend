@@ -3,6 +3,10 @@ import { ApiProperty } from '@nestjs/swagger';
 import { Document, Schema as MongooseSchema } from 'mongoose';
 import { Flow } from './flow.schema';
 import { UiItem, UiItemSchema } from './uiItem.schema';
+import {
+  INPUT_GPIO_TASK_NAME,
+  OUTPUT_GPIO_TASK_NAME,
+} from '../flow-builder.service';
 
 export type UiDocument = Ui & Document;
 
@@ -16,6 +20,35 @@ export class Ui {
     unique: true,
   })
   flowId: Flow;
+
+  @ApiProperty({ description: 'MQTT topic for sending commands to modules' })
+  @Prop({ type: String, required: false })
+  commandTopic?: string;
+
+  @ApiProperty({
+    description: 'MQTT topic for resetting WiFi credentials on the device',
+  })
+  @Prop({ type: String, required: false })
+  resetWifiTopic?: string;
+
+  @ApiProperty({
+    description: 'MQTT topic for instant execution of tasks on the device',
+  })
+  @Prop({ type: String, required: false })
+  instantExecutionTopic?: string;
+
+  @ApiProperty({
+    description:
+      'The Default gpio input task name for GPIO modules in this flow',
+  })
+  @Prop({ type: String, default: INPUT_GPIO_TASK_NAME })
+  gpioInputTaskName?: string;
+  @ApiProperty({
+    description:
+      'The Default gpio output task name for GPIO modules in this flow',
+  })
+  @Prop({ type: String, default: OUTPUT_GPIO_TASK_NAME })
+  gpioOutputTaskName?: string;
 
   @ApiProperty({ description: 'UI elements for the flow', type: [UiItem] })
   @Prop({ type: [UiItemSchema] })

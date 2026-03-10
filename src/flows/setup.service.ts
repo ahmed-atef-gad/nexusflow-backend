@@ -5,6 +5,7 @@ import { Setup, SetupDocument } from './schemas/setup.schema';
 import { SetupPayload } from './types/flow.types';
 import { Flow, FlowDocument } from './schemas/flow.schema';
 import { DeviceDocument } from 'src/devices/schemas/device.schema';
+import type { SetupObject } from './flow-builder.service';
 
 @Injectable()
 export class SetupService {
@@ -86,9 +87,9 @@ export class SetupService {
   //   return this.setupModel.findOne({ flowId: resolvedFlowId }).exec();
   // }
   async findForDeviceContext(device: DeviceDocument) {
-  if (!device.activeFlowId) return null;
-  return this.setupModel.findOne({ flowId: device.activeFlowId }).exec();
- }
+    if (!device.activeFlowId) return null;
+    return this.setupModel.findOne({ flowId: device.activeFlowId }).exec();
+  }
 
   async update(id: string, data: Partial<SetupPayload>): Promise<Setup> {
     const updated = await this.setupModel
@@ -98,7 +99,7 @@ export class SetupService {
     return updated;
   }
 
-  async upsertByFlowId(flowId: string, elements: any[]): Promise<Setup> {
+  async upsertByFlowId(flowId: string, elements: SetupObject): Promise<Setup> {
     // upsert returns the document, but findOneAndUpdate signature can include null if not found (unlikely with upsert: true)
     // Casting or handling as non-null is usually safe with upsert: true and new: true
     const result = await this.setupModel

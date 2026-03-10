@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Ui, UiDocument } from './schemas/ui.schema';
 import { UiPayload } from './types/flow.types';
 import { UiItem } from './schemas/uiItem.schema';
+import { TopicsData } from './flow-builder.service';
 
 @Injectable()
 export class UiService {
@@ -14,9 +15,17 @@ export class UiService {
     return created.save();
   }
 
-  async upsertByFlowId(flowId: string, uiItems: UiItem[]): Promise<Ui> {
+  async upsertByFlowId(
+    flowId: string,
+    uiItems: UiItem[],
+    topics?: TopicsData
+  ): Promise<Ui> {
     const result = await this.uiModel
-      .findOneAndUpdate({ flowId }, { uiItems }, { upsert: true, new: true })
+      .findOneAndUpdate(
+        { flowId },
+        { uiItems, ...topics },
+        { upsert: true, new: true }
+      )
       .exec();
     return result as Ui;
   }

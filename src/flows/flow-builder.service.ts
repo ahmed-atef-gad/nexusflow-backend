@@ -61,6 +61,9 @@ const CMD_MAP: Record<string, number> = {
   MQ2_READ: 0x34,
 };
 
+export const INPUT_GPIO_TASK_NAME = 'GpioTask';
+export const OUTPUT_GPIO_TASK_NAME = 'GpioOutput';
+
 /**
  * One-time setup instruction for a specific pin.
  */
@@ -69,6 +72,11 @@ export type SetupItem = {
   pin: number;
   mode: number;
   value?: number;
+};
+
+export type SetupObject = {
+  setup: SetupItem[];
+  tasks: Array<Record<string, any>>;
 };
 
 /**
@@ -103,7 +111,7 @@ export type CommandStep = {
     cmd: number;
     condition?: string;
     pin?: number;
-    digtalPin?: number;
+    digitalPin?: number;
     analogPin?: number;
     value?: number | string;
     topic?: string;
@@ -149,6 +157,12 @@ type Task = {
     topic: string;
     value?: number | string;
   };
+};
+
+export type TopicsData = {
+  commandTopic?: string;
+  resetWifiTopic?: string;
+  instantExecutionTopic?: string;
 };
 
 @Injectable()
@@ -226,18 +240,15 @@ export class FlowBuilderService {
    *
    * @throws BadRequestException when node variables are missing or invalid.
    */
-  buildSetupFromNodes(nodes: Node[]): {
-    setup: SetupItem[];
-    tasks: Array<Record<string, any>>;
-  } {
+  buildSetupFromNodes(nodes: Node[]): SetupObject {
     const setupPins: Record<number, SetupItem> = {};
     const gpioTask: Task = {
-      taskName: 'GpioTask',
+      taskName: INPUT_GPIO_TASK_NAME,
       intervalMs: this.defaultGpioIntervalMs,
       commands: [],
     };
     const outputTask: Task = {
-      taskName: 'GpioOutput',
+      taskName: OUTPUT_GPIO_TASK_NAME,
       intervalMs: this.defaultGpioOutputIntervalMs,
       commands: [],
     };
@@ -478,6 +489,19 @@ export class FlowBuilderService {
     return `${baseName}_${pinNumber ? pinNumber : randomInt(1, 9999)}`;
   }
 
+  buildTopicsForUi(dedicatedMac?: string): TopicsData {
+    const resolvedMac = this.normalizeMacAddress(dedicatedMac);
+    return {
+      commandTopic: resolvedMac ? `esp/${resolvedMac}/cmd` : 'esp/cmd',
+      resetWifiTopic: resolvedMac
+        ? `esp/${resolvedMac}/resetwifi`
+        : 'esp/resetwifi',
+      instantExecutionTopic: resolvedMac
+        ? `esp/${resolvedMac}/instant`
+        : 'esp/instant',
+    };
+  }
+
   buildUiFromNodes(nodes: Node[], deviceMac?: string): UiItem[] {
     const uiElements: UiItem[] = [];
     const resolvedMac = this.normalizeMacAddress(deviceMac);
@@ -525,6 +549,10 @@ export class FlowBuilderService {
           moduleId: module.moduleId,
           moduleName: module.name,
           alias: module.alias,
+          taskName: this.generateTaskName(
+            module.moduleId,
+            isDigital ? digitalPin : analogPin
+          ),
           moduleType: 'input',
           topic: `esp/${node.id}`,
           pin: isDigital ? digitalPin : analogPin,
@@ -550,6 +578,7 @@ export class FlowBuilderService {
           moduleId: module.moduleId,
           moduleName: module.name,
           alias: module.alias,
+          taskName: this.generateTaskName(module.moduleId, pinNumber),
           moduleType: 'input',
           pin: pinNumber,
           topic: `esp/${node.id}`,

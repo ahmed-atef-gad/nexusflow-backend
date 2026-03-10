@@ -3,10 +3,13 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Logic, LogicDocument } from './schemas/logic.schema';
 import { LogicPayload } from './types/flow.types';
+import { CommandExtraction } from './flow-builder.service';
 
 @Injectable()
 export class LogicService {
-  constructor(@InjectModel(Logic.name) private logicModel: Model<LogicDocument>) {}
+  constructor(
+    @InjectModel(Logic.name) private logicModel: Model<LogicDocument>
+  ) {}
 
   async create(data: LogicPayload): Promise<Logic> {
     const created = new this.logicModel(data);
@@ -36,13 +39,14 @@ export class LogicService {
     return updated;
   }
 
-  async upsertByFlowId(flowId: string, program: any): Promise<Logic> {
-    const result = await this.logicModel.findOneAndUpdate(
-      { flowId },
-      { program },
-      { upsert: true, new: true }
-    ).exec();
-    
+  async upsertByFlowId(
+    flowId: string,
+    program: CommandExtraction
+  ): Promise<Logic> {
+    const result = await this.logicModel
+      .findOneAndUpdate({ flowId }, { program }, { upsert: true, new: true })
+      .exec();
+
     return result as Logic;
   }
 

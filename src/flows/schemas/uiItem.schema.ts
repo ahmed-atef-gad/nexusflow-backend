@@ -24,6 +24,13 @@ export class UiItem {
   @Prop()
   alias?: string;
 
+  @ApiProperty({
+    required: false,
+    description: 'Optional user-friendly name for task scheduling',
+  })
+  @Prop()
+  taskName?: string;
+
   @ApiProperty({ type: String, description: 'Topic for this UI item' })
   @Prop()
   topic: string;
@@ -34,7 +41,6 @@ export class UiItem {
   })
   @Prop()
   responseTopic?: string;
-
 
   @ApiProperty({
     type: String,

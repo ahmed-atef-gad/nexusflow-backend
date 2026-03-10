@@ -8,13 +8,18 @@ import {
 import { isValidObjectId, Model } from 'mongoose';
 import { InjectModel } from '@nestjs/mongoose';
 import { Flow, FlowDocument } from './schemas/flow.schema';
-import { FlowBuilderService } from './flow-builder.service';
-import { ModuleNode } from './types/flow.types';
+import {
+  CommandExtraction,
+  FlowBuilderService,
+  SetupObject,
+  TopicsData,
+} from './flow-builder.service';
 import { SetupService } from './setup.service';
 import { LogicService } from './logic.service';
 import { MqttService } from 'src/mqtt/mqtt.service';
 import { DevicesService } from 'src/devices/devices.service';
 import { UiService } from './ui.service';
+import { UiItem } from './schemas/uiItem.schema';
 
 @Injectable()
 export class FlowsService {
@@ -27,9 +32,20 @@ export class FlowsService {
     private readonly mqttService: MqttService,
     @Inject(forwardRef(() => DevicesService))
     private readonly devicesService: DevicesService
+  ) {}
 
+  private toCommandExtraction(value: unknown): CommandExtraction {
+    if (
+      typeof value === 'object' &&
+      value !== null &&
+      'flows' in value &&
+      'warnings' in value
+    ) {
+      return value as CommandExtraction;
+    }
 
-  ) { }
+    return { flows: [], warnings: [] };
+  }
 
   async create(flow: Flow, userId: string): Promise<any> {
     const createdFlow = new this.flowModel({
@@ -39,31 +55,32 @@ export class FlowsService {
 
     const { nodes, edges } = flow;
 
-    let setupData: any = {};
-    let logicData: any = {};
-    let uiData: any = {};
+    let setupData: SetupObject = { setup: [], tasks: [] };
+    let logicData: CommandExtraction = { flows: [], warnings: [] };
+    let uiData: UiItem[] = [];
     let savedFlow: FlowDocument;
 
     if (nodes && edges) {
-      const setupResult = this.flowBuilderService.buildSetupFromNodes(nodes);
-      setupData = setupResult;
+      setupData = this.flowBuilderService.buildSetupFromNodes(nodes);
+
       logicData = this.flowBuilderService.buildLogicCommandsFromGraph(
         nodes,
         edges
       );
       uiData = this.flowBuilderService.buildUiFromNodes(nodes);
       savedFlow = await createdFlow.save();
+      const savedFlowId = savedFlow.id as string;
 
       await this.setupService.create({
-        flowId: savedFlow.id,
+        flowId: savedFlowId,
         elements: setupData,
       });
       await this.logicService.create({
-        flowId: savedFlow.id,
+        flowId: savedFlowId,
         program: logicData,
       });
       await this.uiService.create({
-        flowId: savedFlow.id,
+        flowId: savedFlowId,
         elements: uiData,
       });
     } else {
@@ -104,8 +121,10 @@ export class FlowsService {
 
     return {
       ...flow.toObject(),
-      setup: setupDoc ? setupDoc.elements : [],
-      logic: logicDoc ? logicDoc.program : {},
+      setup: setupDoc ? setupDoc.elements : { setup: [], tasks: [] },
+      logic: logicDoc
+        ? this.toCommandExtraction(logicDoc.program as unknown)
+        : this.toCommandExtraction(undefined),
     };
   }
 
@@ -120,7 +139,7 @@ export class FlowsService {
     }
 
     return {
-      id: flow.id,
+      id: flow.id as string,
       userId: flow.userId,
     };
   }
@@ -168,16 +187,15 @@ export class FlowsService {
       device = null;
     }
 
-    // Explicitly type these variables so TypeScript knows they aren't just "null"
-    let setupData: any | undefined;
-    let logicData: any | undefined;
-    let uiData: any | undefined;
+    let setupData: SetupObject | undefined = { setup: [], tasks: [] };
+    let logicData: CommandExtraction | undefined;
+    let uiData: UiItem[] | undefined;
+    let topicsData: TopicsData | undefined;
 
     if (updatedFlow.nodes && updatedFlow.edges) {
-      const setupResult = this.flowBuilderService.buildSetupFromNodes(
+      setupData = this.flowBuilderService.buildSetupFromNodes(
         updatedFlow.nodes
       );
-      setupData = setupResult;
       logicData = this.flowBuilderService.buildLogicCommandsFromGraph(
         updatedFlow.nodes,
         updatedFlow.edges
@@ -187,19 +205,21 @@ export class FlowsService {
         device?.macAddress
       );
 
-      // Extract the setup array and pass it to upsertByFlowId
+      topicsData = this.flowBuilderService.buildTopicsForUi(device?.macAddress);
+
+      // Persist setup object for this flow
       await this.setupService.upsertByFlowId(id, setupData);
-      await this.uiService.upsertByFlowId(id, uiData);
+      await this.uiService.upsertByFlowId(id, uiData, topicsData);
       await this.logicService.upsertByFlowId(id, logicData);
 
       // this.mqttService.publish(`esp/setup`, setupData);
-
-
     } else {
       const s = await this.setupService.findByFlowId(id);
       const l = await this.logicService.findByFlowId(id);
       setupData = s?.elements;
-      logicData = l?.program;
+      logicData = l
+        ? this.toCommandExtraction(l.program as unknown)
+        : undefined;
       const u = await this.uiService.findByFlowId(id);
       uiData = u?.uiItems;
     }
@@ -211,12 +231,12 @@ export class FlowsService {
       );
     }
 
-
     return {
       ...flow.toObject(),
       setup: setupData,
       logic: logicData,
       ui: uiData,
+      topics: topicsData,
     };
   }
 
