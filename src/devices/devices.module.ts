@@ -32,7 +32,7 @@ import { OwnerGuard } from '../gaurds/auth/owner.guard';
     UsersModule,
   ],
 
-  controllers: [DevicesController, DeviceRegistrationController],
+  controllers: [DeviceRegistrationController, DevicesController],
   providers: [DevicesService, DeviceAuthGuard, OwnerGuard],
   exports: [DevicesService, DeviceAuthGuard],
 })
