@@ -1,4 +1,4 @@
-import { Module , forwardRef } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AuthModule } from '../auth/auth.module';
 import { DevicesModule } from '../devices/devices.module';
@@ -24,7 +24,7 @@ import { OwnerGuard } from '../gaurds/auth/owner.guard';
 
 @Module({
   imports: [
-     forwardRef(() => FlowsModule),
+    forwardRef(() => FlowsModule),
     MongooseModule.forFeature([
       { name: Flow.name, schema: FlowSchema },
       { name: Setup.name, schema: SetupSchema },

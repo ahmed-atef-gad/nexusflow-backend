@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import type { CommandExtraction, SetupObject } from '../flow-builder.service';
 
 export class Position {
   @ApiProperty({ example: 100, description: 'X coordinate' })
@@ -104,7 +105,7 @@ export class SetupPayload {
     example: [{ cmd: 16, pin: 4, mode: 1 }],
     description: 'Array of setup commands',
   })
-  elements: any[];
+  elements: SetupObject;
 }
 
 export class LogicPayload {
@@ -118,7 +119,7 @@ export class LogicPayload {
     example: { flows: [[{ id: 'node-1', cmd: 18 }]] },
     description: 'The compiled logic program graph',
   })
-  program: any;
+  program: CommandExtraction;
 }
 
 export class UiPayload {
