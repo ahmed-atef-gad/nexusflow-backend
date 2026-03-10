@@ -8,7 +8,9 @@ import { Model, Types } from 'mongoose';
 import { createHash } from 'crypto';
 import { createReadStream, constants as fsConstants } from 'fs';
 import { access, unlink } from 'fs/promises';
+import { basename, extname, resolve, sep } from 'path';
 import { Firmware, FirmwareDocument } from './schemas/firmware.schema';
+import { FIRMWARE_UPLOAD_DIR } from './firmware.constants';
 
 type UploadedFirmwareFile = {
   path: string;
@@ -56,7 +58,6 @@ export class FirmwareService {
         version: normalizedVersion,
         originalFileName: file.originalname,
         storedFileName: file.filename,
-        filePath: file.path,
         checksum,
         size: file.size,
         isActive: true,
@@ -123,12 +124,67 @@ export class FirmwareService {
     return latestFirmware;
   }
 
+  async deleteFirmware(firmwareId: string) {
+    if (!Types.ObjectId.isValid(firmwareId)) {
+      throw new BadRequestException('Invalid firmware ID');
+    }
+
+    const firmware = await this.firmwareModel.findById(firmwareId).exec();
+    if (!firmware) {
+      throw new NotFoundException(`Firmware with ID ${firmwareId} not found`);
+    }
+
+    let firmwarePath: string | null = null;
+    try {
+      firmwarePath = this.resolveFirmwareFilePath(firmware);
+    } catch {
+      firmwarePath = null;
+    }
+
+    await this.firmwareModel.deleteOne({ _id: firmware._id });
+
+    if (firmwarePath) {
+      await this.removeFileIfExists(firmwarePath);
+    }
+
+    if (firmware.isActive) {
+      await this.promoteLatestFirmwareAsActive();
+    }
+
+    return {
+      message: 'Firmware deleted successfully',
+      deletedId: firmwareId,
+    };
+  }
+
   async assertFirmwareFileExists(filePath: string): Promise<void> {
     try {
       await access(filePath, fsConstants.F_OK);
     } catch {
       throw new NotFoundException('Firmware binary file not found on disk');
     }
+  }
+
+  resolveFirmwareFilePath(firmware: FirmwareDocument): string {
+    const fileNameFromDb = firmware.storedFileName;
+
+    if (!fileNameFromDb) {
+      throw new NotFoundException('Firmware file reference is missing');
+    }
+
+    const safeFileName = basename(fileNameFromDb);
+    if (safeFileName !== fileNameFromDb) {
+      throw new NotFoundException('Invalid firmware file reference');
+    }
+
+    if (extname(safeFileName).toLowerCase() !== '.bin') {
+      throw new NotFoundException('Invalid firmware file extension');
+    }
+
+    const absolutePath = resolve(FIRMWARE_UPLOAD_DIR, safeFileName);
+    this.assertPathInsideFirmwareDirectory(absolutePath);
+
+    return absolutePath;
   }
 
   private async getLatestFirmware(): Promise<FirmwareDocument | null> {
@@ -203,6 +259,43 @@ export class FirmwareService {
       await unlink(filePath);
     } catch {
       // No-op if file does not exist.
+    }
+  }
+
+  private async promoteLatestFirmwareAsActive(): Promise<void> {
+    const latestRemaining = await this.firmwareModel
+      .findOne()
+      .sort({ createdAt: -1 })
+      .exec();
+
+    if (!latestRemaining) {
+      return;
+    }
+
+    await this.firmwareModel.updateMany(
+      { _id: { $ne: latestRemaining._id }, isActive: true },
+      { $set: { isActive: false } }
+    );
+
+    if (!latestRemaining.isActive) {
+      latestRemaining.isActive = true;
+      await latestRemaining.save();
+    }
+  }
+
+  private assertPathInsideFirmwareDirectory(filePath: string): void {
+    const rootPath = resolve(FIRMWARE_UPLOAD_DIR);
+    const rootPathWithSeparator = rootPath.endsWith(sep)
+      ? rootPath
+      : `${rootPath}${sep}`;
+    const normalizedTargetPath = resolve(filePath);
+
+    if (
+      !normalizedTargetPath
+        .toLowerCase()
+        .startsWith(rootPathWithSeparator.toLowerCase())
+    ) {
+      throw new NotFoundException('Invalid firmware file path');
     }
   }
 }

@@ -15,9 +15,6 @@ export class Firmware {
   storedFileName: string;
 
   @Prop({ required: true })
-  filePath: string;
-
-  @Prop({ required: true })
   checksum: string;
 
   @Prop({ required: true, min: 1 })

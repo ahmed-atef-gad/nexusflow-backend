@@ -2,7 +2,9 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
+  Param,
   Post,
   Query,
   Req,
@@ -17,12 +19,13 @@ import {
   ApiCookieAuth,
   ApiHeader,
   ApiOperation,
+  ApiParam,
   ApiResponse,
   ApiSecurity,
   ApiTags,
 } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { basename, extname, join, resolve } from 'path';
+import { basename, extname } from 'path';
 import { diskStorage } from 'multer';
 import { existsSync, mkdirSync } from 'fs';
 import type { Response } from 'express';
@@ -33,8 +36,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { Role } from '../users/enums/role.enum';
 import { UploadFirmwareDto } from './dto/upload-firmware.dto';
 import { FirmwareService } from './firmware.service';
-
-const firmwareUploadDir = join(process.cwd(), 'uploads', 'firmware');
+import { FIRMWARE_UPLOAD_DIR } from './firmware.constants';
 
 @ApiTags('Firmware')
 @Controller('firmware')
@@ -65,10 +67,10 @@ export class FirmwareController {
     FileInterceptor('file', {
       storage: diskStorage({
         destination: (_, __, callback) => {
-          if (!existsSync(firmwareUploadDir)) {
-            mkdirSync(firmwareUploadDir, { recursive: true });
+          if (!existsSync(FIRMWARE_UPLOAD_DIR)) {
+            mkdirSync(FIRMWARE_UPLOAD_DIR, { recursive: true });
           }
-          callback(null, firmwareUploadDir);
+          callback(null, FIRMWARE_UPLOAD_DIR);
         },
         filename: (_, file, callback) => {
           const extension = extname(file.originalname).toLowerCase();
@@ -119,6 +121,25 @@ export class FirmwareController {
   }
 
   @ApiOperation({
+    summary: 'Delete firmware by ID',
+    description:
+      'Deletes firmware metadata and removes its binary file from server storage.',
+  })
+  @ApiCookieAuth('jwt')
+  @ApiParam({
+    name: 'id',
+    description: 'Firmware MongoDB ID',
+    example: '507f1f77bcf86cd799439011',
+  })
+  @ApiResponse({ status: 200, description: 'Firmware deleted successfully' })
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles(Role.Admin)
+  @Delete('admin/:id')
+  async deleteFirmware(@Param('id') firmwareId: string) {
+    return this.firmwareService.deleteFirmware(firmwareId);
+  }
+
+  @ApiOperation({
     summary: 'Check if a newer firmware is available',
     description:
       'Checks the latest uploaded firmware against the device current version.',
@@ -160,7 +181,8 @@ export class FirmwareController {
   @Get('device/download')
   async downloadLatestFirmware(@Res() res: Response) {
     const firmware = await this.firmwareService.getLatestFirmwareOrThrow();
-    await this.firmwareService.assertFirmwareFileExists(firmware.filePath);
+    const firmwarePath = this.firmwareService.resolveFirmwareFilePath(firmware);
+    await this.firmwareService.assertFirmwareFileExists(firmwarePath);
 
     const sanitizedName = firmware.originalFileName.replace(/"/g, '');
     res.setHeader('Content-Type', 'application/octet-stream');
@@ -172,6 +194,6 @@ export class FirmwareController {
     res.setHeader('X-Firmware-Checksum', firmware.checksum);
     res.setHeader('Content-Length', firmware.size.toString());
 
-    return res.sendFile(resolve(firmware.filePath));
+    return res.sendFile(firmwarePath);
   }
 }
