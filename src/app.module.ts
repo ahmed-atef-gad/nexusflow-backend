@@ -10,6 +10,7 @@ import { FlowsModule } from './flows/flows.module';
 import { MqttModule } from './mqtt/mqtt.module';
 import { DevicesModule } from './devices/devices.module';
 import { VerificationModule } from './verification/verification.module';
+import { FirmwareModule } from './firmware/firmware.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { VerificationModule } from './verification/verification.module';
     MqttModule,
     DevicesModule,
     VerificationModule,
+    FirmwareModule,
   ],
   controllers: [AppController],
   providers: [AppService],
