@@ -1,5 +1,12 @@
-import { Controller, Get, Param, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  NotFoundException,
+  Param,
+  UseGuards,
+} from '@nestjs/common';
 import { UiService } from './ui.service';
+import { DevicesService } from '../devices/devices.service';
 import {
   ApiTags,
   ApiOperation,
@@ -19,7 +26,10 @@ import { OwnerGuard } from '../gaurds/auth/owner.guard';
 @UseGuards(AuthGuard, OwnerGuard)
 @Controller('ui')
 export class UiController {
-  constructor(private readonly uiService: UiService) {}
+  constructor(
+    private readonly uiService: UiService,
+    private readonly devicesService: DevicesService
+  ) {}
 
   @ApiOperation({
     summary: 'Get UI configuration by flow ID',
@@ -43,6 +53,8 @@ export class UiController {
         commandTopic: 'esp/AA:BB:CC:DD:EE:FF/cmd',
         resetWifiTopic: 'esp/AA:BB:CC:DD:EE:FF/resetwifi',
         instantExecutionTopic: 'esp/AA:BB:CC:DD:EE:FF/instant',
+        deviceId: '507f1f77bcf86cd799439012',
+        deviceOnlineStatusTopic: 'client/AA:BB:CC:DD:EE:FF/online',
         gpioInputTaskName: 'gpio',
         gpioOutputTaskName: 'gpioOutput',
         uiItems: [
@@ -72,7 +84,21 @@ export class UiController {
   })
   @IsOwner({ resource: 'flow', paramKey: 'flowId' })
   @Get('flow/:flowId')
-  findByFlowId(@Param('flowId') flowId: string) {
-    return this.uiService.findByFlowId(flowId);
+  async findByFlowId(@Param('flowId') flowId: string) {
+    const ui = await this.uiService.findByFlowId(flowId);
+    let deviceId: string | null = null;
+    let deviceOnlineStatusTopic: string | null = null;
+    try {
+      const device = await this.devicesService.findByActiveFlowId(flowId);
+      deviceId = device._id?.toString() ?? null;
+      if (device.macAddress) {
+        const normalizedMac = device.macAddress.toUpperCase();
+        deviceOnlineStatusTopic = `client/${normalizedMac}/online`;
+      }
+    } catch (error) {
+      if (!(error instanceof NotFoundException)) throw error;
+    }
+    if (!ui) return null;
+    return { ...ui.toObject(), deviceId, deviceOnlineStatusTopic };
   }
 }
