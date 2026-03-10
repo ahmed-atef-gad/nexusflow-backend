@@ -503,6 +503,10 @@ export class FlowBuilderService {
   }
 
   buildUiFromNodes(nodes: Node[], deviceMac?: string): UiItem[] {
+    if (nodes.length === 0) {
+      throw new BadRequestException('Flow must contain at least one node');
+    }
+
     const uiElements: UiItem[] = [];
     const resolvedMac = this.normalizeMacAddress(deviceMac);
     const commandTopic = resolvedMac ? `esp/${resolvedMac}/cmd` : 'esp/cmd';
@@ -564,6 +568,24 @@ export class FlowBuilderService {
         return;
       }
 
+      if (module.moduleId.startsWith('ESP32-gpio-input')) {
+        const pinNumber = this.toOptionalNumber(module.variables?.pinNumber);
+        if (pinNumber === undefined) {
+          throw new BadRequestException(
+            `Missing pin configuration for ${module?.alias || module.name}`
+          );
+        }
+        uiElements.push({
+          moduleId: module.moduleId,
+          moduleName: module.name,
+          alias: module.alias,
+          moduleType: 'input',
+          pin: pinNumber,
+          topic: `esp/${node.id}`,
+        });
+        return;
+      }
+
       if (
         module.moduleId.startsWith('DHT-Sensor') ||
         module.moduleId.startsWith('PIR-Sensor')
@@ -583,15 +605,16 @@ export class FlowBuilderService {
           pin: pinNumber,
           topic: `esp/${node.id}`,
         });
-      } else {
-        uiElements.push({
-          moduleId: module.moduleId,
-          moduleName: module.name,
-          alias: module.alias,
-          moduleType: 'input',
-          topic: `esp/${node.id}`,
-        });
+        return;
       }
+
+      uiElements.push({
+        moduleId: module.moduleId,
+        moduleName: module.name,
+        alias: module.alias,
+        moduleType: 'input',
+        topic: `esp/${node.id}`,
+      });
     });
     return uiElements;
   }

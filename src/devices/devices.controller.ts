@@ -297,6 +297,40 @@ export class DevicesController {
     return this.devicesService.getDeviceStatus(deviceId);
   }
 
+  @ApiOperation({ summary: 'Get device by ID' })
+  @ApiParam({ name: 'id', description: 'MongoDB ID of the device' })
+  @ApiResponse({
+    status: 200,
+    description: 'Device found',
+    schema: {
+      example: {
+        _id: '507f1f77bcf86cd799439011',
+        macAddress: 'AA:BB:CC:DD:EE:FF',
+        name: 'Living Room Sensor',
+        ownerId: '507f1f77bcf86cd799439012',
+        status: 'active',
+        resetWifiTopic: 'esp/AA:BB:CC:DD:EE:FF/resetwifi',
+        deviceOnlineStatusTopic: 'client/AA:BB:CC:DD:EE:FF/online',
+        lastActiveAt: '2024-02-15T12:00:00Z',
+        createdAt: '2024-02-10T10:30:00Z',
+        updatedAt: '2024-02-10T10:30:00Z',
+      },
+    },
+  })
+  @ApiResponse({ status: 404, description: 'Device not found' })
+  @Get(':id')
+  async findOne(@Req() req, @Param('id') deviceId: string) {
+    const device = await this.devicesService.findOne(deviceId);
+    if (device.ownerId.toString() !== req.user.sub) {
+      throw new UnauthorizedException('You do not own this device');
+    }
+    return {
+      ...(device.toObject() as Record<string, unknown>),
+      resetWifiTopic: `esp/${device.macAddress}/resetwifi`,
+      deviceOnlineStatusTopic: `client/${device.macAddress}/online`,
+    };
+  }
+
   /**
    * Get all devices for the authenticated user
    *
@@ -317,6 +351,8 @@ export class DevicesController {
    *     "name": "Living Room Sensor",
    *     "ownerId": "507f1f77bcf86cd799439012",
    *     "status": "active",
+   *     "resetWifiTopic": "esp/AA:BB:CC:DD:EE:FF/resetwifi",
+   *     "lastActiveAt": "2024-02-15T12:00:00Z",
    *     "createdAt": "2024-02-10T10:30:00Z",
    *     "updatedAt": "2024-02-10T10:30:00Z"
    *   },
@@ -326,6 +362,8 @@ export class DevicesController {
    *     "name": "Bedroom Sensor",
    *     "ownerId": "507f1f77bcf86cd799439012",
    *     "status": "active",
+   *     "resetWifiTopic": "esp/11:22:33:44:55:66/resetwifi",
+   *     "lastActiveAt": "2024-02-15T11:45:00Z",
    *     "createdAt": "2024-02-11T14:20:00Z",
    *     "updatedAt": "2024-02-11T14:20:00Z"
    *   }
@@ -347,6 +385,7 @@ export class DevicesController {
           name: 'Living Room Sensor',
           ownerId: '507f1f77bcf86cd799439012',
           status: 'active',
+          resetWifiTopic: 'esp/AA:BB:CC:DD:EE:FF/resetwifi',
           lastActiveAt: '2024-02-15T12:00:00Z',
           createdAt: '2024-02-10T10:30:00Z',
           updatedAt: '2024-02-10T10:30:00Z',
@@ -360,7 +399,12 @@ export class DevicesController {
   })
   @Get()
   async getAllDevices(@Req() req) {
-    return this.devicesService.findAllByUserId(req.user.sub);
+    const devices = await this.devicesService.findAllByUserId(req.user.sub);
+    return devices.map((device) => ({
+      ...(device.toObject() as Record<string, unknown>),
+      resetWifiTopic: `esp/${device.macAddress}/resetwifi`,
+      deviceOnlineStatusTopic: `client/${device.macAddress}/online`,
+    }));
   }
 
   /**
