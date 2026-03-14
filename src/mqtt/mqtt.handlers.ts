@@ -3,6 +3,58 @@ import { PigeonService } from '../pigeon-mqtt/pigeon.service';
 import { DevicesService } from '../devices/devices.service';
 import { UsersService } from '../users/users.service';
 import { MqttService } from './mqtt.service';
+import { InjectModel } from '@nestjs/mongoose';
+import { Logic, LogicDocument } from '../flows/schemas/logic.schema';
+import { Model } from 'mongoose';
+
+type OutputModuleType = 'pwm' | 'digital' | 'dac' | 'other';
+
+type RuntimeCommand = {
+  targetModuleType?: OutputModuleType;
+  cmd: number;
+  pin?: number;
+  value?: number | string;
+  topic?: string;
+};
+
+type MqttClientAttributes = {
+  esp?: boolean;
+  clientType?: 'esp' | 'user';
+  macAddress?: string;
+  username?: string;
+};
+
+type MqttClientContext = {
+  id?: string;
+  deviceMac?: string;
+  linkedFlowId?: string | null;
+  isEsp?: boolean;
+  isUserClient?: boolean;
+  authorizedDeviceMacs?: string[];
+  userId?: string;
+  mqttUsername?: string;
+  attributes?: MqttClientAttributes;
+};
+
+type MqttPacketContext = {
+  topic?: string;
+  payload?: Buffer;
+};
+
+type InputPayload = {
+  result?: number | boolean;
+  value?: number;
+  digital?: number | boolean;
+  analog?: number;
+  motion?: number | boolean;
+  raw?: number;
+  percent?: number;
+  temperature?: number;
+  humidity?: number;
+};
+
+const INPUT_TOPIC_PATTERN = /^logic\/input\/([^/]+)$/;
+const LEGACY_INPUT_TOPIC_PATTERN = /^esp\/([^/]+)$/;
 
 @Injectable()
 export class MqttHandlers implements OnModuleInit {
@@ -12,7 +64,9 @@ export class MqttHandlers implements OnModuleInit {
     private readonly pigeonService: PigeonService,
     private readonly devicesService: DevicesService,
     private readonly usersService: UsersService,
-    private readonly mqttService: MqttService
+    private readonly mqttService: MqttService,
+    @InjectModel(Logic.name)
+    private readonly logicModel: Model<LogicDocument>
   ) {}
 
   onModuleInit() {
@@ -70,7 +124,10 @@ export class MqttHandlers implements OnModuleInit {
     return filterMac === normalizedClientMac;
   }
 
-  private isUserAuthorizedForDevicesTopic(client: any, topic: string): boolean {
+  private isUserAuthorizedForDevicesTopic(
+    client: MqttClientContext,
+    topic: string
+  ): boolean {
     const topicMac = this.extractDevicesTopicMac(topic);
     if (!topicMac) return false;
 
@@ -94,7 +151,7 @@ export class MqttHandlers implements OnModuleInit {
   }
 
   private async onAuthenticate(
-    client: any,
+    client: MqttClientContext,
     username: Buffer | string | undefined,
     password: Buffer | string | undefined,
     done: (error: Error | null, success?: boolean) => void
@@ -147,6 +204,7 @@ export class MqttHandlers implements OnModuleInit {
         }
 
         client.deviceMac = normalizedClientMac;
+        client.linkedFlowId = device.activeFlowId?.toString() ?? null;
         client.isEsp = true;
         client.isUserClient = false;
         client.attributes = {
@@ -182,7 +240,7 @@ export class MqttHandlers implements OnModuleInit {
           done
         );
       }
-      const userId = user.id || String((user as { _id?: unknown })._id ?? '');
+      const userId = user._id?.toString();
       if (!userId) {
         return this.rejectAuth(
           clientId,
@@ -219,7 +277,7 @@ export class MqttHandlers implements OnModuleInit {
   }
 
   private onAuthorizePublish(
-    client: any,
+    client: MqttClientContext,
     packet: { topic: string },
     done: (error: Error | null) => void
   ) {
@@ -250,7 +308,7 @@ export class MqttHandlers implements OnModuleInit {
   }
 
   private onAuthorizeSubscribe(
-    client: any,
+    client: MqttClientContext,
     sub: { topic: string; qos?: 0 | 1 | 2 },
     done: (
       error: Error | null,
@@ -306,7 +364,10 @@ export class MqttHandlers implements OnModuleInit {
     return done(null, sub);
   }
 
-  private onAuthorizeForward(client: any, packet: { topic?: string }) {
+  private onAuthorizeForward(
+    client: MqttClientContext,
+    packet: { topic?: string }
+  ) {
     const topic = packet?.topic ?? '';
     if (!this.isDevicesTopic(topic)) return packet;
 
@@ -329,7 +390,7 @@ export class MqttHandlers implements OnModuleInit {
     );
     return null;
   }
-  private async onClientDisconnect(client: any) {
+  private async onClientDisconnect(client: MqttClientContext) {
     const clientId = client?.id?.toString?.() ?? '';
     if (clientId && client?.isEsp) {
       await this.mqttService.publish(`client/${clientId}/online`, {
@@ -340,7 +401,228 @@ export class MqttHandlers implements OnModuleInit {
     }
     this.logger.debug(`MQTT client disconnected. clientId=${clientId}`);
   }
-  private onClientPublish(packet: any, client: any) {
+
+  private isInputTopic(topic: string): boolean {
+    return (
+      INPUT_TOPIC_PATTERN.test(topic) || LEGACY_INPUT_TOPIC_PATTERN.test(topic)
+    );
+  }
+
+  private getInputNodeIdFromTopic(topic: string): string | null {
+    const prefixedMatch = topic.match(INPUT_TOPIC_PATTERN);
+    if (prefixedMatch) {
+      return prefixedMatch[1] || null;
+    }
+
+    const legacyMatch = topic.match(LEGACY_INPUT_TOPIC_PATTERN);
+    if (!legacyMatch) return null;
+    return legacyMatch[1] || null;
+  }
+
+  private clampToByte(value: number): number {
+    return Math.min(255, Math.max(0, Math.round(value)));
+  }
+
+  private mapAnalogToByte(value: number): number {
+    const normalized = Math.min(4095, Math.max(0, value));
+    return Math.round((normalized * 255) / 4095);
+  }
+
+  private mapPercentToByte(value: number): number {
+    const normalized = Math.min(100, Math.max(0, value));
+    return Math.round((normalized * 255) / 100);
+  }
+
+  private extractNumericInputValue(packet: MqttPacketContext): number | null {
+    const payload = packet?.payload;
+    if (!Buffer.isBuffer(payload)) {
+      return null;
+    }
+
+    try {
+      const parsed: unknown = JSON.parse(payload.toString('utf8'));
+      if (!parsed || typeof parsed !== 'object') {
+        return null;
+      }
+
+      const input = parsed as InputPayload;
+
+      // GPIO analog read already returns result in 0..255.
+      if (typeof input.result === 'number') {
+        return this.clampToByte(input.result);
+      }
+      if (typeof input.value === 'number') return this.clampToByte(input.value);
+
+      // Sensor tasks publish raw digital/motion values as 0/1 or booleans.
+      if (typeof input.digital === 'number') return input.digital ? 1 : 0;
+      if (typeof input.motion === 'number') return input.motion ? 1 : 0;
+      if (typeof input.result === 'boolean') return input.result ? 1 : 0;
+      if (typeof input.motion === 'boolean') return input.motion ? 1 : 0;
+      if (typeof input.digital === 'boolean') return input.digital ? 1 : 0;
+
+      // Raw analog sensor/task payloads are normalized to byte range for GPIO logic.
+      if (typeof input.analog === 'number') {
+        return this.mapAnalogToByte(input.analog);
+      }
+      if (typeof input.raw === 'number') return this.mapAnalogToByte(input.raw);
+      if (typeof input.percent === 'number') {
+        return this.mapPercentToByte(input.percent);
+      }
+
+      // DHT task payloads publish temperature/humidity directly.
+      if (typeof input.temperature === 'number') {
+        return this.clampToByte(input.temperature);
+      }
+      if (typeof input.humidity === 'number') {
+        return this.clampToByte(input.humidity);
+      }
+
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  private isGpioRuntimeCommand(command: RuntimeCommand): boolean {
+    return (
+      command.targetModuleType === 'digital' ||
+      command.targetModuleType === 'pwm' ||
+      command.targetModuleType === 'dac'
+    );
+  }
+
+  private async executeGpioLogicForInputTopic(
+    topic: string,
+    packet: MqttPacketContext,
+    client: MqttClientContext
+  ): Promise<void> {
+    Logger.debug(
+      `Processing MQTT publish for GPIO logic. topic=${topic} clientId=${client?.id ?? 'unknown'}`
+    );
+
+    const inputNodeId = this.getInputNodeIdFromTopic(topic);
+    if (!inputNodeId) {
+      this.logger.debug(
+        `Skip GPIO logic: failed to extract node id from topic ${topic}`
+      );
+      return;
+    }
+
+    const inputValue = this.extractNumericInputValue(packet);
+    if (inputValue === null) {
+      this.logger.debug(
+        `Skip GPIO logic: could not extract numeric value from payload for topic ${topic}`
+      );
+      return;
+    }
+
+    const deviceMac =
+      typeof client?.deviceMac === 'string' ? client.deviceMac : null;
+    if (!deviceMac) {
+      this.logger.debug('Skip GPIO logic: missing client.deviceMac');
+      return;
+    }
+
+    const flowId = client.linkedFlowId;
+    this.logger.debug(
+      `Received MQTT input. topic=${topic} nodeId=${inputNodeId} value=${inputValue} deviceMac=${deviceMac} flowId=${flowId ?? 'none'}`
+    );
+    if (!flowId) {
+      this.logger.debug(
+        `Skip GPIO logic: no linked flow for device ${deviceMac}`
+      );
+      return;
+    }
+
+    const logicDoc = await this.logicModel
+      .findOne({ flowId })
+      .select('program')
+      .lean()
+      .exec();
+
+    const flows = Array.isArray((logicDoc as any)?.program?.flows)
+      ? (logicDoc as any).program.flows
+      : [];
+
+    if (!flows.length) {
+      this.logger.debug(
+        `Skip GPIO logic: no flows in logic program for flowId=${flowId}`
+      );
+      return;
+    }
+
+    const commandTopic = `esp/${this.normalizeMacAddress(deviceMac)}/cmd`;
+    this.logger.debug(
+      `Logic loaded. flowId=${flowId} totalFlowPaths=${flows.length} commandTopic=${commandTopic}`
+    );
+
+    let matchedSteps = 0;
+    let publishedCommands = 0;
+
+    for (const flow of flows) {
+      if (!Array.isArray(flow)) {
+        continue;
+      }
+
+      for (const step of flow) {
+        if (step?.id !== inputNodeId) {
+          continue;
+        }
+
+        matchedSteps++;
+
+        const commands = Array.isArray(step?.commands)
+          ? (step.commands as RuntimeCommand[])
+          : [];
+
+        this.logger.debug(
+          `Matched step for nodeId=${inputNodeId} with ${commands.length} commands`
+        );
+
+        for (const command of commands) {
+          if (!this.isGpioRuntimeCommand(command)) {
+            continue;
+          }
+
+          if (
+            typeof command.cmd !== 'number' ||
+            typeof command.pin !== 'number'
+          ) {
+            continue;
+          }
+
+          await this.mqttService.publish(commandTopic, {
+            command: {
+              cmd: command.cmd,
+              pin: command.pin,
+              value: inputValue,
+              topic: command.topic,
+            },
+          });
+          publishedCommands++;
+
+          this.logger.debug(
+            `Published GPIO logic command. cmd=${command.cmd} pin=${command.pin} value=${inputValue} topic=${commandTopic}`
+          );
+        }
+      }
+    }
+
+    if (matchedSteps === 0) {
+      this.logger.debug(
+        `No matching logic step for input nodeId=${inputNodeId} in flowId=${flowId}`
+      );
+    }
+
+    this.logger.debug(
+      `GPIO logic processing finished. nodeId=${inputNodeId} matchedSteps=${matchedSteps} publishedCommands=${publishedCommands}`
+    );
+  }
+
+  private async onClientPublish(
+    packet: MqttPacketContext,
+    client: MqttClientContext
+  ) {
     const topic = packet?.topic ?? '';
     const clientId = client?.id?.toString?.() ?? '';
 
@@ -348,6 +630,16 @@ export class MqttHandlers implements OnModuleInit {
       this.logger.debug(
         `MQTT message published. clientId=${clientId} topic=${topic}`
       );
+
+      if (client?.isEsp && this.isInputTopic(topic)) {
+        try {
+          await this.executeGpioLogicForInputTopic(topic, packet, client);
+        } catch (error) {
+          this.logger.error(
+            `Failed to execute server-side GPIO logic for topic=${topic}: ${(error as Error).message}`
+          );
+        }
+      }
     }
   }
 }

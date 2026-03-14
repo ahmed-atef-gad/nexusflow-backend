@@ -212,6 +212,21 @@ export class DevicesService {
     return device;
   }
 
+  async findByMacAddress(macAddress: string): Promise<DeviceDocument> {
+    const normalizedMac = this.normalizeMacAddress(macAddress);
+    const device = await this.deviceModel
+      .findOne({ macAddress: normalizedMac })
+      .exec();
+
+    if (!device) {
+      throw new NotFoundException(
+        `Device with MAC address ${normalizedMac} not found`
+      );
+    }
+
+    return device;
+  }
+
   // Generate a token for device authentication (format: tokenId.secret)
   async generateDeviceToken(deviceId: string) {
     // Verify device exists

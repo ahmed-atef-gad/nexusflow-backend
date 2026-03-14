@@ -9,7 +9,6 @@ import { Role } from './enums/role.enum';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 
-
 @Injectable()
 export class UsersService {
   constructor(@InjectModel(User.name) private userModel: Model<UserDocument>) {}
@@ -42,7 +41,11 @@ export class UsersService {
 
     const markUsedResult = await this.userModel
       .updateOne(
-        { _id: user._id, mqtt_pass_used_at: null, mqtt_pass_hash: user.mqtt_pass_hash },
+        {
+          _id: user._id,
+          mqtt_pass_used_at: null,
+          mqtt_pass_hash: user.mqtt_pass_hash,
+        },
         { $set: { mqtt_pass_used_at: new Date() } }
       )
       .exec();
@@ -74,7 +77,10 @@ export class UsersService {
   }
   async create(createUserDto: CreateUserDto): Promise<UserDocument> {
     const saltOrRounds = 10;
-    const hashedPassword = await bcrypt.hash(createUserDto.password, saltOrRounds);
+    const hashedPassword = await bcrypt.hash(
+      createUserDto.password,
+      saltOrRounds
+    );
     createUserDto.password = hashedPassword;
     const createdUser = new this.userModel(createUserDto);
     return createdUser.save();
@@ -83,23 +89,31 @@ export class UsersService {
     return this.userModel.find().exec();
   }
   async getUserById(@Param('id') id: string): Promise<UserDocument | null> {
-     const isValidId = Types.ObjectId.isValid(id);
+    const isValidId = Types.ObjectId.isValid(id);
 
     if (!isValidId) {
       throw new HttpException('User not found', 404);
     }
     return this.userModel.findById(id).exec();
   }
-  async update(@Param('id') id: string, updateUserDto: UpdateUserDto): Promise<UserDocument | null> {
+  async update(
+    @Param('id') id: string,
+    updateUserDto: UpdateUserDto
+  ): Promise<UserDocument | null> {
     const isValidId = Types.ObjectId.isValid(id);
     if (!isValidId) {
       throw new HttpException('User not found', 404);
     }
     if (updateUserDto.password) {
       const saltOrRounds = 10;
-      updateUserDto.password = await bcrypt.hash(updateUserDto.password, saltOrRounds);
+      updateUserDto.password = await bcrypt.hash(
+        updateUserDto.password,
+        saltOrRounds
+      );
     }
-    return this.userModel.findByIdAndUpdate(id, updateUserDto, { new: true }).exec();
+    return this.userModel
+      .findByIdAndUpdate(id, updateUserDto, { new: true })
+      .exec();
   }
   async delete(@Param('id') id: string): Promise<{ deleted: boolean }> {
     const isValidId = Types.ObjectId.isValid(id);
@@ -111,10 +125,9 @@ export class UsersService {
   }
 
   async updateLastLogin(@Param('id') userId: string) {
-    return this.userModel.updateOne(
-      { _id: userId },
-      { $set: { last_login: new Date() } }
-    ).exec();
+    return this.userModel
+      .updateOne({ _id: userId }, { $set: { last_login: new Date() } })
+      .exec();
   }
 
   async getTokenVersionById(userId: string): Promise<number | null> {
@@ -141,7 +154,7 @@ export class UsersService {
     const result = await this.userModel
       .updateOne(
         { email: email.trim().toLowerCase() },
-        { $set: { email_verified: true } },
+        { $set: { email_verified: true } }
       )
       .exec();
     return result.modifiedCount === 1;
@@ -149,12 +162,9 @@ export class UsersService {
 
   async generateMqttOTP(userId: string): Promise<string> {
     const plainMqttPass = crypto.randomBytes(8).toString('hex');
-          const salt = await bcrypt.genSalt();
-          const hashedMqttPass = await bcrypt.hash(plainMqttPass, salt);
-          await this.updateMqttPasswordHash(
-            userId,
-            hashedMqttPass
-          );
+    const salt = await bcrypt.genSalt();
+    const hashedMqttPass = await bcrypt.hash(plainMqttPass, salt);
+    await this.updateMqttPasswordHash(userId, hashedMqttPass);
     return plainMqttPass;
   }
 }
