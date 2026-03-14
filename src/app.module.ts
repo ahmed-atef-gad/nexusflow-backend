@@ -17,7 +17,7 @@ import { FirmwareModule } from './firmware/firmware.module';
     ConfigModule.forRoot({
       isGlobal: true,
     }),
-   
+
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
