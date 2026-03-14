@@ -2,9 +2,11 @@ import { Body, Controller, Get, Req, UseGuards, Post } from '@nestjs/common';
 import {
   ApiBody,
   ApiCookieAuth,
+  ApiBadRequestResponse,
   ApiOperation,
   ApiResponse,
   ApiTags,
+  ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { AuthGuard } from '../gaurds/auth/auth.guard';
 import { DevicesService } from './devices.service';
@@ -30,6 +32,10 @@ export class DeviceRegistrationController {
         expiresInMinutes: 10,
       },
     },
+  })
+  @ApiCookieAuth('jwt')
+  @ApiUnauthorizedResponse({
+    description: 'Unauthorized - Invalid or missing user token',
   })
   @UseGuards(AuthGuard)
   @Get('registration-code')
@@ -69,6 +75,9 @@ export class DeviceRegistrationController {
   @ApiResponse({
     status: 401,
     description: 'Invalid or expired registration code',
+  })
+  @ApiBadRequestResponse({
+    description: 'Invalid device registration payload',
   })
   @Post('verify-registration-code')
   async registerWithCode(@Body() body: RegisterDeviceWithCodeDto) {
