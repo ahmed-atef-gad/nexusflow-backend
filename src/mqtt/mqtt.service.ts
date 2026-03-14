@@ -11,7 +11,7 @@ type PublishOptions = {
 export class MqttService {
   private readonly logger = new Logger(MqttService.name);
 
-  constructor(private readonly pigeonService: PigeonService) { }
+  constructor(private readonly pigeonService: PigeonService) {}
 
   async publish(topic: string, payload: unknown, options: PublishOptions = {}) {
     const packet = {
@@ -38,7 +38,7 @@ export class MqttService {
   }
   // flow id and its last update time
   async publishFlowLastUpdateChanged(
-   macAddress: string,
+    macAddress: string,
     flowId: string,
     updatedAt: Date | string
   ) {
@@ -91,7 +91,6 @@ export class MqttService {
       `Publishing flow changed to topic: ${topic} as ${normalizedMac}`
     );
     return this.pigeonService.publish(packet);
-  
   }
 
   isClientConnected(clientId: string): boolean {

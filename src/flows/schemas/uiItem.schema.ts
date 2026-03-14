@@ -83,6 +83,14 @@ export class UiItem {
   })
   @Prop()
   isAnalog?: boolean;
+
+  @ApiProperty({
+    required: false,
+    description:
+      'For output modules: true if not connected to any input module (can be freely controlled from the frontend)',
+  })
+  @Prop()
+  isFloating?: boolean;
 }
 
 export const UiItemSchema = SchemaFactory.createForClass(UiItem);

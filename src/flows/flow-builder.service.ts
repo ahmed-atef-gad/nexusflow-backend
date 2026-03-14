@@ -444,7 +444,11 @@ export class FlowBuilderService {
     };
   }
 
-  buildUiFromNodes(nodes: Node[], deviceMac?: string): UiItem[] {
+  buildUiFromNodes(
+    nodes: Node[],
+    edges: RFEdge[],
+    deviceMac?: string
+  ): UiItem[] {
     if (nodes.length === 0) {
       throw new BadRequestException('Flow must contain at least one node');
     }
@@ -452,6 +456,9 @@ export class FlowBuilderService {
     const uiElements: UiItem[] = [];
     const resolvedMac = this.normalizeMacAddress(deviceMac);
     const commandTopic = resolvedMac ? `esp/${resolvedMac}/cmd` : 'esp/cmd';
+    const connectedOutputIds = new Set<string>(
+      edges?.map((e) => e.target) ?? []
+    );
 
     nodes.forEach((node) => {
       const module = node.data;
@@ -466,6 +473,7 @@ export class FlowBuilderService {
             responseTopic: `esp/${node.id}/response`,
             moduleType: 'output',
             topic: commandTopic,
+            isFloating: !connectedOutputIds.has(node.id),
           });
         }
         return;
