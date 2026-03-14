@@ -5,9 +5,13 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { Request } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { UsersService } from 'src/users/users.service';
+import {
+  AuthenticatedRequest,
+  AuthenticatedUserPayload,
+  getUserIdFromRequest,
+} from '../../auth/utils/auth.util';
 
 @Injectable()
 export class AuthGuard implements CanActivate {
@@ -18,15 +22,16 @@ export class AuthGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest();
+    const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const token = this.extractTokenFromHeader(request);
     if (!token) {
       throw new UnauthorizedException();
     }
     try {
-      const payload = await this.jwtService.verifyAsync(token, {
-        secret: this.configService.get<string>('JWT_SECRET'),
-      });
+      const payload =
+        await this.jwtService.verifyAsync<AuthenticatedUserPayload>(token, {
+          secret: this.configService.get<string>('JWT_SECRET'),
+        });
       const tokenVersion = await this.usersService.getTokenVersionById(
         payload.sub
       );
@@ -34,18 +39,21 @@ export class AuthGuard implements CanActivate {
         throw new UnauthorizedException();
       }
       // Assign the payload so route handlers can access it
-      request['user'] = payload;
+      request.user = payload;
+      request.userId = getUserIdFromRequest(request);
     } catch {
       throw new UnauthorizedException();
     }
     return true;
   }
 
-  private extractTokenFromHeader(request: Request): string | undefined {
+  private extractTokenFromHeader(
+    request: AuthenticatedRequest
+  ): string | undefined {
     const cookies = request.cookies;
     if (!cookies || !cookies['jwt']) {
       return undefined;
     }
-    return cookies['jwt'];
+    return cookies['jwt'] as string;
   }
 }

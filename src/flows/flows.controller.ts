@@ -3,7 +3,6 @@ import {
   Post,
   Body,
   UseGuards,
-  UnauthorizedException,
   Request,
   Get,
   Param,
@@ -22,6 +21,8 @@ import {
   ApiBody,
   ApiBadRequestResponse,
 } from '@nestjs/swagger';
+import type { AuthenticatedRequest } from '../auth/utils/auth.util';
+import { getUserIdFromRequest } from '../auth/utils/auth.util';
 
 @ApiTags('flows')
 @ApiCookieAuth('jwt')
@@ -39,11 +40,11 @@ export class FlowsController {
   @ApiResponse({ status: 201, description: 'Flow created' })
   @ApiBadRequestResponse({ description: 'Bad request' })
   @Post()
-  async create(@Body() createFlow: Flow, @Request() req): Promise<Flow> {
-    const userId = req.user?.id ?? req.user?.sub ?? req.user?.userId;
-    if (!userId) {
-      throw new UnauthorizedException('User not authenticated');
-    }
+  async create(
+    @Body() createFlow: Flow,
+    @Request() req: AuthenticatedRequest
+  ): Promise<Flow> {
+    const userId = getUserIdFromRequest(req);
     return this.flowsService.create(createFlow, userId);
   }
 
@@ -51,11 +52,8 @@ export class FlowsController {
   @ApiResponse({ status: 200, description: 'List of flows' })
   @ApiBadRequestResponse({ description: 'Bad request' })
   @Get()
-  async findAll(@Request() req): Promise<Flow[]> {
-    const userId = req.user?.id ?? req.user?.sub ?? req.user?.userId;
-    if (!userId) {
-      throw new UnauthorizedException('User not authenticated');
-    }
+  async findAll(@Request() req: AuthenticatedRequest): Promise<Flow[]> {
+    const userId = getUserIdFromRequest(req);
     return this.flowsService.findAllByUser(userId);
   }
 
@@ -64,8 +62,11 @@ export class FlowsController {
   @ApiResponse({ status: 200, description: 'Flow found' })
   @ApiResponse({ status: 404, description: 'Flow not found' })
   @Get(':id')
-  async findOne(@Param('id') id: string, @Request() req): Promise<Flow> {
-    const userId = req.user?.id ?? req.user?.sub ?? req.user?.userId;
+  async findOne(
+    @Param('id') id: string,
+    @Request() req: AuthenticatedRequest
+  ): Promise<Flow> {
+    const userId = getUserIdFromRequest(req);
     return this.flowsService.findOne(id, userId);
   }
 
@@ -78,9 +79,9 @@ export class FlowsController {
   async update(
     @Param('id') id: string,
     @Body() updateFlow: Flow,
-    @Request() req
+    @Request() req: AuthenticatedRequest
   ): Promise<Flow> {
-    const userId = req.user?.id ?? req.user?.sub ?? req.user?.userId;
+    const userId = getUserIdFromRequest(req);
     return this.flowsService.update(id, userId, updateFlow);
   }
 
@@ -91,9 +92,9 @@ export class FlowsController {
   @Delete(':id')
   async delete(
     @Param('id') id: string,
-    @Request() req
+    @Request() req: AuthenticatedRequest
   ): Promise<{ success: boolean; message: string; id: string }> {
-    const userId = req.user?.id ?? req.user?.sub ?? req.user?.userId;
+    const userId = getUserIdFromRequest(req);
     await this.flowsService.delete(id, userId);
 
     return { success: true, message: 'Flow deleted successfully', id };

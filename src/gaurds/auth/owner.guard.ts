@@ -5,7 +5,6 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { Request } from 'express';
 import { InjectConnection } from '@nestjs/mongoose';
 import { Connection, Types } from 'mongoose';
 import {
@@ -20,12 +19,10 @@ import {
   DeviceToken,
   DeviceTokenDocument,
 } from '../../devices/schemas/device-token.schema';
-
-interface AuthUserClaims {
-  email: string;
-  sub: string;
-  roles: string[];
-}
+import {
+  AuthenticatedRequest,
+  getUserIdFromRequest,
+} from '../../auth/utils/auth.util';
 
 @Injectable()
 export class OwnerGuard implements CanActivate {
@@ -44,13 +41,13 @@ export class OwnerGuard implements CanActivate {
       return true;
     }
 
-    const request: Request = context.switchToHttp().getRequest();
-    const user = request.user as AuthUserClaims;
+    const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
+    let userId: string;
 
-    if (!user || !user.sub) {
-      throw new ForbiddenException(
-        'Authentication data (User ID) is missing.'
-      );
+    try {
+      userId = getUserIdFromRequest(request);
+    } catch {
+      throw new ForbiddenException('Authentication data (User ID) is missing.');
     }
 
     const paramKey =
@@ -80,7 +77,7 @@ export class OwnerGuard implements CanActivate {
     const ownershipResult = await this.checkOwnership(
       resource,
       resourceIdParam,
-      user.sub
+      userId
     );
 
     if (!ownershipResult) {
@@ -121,8 +118,9 @@ export class OwnerGuard implements CanActivate {
         return device.ownerId?.toString() === userId;
       }
       case 'deviceToken': {
-        const DeviceTokenModel =
-          this.connection.model<DeviceTokenDocument>(DeviceToken.name);
+        const DeviceTokenModel = this.connection.model<DeviceTokenDocument>(
+          DeviceToken.name
+        );
         const tokenId = resourceId.includes('.')
           ? resourceId.split('.')[0]
           : resourceId;
