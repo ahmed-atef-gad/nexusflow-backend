@@ -68,6 +68,7 @@ export class UiController {
             moduleType: 'output',
             pin: 12,
             isDigital: true,
+            isAutoControlled: false,
           },
         ],
         createdAt: '2026-03-10T09:15:00.000Z',
