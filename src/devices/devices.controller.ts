@@ -328,6 +328,7 @@ export class DevicesController {
       ...(device.toObject() as Record<string, unknown>),
       resetWifiTopic: `esp/${device.macAddress}/resetwifi`,
       deviceOnlineStatusTopic: `client/${device.macAddress}/online`,
+      deviceMetricsTopic: `client/${device.macAddress}/metrics`,
     };
   }
 
@@ -352,6 +353,8 @@ export class DevicesController {
    *     "ownerId": "507f1f77bcf86cd799439012",
    *     "status": "active",
    *     "resetWifiTopic": "esp/AA:BB:CC:DD:EE:FF/resetwifi",
+   *     "deviceOnlineStatusTopic": "client/AA:BB:CC:DD:EE:FF/online",
+   *     "deviceMetricsTopic": "client/AA:BB:CC:DD:EE:FF/metrics",
    *     "lastActiveAt": "2024-02-15T12:00:00Z",
    *     "createdAt": "2024-02-10T10:30:00Z",
    *     "updatedAt": "2024-02-10T10:30:00Z"
@@ -363,6 +366,8 @@ export class DevicesController {
    *     "ownerId": "507f1f77bcf86cd799439012",
    *     "status": "active",
    *     "resetWifiTopic": "esp/11:22:33:44:55:66/resetwifi",
+   *     "deviceOnlineStatusTopic": "client/11:22:33:44:55:66/online",
+   *     "deviceMetricsTopic": "client/11:22:33:44:55:66/metrics",
    *     "lastActiveAt": "2024-02-15T11:45:00Z",
    *     "createdAt": "2024-02-11T14:20:00Z",
    *     "updatedAt": "2024-02-11T14:20:00Z"
@@ -386,6 +391,8 @@ export class DevicesController {
           ownerId: '507f1f77bcf86cd799439012',
           status: 'active',
           resetWifiTopic: 'esp/AA:BB:CC:DD:EE:FF/resetwifi',
+          deviceOnlineStatusTopic: 'client/AA:BB:CC:DD:EE:FF/online',
+          deviceMetricsTopic: 'client/AA:BB:CC:DD:EE:FF/metrics',
           lastActiveAt: '2024-02-15T12:00:00Z',
           createdAt: '2024-02-10T10:30:00Z',
           updatedAt: '2024-02-10T10:30:00Z',
@@ -404,6 +411,7 @@ export class DevicesController {
       ...(device.toObject() as Record<string, unknown>),
       resetWifiTopic: `esp/${device.macAddress}/resetwifi`,
       deviceOnlineStatusTopic: `client/${device.macAddress}/online`,
+      deviceMetricsTopic: `client/${device.macAddress}/metrics`,
     }));
   }
 
