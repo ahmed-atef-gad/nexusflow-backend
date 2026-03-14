@@ -9,7 +9,6 @@ import {
   Req,
   UseGuards,
   Patch,
-  UnauthorizedException,
 } from '@nestjs/common';
 import { AuthGuard } from '../gaurds/auth/auth.guard';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -32,7 +31,8 @@ import { Roles } from './../auth/decorators/roles.decorator';
 import { RolesGuard } from '../gaurds/auth/roles.guard';
 import { Role } from './enums/role.enum';
 import { OwnerGuard } from '../gaurds/auth/owner.guard';
-
+import type { AuthenticatedRequest } from '../auth/utils/auth.util';
+import { getUserIdFromRequest } from '../auth/utils/auth.util';
 /**
  * UsersController
  *
@@ -65,15 +65,14 @@ export class UsersController {
       },
     },
   })
-  @ApiUnauthorizedResponse({ description: 'Unauthorized - Invalid or missing token' })
+  @ApiUnauthorizedResponse({
+    description: 'Unauthorized - Invalid or missing token',
+  })
   @Get('mqtt-otp')
   @UseGuards(AuthGuard)
-  async mqttOTP(@Request() req) {
-    const user = req.user;
-    if (!user.sub) {
-      throw new UnauthorizedException('User not authenticated');
-    }
-    const plainMqttPass = await this.userService.generateMqttOTP(user.sub);
+  async mqttOTP(@Request() req: AuthenticatedRequest) {
+    const userId = getUserIdFromRequest(req);
+    const plainMqttPass = await this.userService.generateMqttOTP(userId);
     return {
       mqtt_password: plainMqttPass,
     };
@@ -99,19 +98,19 @@ export class UsersController {
       },
     },
   })
-  @ApiUnauthorizedResponse({ description: 'Unauthorized - Invalid or missing token' })
+  @ApiUnauthorizedResponse({
+    description: 'Unauthorized - Invalid or missing token',
+  })
   @Get('profile')
-  async getProfile(@Req() req) {
+  getProfile(@Req() req: AuthenticatedRequest) {
+    const userId = getUserIdFromRequest(req);
     const user = req.user;
 
-    if (!user.sub) {
-      throw new UnauthorizedException('User not authenticated');
-    }
-
     return {
-      id: user.sub,
-      email: user.email,
-      username: user.username,
+      id: userId,
+      email: user?.email,
+      username: user?.username,
+      roles: user?.roles,
     };
   }
 
@@ -144,7 +143,9 @@ export class UsersController {
     },
   })
   @ApiBadRequestResponse({ description: 'Bad Request - Validation error' })
-  @ApiUnauthorizedResponse({ description: 'Unauthorized - Invalid or missing token' })
+  @ApiUnauthorizedResponse({
+    description: 'Unauthorized - Invalid or missing token',
+  })
   @ApiForbiddenResponse({ description: 'Forbidden - Admin role required' })
   @Roles(Role.Admin)
   async createUser(@Body() createUserDto: CreateUserDto) {
@@ -183,7 +184,9 @@ export class UsersController {
   })
   @ApiNotFoundResponse({ description: 'User not found' })
   @ApiBadRequestResponse({ description: 'Bad Request - Validation error' })
-  @ApiUnauthorizedResponse({ description: 'Unauthorized - Invalid or missing token' })
+  @ApiUnauthorizedResponse({
+    description: 'Unauthorized - Invalid or missing token',
+  })
   @ApiForbiddenResponse({ description: 'Forbidden - Admin role required' })
   @Roles(Role.Admin)
   async updateUser(
@@ -218,7 +221,9 @@ export class UsersController {
       ],
     },
   })
-  @ApiUnauthorizedResponse({ description: 'Unauthorized - Invalid or missing token' })
+  @ApiUnauthorizedResponse({
+    description: 'Unauthorized - Invalid or missing token',
+  })
   @ApiForbiddenResponse({ description: 'Forbidden - Admin role required' })
   @Roles(Role.Admin)
   async getUsers() {
@@ -254,7 +259,9 @@ export class UsersController {
     },
   })
   @ApiNotFoundResponse({ description: 'User not found' })
-  @ApiUnauthorizedResponse({ description: 'Unauthorized - Invalid or missing token' })
+  @ApiUnauthorizedResponse({
+    description: 'Unauthorized - Invalid or missing token',
+  })
   @ApiForbiddenResponse({ description: 'Forbidden - Admin role required' })
   @Roles(Role.Admin)
   async getUserById(@Param('id') id: string) {
@@ -285,7 +292,9 @@ export class UsersController {
     },
   })
   @ApiNotFoundResponse({ description: 'User not found' })
-  @ApiUnauthorizedResponse({ description: 'Unauthorized - Invalid or missing token' })
+  @ApiUnauthorizedResponse({
+    description: 'Unauthorized - Invalid or missing token',
+  })
   @ApiForbiddenResponse({ description: 'Forbidden - Admin role required' })
   @Roles(Role.Admin)
   @UseGuards(RolesGuard)

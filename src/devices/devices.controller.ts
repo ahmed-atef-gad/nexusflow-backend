@@ -24,6 +24,8 @@ import {
   ApiParam,
 } from '@nestjs/swagger';
 import { IsOwner } from '../auth/decorators/owner.decorator';
+import type { AuthenticatedRequest } from '../auth/utils/auth.util';
+import { getUserIdFromRequest } from '../auth/utils/auth.util';
 
 /**
  * DevicesController
@@ -116,9 +118,13 @@ export class DevicesController {
     description: 'Unauthorized - Invalid or missing user token',
   })
   @Post('register')
-  async register(@Req() req, @Body() body: CreateDeviceDto) {
+  async register(
+    @Req() req: AuthenticatedRequest,
+    @Body() body: CreateDeviceDto
+  ) {
+    const userId = getUserIdFromRequest(req);
     return this.devicesService.registerDevice(
-      req.user.sub,
+      userId,
       body.macAddress,
       body.name,
       body.mqtt_pass
@@ -187,8 +193,11 @@ export class DevicesController {
     description: 'Unauthorized - Invalid or missing user token',
   })
   @Post(':id/token')
-  async generateToken(@Req() req, @Param('id') deviceId: string) {
-    const userId = req.user.sub;
+  async generateToken(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') deviceId: string
+  ) {
+    const userId = getUserIdFromRequest(req);
 
     // Verify device exists and belongs to the user
     const device = await this.devicesService.findOne(deviceId);
@@ -267,16 +276,17 @@ export class DevicesController {
   })
   @Patch(':id/flow')
   async linkFlow(
-    @Req() req,
+    @Req() req: AuthenticatedRequest,
     @Param('id') deviceId: string,
     @Body('flowId') flowId: string
   ) {
+    const userId = getUserIdFromRequest(req);
     const device = await this.devicesService.findOne(deviceId);
-    if (device.ownerId.toString() !== req.user.sub) {
+    if (device.ownerId.toString() !== userId) {
       throw new UnauthorizedException('You do not own this device');
     }
 
-    return this.devicesService.updateDeviceFlow(deviceId, flowId, req.user.sub);
+    return this.devicesService.updateDeviceFlow(deviceId, flowId, userId);
   }
 
   /**
@@ -288,9 +298,13 @@ export class DevicesController {
     description: 'Returns device status and last seen',
   })
   @Get(':id/status')
-  async getStatus(@Req() req, @Param('id') deviceId: string) {
+  async getStatus(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') deviceId: string
+  ) {
+    const userId = getUserIdFromRequest(req);
     const device = await this.devicesService.findOne(deviceId);
-    if (device.ownerId.toString() !== req.user.sub) {
+    if (device.ownerId.toString() !== userId) {
       throw new UnauthorizedException('You do not own this device');
     }
 
@@ -319,9 +333,13 @@ export class DevicesController {
   })
   @ApiResponse({ status: 404, description: 'Device not found' })
   @Get(':id')
-  async findOne(@Req() req, @Param('id') deviceId: string) {
+  async findOne(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') deviceId: string
+  ) {
+    const userId = getUserIdFromRequest(req);
     const device = await this.devicesService.findOne(deviceId);
-    if (device.ownerId.toString() !== req.user.sub) {
+    if (device.ownerId.toString() !== userId) {
       throw new UnauthorizedException('You do not own this device');
     }
     return {
@@ -405,8 +423,9 @@ export class DevicesController {
     description: 'Unauthorized - Invalid or missing user token',
   })
   @Get()
-  async getAllDevices(@Req() req) {
-    const devices = await this.devicesService.findAllByUserId(req.user.sub);
+  async getAllDevices(@Req() req: AuthenticatedRequest) {
+    const userId = getUserIdFromRequest(req);
+    const devices = await this.devicesService.findAllByUserId(userId);
     return devices.map((device) => ({
       ...(device.toObject() as Record<string, unknown>),
       resetWifiTopic: `esp/${device.macAddress}/resetwifi`,
@@ -477,8 +496,11 @@ export class DevicesController {
     },
   })
   @Delete(':id')
-  async deleteDevice(@Req() req, @Param('id') deviceId: string) {
-    const userId = req.user.sub;
+  async deleteDevice(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') deviceId: string
+  ) {
+    const userId = getUserIdFromRequest(req);
 
     // Verify device exists and belongs to the user
     const device = await this.devicesService.findOne(deviceId);
