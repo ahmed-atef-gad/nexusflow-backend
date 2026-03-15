@@ -1,5 +1,7 @@
 import {
   BadRequestException,
+  HttpException,
+  HttpStatus,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -17,8 +19,10 @@ import { SmtpMailService } from './smtp-mail.service';
 
 @Injectable()
 export class VerificationService {
-  private readonly otpExpiresMinutes = 10;
+  private readonly otpExpiresMinutes = 3;
   private readonly maxFailedAttempts = 5;
+  private readonly otpRateLimitPerHour = 3;
+  private readonly otpRateLimitWindowMs = 60 * 60_000;
 
   constructor(
     @InjectModel(EmailVerificationOtp.name)
@@ -43,6 +47,7 @@ export class VerificationService {
     if (!user) {
       throw new BadRequestException('No account found for this email');
     }
+    await this.assertOtpRateLimit(normalizedEmail);
 
     await this.otpModel
       .updateMany(
@@ -70,9 +75,30 @@ export class VerificationService {
     return { normalizedEmail, otp };
   }
 
+  private async assertOtpRateLimit(email: string): Promise<void> {
+    const windowStart = new Date(Date.now() - this.otpRateLimitWindowMs);
+    const issuedInWindow = await this.otpModel
+      .countDocuments({
+        email,
+        createdAt: { $gte: windowStart },
+      })
+      .exec();
+
+    if (issuedInWindow >= this.otpRateLimitPerHour) {
+      throw new HttpException(
+        `You can only request ${this.otpRateLimitPerHour} OTPs per hour. Please try again later.`,
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+  }
+
   async generateOtpForEmail(generateOtpDto: GenerateOtpDto) {
     const { normalizedEmail, otp } = await this.issueOtp(generateOtpDto.email);
-    await this.smtpMailService.sendOtpEmail(normalizedEmail, otp);
+    await this.smtpMailService.sendOtpEmail(
+      normalizedEmail,
+      otp,
+      this.otpExpiresMinutes,
+    );
 
     return {
       message: 'Verification OTP sent',
@@ -83,7 +109,11 @@ export class VerificationService {
 
   async generateOtpForEmailTest(generateOtpDto: GenerateOtpDto) {
     const { normalizedEmail, otp } = await this.issueOtp(generateOtpDto.email);
-    await this.smtpMailService.sendOtpEmail(normalizedEmail, otp);
+    await this.smtpMailService.sendOtpEmail(
+      normalizedEmail,
+      otp,
+      this.otpExpiresMinutes,
+    );
 
     return {
       message: 'Test OTP sent',
