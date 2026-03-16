@@ -11,6 +11,7 @@ import * as bcrypt from 'bcrypt';
 import { UsersService } from 'src/users/users.service';
 import { GenerateOtpDto } from './dto/generate-otp.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
+import { OtpPurpose } from './enums/otp-purpose.enum';
 import {
   EmailVerificationOtp,
   EmailVerificationOtpDocument,
@@ -39,20 +40,32 @@ export class VerificationService {
     return Math.floor(100000 + Math.random() * 900000).toString();
   }
 
+  private getPurposeFilter(
+    purpose: OtpPurpose,
+  ): OtpPurpose | { $in: (OtpPurpose | null)[] } {
+    if (purpose === OtpPurpose.EmailVerification) {
+      // Backward compatibility for OTPs created before `purpose` was introduced.
+      return { $in: [OtpPurpose.EmailVerification, null] };
+    }
+    return purpose;
+  }
+
   private async issueOtp(
     email: string,
+    purpose: OtpPurpose,
   ): Promise<{ normalizedEmail: string; otp: string }> {
     const normalizedEmail = this.normalizeEmail(email);
     const user = await this.usersService.findOneByEmail(normalizedEmail);
     if (!user) {
       throw new BadRequestException('No account found for this email');
     }
-    await this.assertOtpRateLimit(normalizedEmail);
+    await this.assertOtpRateLimit(normalizedEmail, purpose);
 
     await this.otpModel
       .updateMany(
         {
           email: normalizedEmail,
+          purpose: this.getPurposeFilter(purpose),
           consumed_at: null,
           expires_at: { $gt: new Date() },
         },
@@ -66,6 +79,7 @@ export class VerificationService {
 
     await this.otpModel.create({
       email: normalizedEmail,
+      purpose,
       otp_hash: otpHash,
       expires_at: expiresAt,
       failed_attempts: 0,
@@ -75,11 +89,15 @@ export class VerificationService {
     return { normalizedEmail, otp };
   }
 
-  private async assertOtpRateLimit(email: string): Promise<void> {
+  private async assertOtpRateLimit(
+    email: string,
+    purpose: OtpPurpose,
+  ): Promise<void> {
     const windowStart = new Date(Date.now() - this.otpRateLimitWindowMs);
     const issuedInWindow = await this.otpModel
       .countDocuments({
         email,
+        purpose: this.getPurposeFilter(purpose),
         createdAt: { $gte: windowStart },
       })
       .exec();
@@ -92,42 +110,16 @@ export class VerificationService {
     }
   }
 
-  async generateOtpForEmail(generateOtpDto: GenerateOtpDto) {
-    const { normalizedEmail, otp } = await this.issueOtp(generateOtpDto.email);
-    await this.smtpMailService.sendOtpEmail(
-      normalizedEmail,
-      otp,
-      this.otpExpiresMinutes,
-    );
-
-    return {
-      message: 'Verification OTP sent',
-      sent_to: normalizedEmail,
-      expires_in_minutes: this.otpExpiresMinutes,
-    };
-  }
-
-  async generateOtpForEmailTest(generateOtpDto: GenerateOtpDto) {
-    const { normalizedEmail, otp } = await this.issueOtp(generateOtpDto.email);
-    await this.smtpMailService.sendOtpEmail(
-      normalizedEmail,
-      otp,
-      this.otpExpiresMinutes,
-    );
-
-    return {
-      message: 'Test OTP sent',
-      sent_to: normalizedEmail,
-      otp,
-      expires_in_minutes: this.otpExpiresMinutes,
-    };
-  }
-
-  async verifyOtp(verifyOtpDto: VerifyOtpDto) {
-    const normalizedEmail = this.normalizeEmail(verifyOtpDto.email);
+  private async consumeOtp(
+    email: string,
+    otp: string,
+    purpose: OtpPurpose,
+  ): Promise<string> {
+    const normalizedEmail = this.normalizeEmail(email);
     const otpDoc = await this.otpModel
       .findOne({
         email: normalizedEmail,
+        purpose: this.getPurposeFilter(purpose),
         consumed_at: null,
         expires_at: { $gt: new Date() },
       })
@@ -142,7 +134,7 @@ export class VerificationService {
       throw new UnauthorizedException('OTP attempts exceeded');
     }
 
-    const isOtpValid = await bcrypt.compare(verifyOtpDto.otp, otpDoc.otp_hash);
+    const isOtpValid = await bcrypt.compare(otp, otpDoc.otp_hash);
 
     if (!isOtpValid) {
       await this.otpModel
@@ -160,6 +152,91 @@ export class VerificationService {
         { $set: { consumed_at: new Date() } },
       )
       .exec();
+
+    return normalizedEmail;
+  }
+
+  async generateOtpForEmail(generateOtpDto: GenerateOtpDto) {
+    const { normalizedEmail, otp } = await this.issueOtp(
+      generateOtpDto.email,
+      OtpPurpose.EmailVerification,
+    );
+    await this.smtpMailService.sendOtpEmail(
+      normalizedEmail,
+      otp,
+      this.otpExpiresMinutes,
+    );
+
+    return {
+      message: 'Verification OTP sent',
+      sent_to: normalizedEmail,
+      expires_in_minutes: this.otpExpiresMinutes,
+    };
+  }
+
+  async generateOtpForEmailTest(generateOtpDto: GenerateOtpDto) {
+    const { normalizedEmail, otp } = await this.issueOtp(
+      generateOtpDto.email,
+      OtpPurpose.EmailVerification,
+    );
+    await this.smtpMailService.sendOtpEmail(
+      normalizedEmail,
+      otp,
+      this.otpExpiresMinutes,
+    );
+
+    return {
+      message: 'Test OTP sent',
+      sent_to: normalizedEmail,
+      otp,
+      expires_in_minutes: this.otpExpiresMinutes,
+    };
+  }
+
+  async generatePasswordResetOtp(generateOtpDto: GenerateOtpDto) {
+    const normalizedEmail = this.normalizeEmail(generateOtpDto.email);
+    const user = await this.usersService.findOneByEmail(normalizedEmail);
+
+    // Return generic response to reduce account-enumeration exposure.
+    if (!user) {
+      return {
+        message:
+          'If an account exists for this email, a password reset OTP has been sent.',
+        expires_in_minutes: this.otpExpiresMinutes,
+      };
+    }
+
+    const { otp } = await this.issueOtp(
+      normalizedEmail,
+      OtpPurpose.PasswordReset,
+    );
+    await this.smtpMailService.sendPasswordResetOtpEmail(
+      normalizedEmail,
+      otp,
+      this.otpExpiresMinutes,
+    );
+
+    return {
+      message:
+        'If an account exists for this email, a password reset OTP has been sent.',
+      expires_in_minutes: this.otpExpiresMinutes,
+    };
+  }
+
+  async consumePasswordResetOtp(verifyOtpDto: VerifyOtpDto): Promise<string> {
+    return this.consumeOtp(
+      verifyOtpDto.email,
+      verifyOtpDto.otp,
+      OtpPurpose.PasswordReset,
+    );
+  }
+
+  async verifyOtp(verifyOtpDto: VerifyOtpDto) {
+    const normalizedEmail = await this.consumeOtp(
+      verifyOtpDto.email,
+      verifyOtpDto.otp,
+      OtpPurpose.EmailVerification,
+    );
 
     await this.usersService.markEmailAsVerifiedByEmail(normalizedEmail);
 

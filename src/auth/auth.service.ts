@@ -5,6 +5,8 @@ import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { RegisterUserDto } from './dto/register-user.dto';
 import { VerificationService } from 'src/verification/verification.service';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 
 @Injectable()
 export class AuthService {
@@ -61,6 +63,35 @@ export class AuthService {
     };
   }
 
+  async forgotPassword(forgotPasswordDto: ForgotPasswordDto) {
+    return this.verificationService.generatePasswordResetOtp({
+      email: forgotPasswordDto.email,
+    });
+  }
+
+  async resetPassword(resetPasswordDto: ResetPasswordDto) {
+    const normalizedEmail = this.normalizeEmail(resetPasswordDto.email);
+    await this.verificationService.consumePasswordResetOtp({
+      email: normalizedEmail,
+      otp: resetPasswordDto.otp,
+    });
+
+    const saltOrRounds = 10;
+    const hashedPassword = await bcrypt.hash(
+      resetPasswordDto.newPassword,
+      saltOrRounds
+    );
+    const isPasswordUpdated = await this.usersService.updatePasswordByEmail(
+      normalizedEmail,
+      hashedPassword
+    );
+    if (!isPasswordUpdated) {
+      throw new UnauthorizedException('Unable to reset password');
+    }
+
+    await this.usersService.incrementTokenVersionByEmail(normalizedEmail);
+    return { message: 'Password reset successful' };
+  }
 
   async logout(token?: string) {
     if (!token) return;

@@ -160,6 +160,31 @@ export class UsersService {
     return result.modifiedCount === 1;
   }
 
+  async updatePasswordByEmail(
+    email: string,
+    passwordHash: string
+  ): Promise<boolean> {
+    const normalizedEmail = email.trim().toLowerCase();
+    const result = await this.userModel
+      .updateOne(
+        { email: normalizedEmail },
+        { $set: { password: passwordHash } }
+      )
+      .exec();
+    return result.matchedCount === 1;
+  }
+
+  async incrementTokenVersionByEmail(email: string): Promise<boolean> {
+    const normalizedEmail = email.trim().toLowerCase();
+    const result = await this.userModel
+      .updateOne(
+        { email: normalizedEmail },
+        { $inc: { token_version: 1 } }
+      )
+      .exec();
+    return result.matchedCount === 1;
+  }
+
   async generateMqttOTP(userId: string): Promise<string> {
     const plainMqttPass = crypto.randomBytes(8).toString('hex');
     const salt = await bcrypt.genSalt();

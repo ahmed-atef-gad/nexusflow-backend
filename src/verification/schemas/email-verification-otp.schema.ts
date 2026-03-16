@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
+import { OtpPurpose } from '../enums/otp-purpose.enum';
 
 export type EmailVerificationOtpDocument = EmailVerificationOtp & Document;
 
@@ -7,6 +8,14 @@ export type EmailVerificationOtpDocument = EmailVerificationOtp & Document;
 export class EmailVerificationOtp {
   @Prop({ required: true, index: true })
   email: string;
+
+  @Prop({
+    required: true,
+    enum: OtpPurpose,
+    default: OtpPurpose.EmailVerification,
+    index: true,
+  })
+  purpose: OtpPurpose;
 
   @Prop({ required: true })
   otp_hash: string;
@@ -23,3 +32,5 @@ export class EmailVerificationOtp {
 
 export const EmailVerificationOtpSchema =
   SchemaFactory.createForClass(EmailVerificationOtp);
+
+EmailVerificationOtpSchema.index({ email: 1, purpose: 1, createdAt: -1 });

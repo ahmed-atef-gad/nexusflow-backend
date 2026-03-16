@@ -24,6 +24,55 @@ export class SmtpMailService {
     otp: string,
     expiresInMinutes = 3,
   ): Promise<void> {
+    const subject = 'Your NexusFlow email verification code';
+    const textBody = [
+      'Your NexusFlow verification code is:',
+      otp,
+      '',
+      `It will expire in ${expiresInMinutes} minutes.`,
+      'If you did not request this, you can ignore this email.',
+    ].join('\r\n');
+    await this.dispatchOtpEmail({
+      toEmail,
+      otp,
+      subject,
+      textBody,
+      htmlBuilder: (includeLogo) =>
+        this.buildVerificationHtmlBody(otp, includeLogo, expiresInMinutes),
+    });
+  }
+
+  async sendPasswordResetOtpEmail(
+    toEmail: string,
+    otp: string,
+    expiresInMinutes = 3,
+  ): Promise<void> {
+    const subject = 'Your NexusFlow password reset code';
+    const textBody = [
+      'Your NexusFlow password reset code is:',
+      otp,
+      '',
+      `It will expire in ${expiresInMinutes} minutes.`,
+      'If you did not request this reset, you can ignore this email.',
+    ].join('\r\n');
+    await this.dispatchOtpEmail({
+      toEmail,
+      otp,
+      subject,
+      textBody,
+      htmlBuilder: (includeLogo) =>
+        this.buildPasswordResetHtmlBody(otp, includeLogo, expiresInMinutes),
+    });
+  }
+
+  private async dispatchOtpEmail(params: {
+    toEmail: string;
+    otp: string;
+    subject: string;
+    textBody: string;
+    htmlBuilder: (includeLogo: boolean) => string;
+  }): Promise<void> {
+    const { toEmail, otp, subject, textBody, htmlBuilder } = params;
     const host = this.configService.get<string>('SMTP_HOST');
     const fromEmail =
       this.configService.get<string>('SMTP_FROM_EMAIL') ??
@@ -42,17 +91,8 @@ export class SmtpMailService {
       return;
     }
 
-    const subject = 'Your NexusFlow email verification code';
-    const textBody = [
-      'Your NexusFlow verification code is:',
-      otp,
-      '',
-      `It will expire in ${expiresInMinutes} minutes.`,
-      'If you did not request this, you can ignore this email.',
-    ].join('\r\n');
-
     const logo = await this.loadInlineLogo();
-    const htmlBody = this.buildHtmlBody(otp, Boolean(logo), expiresInMinutes);
+    const htmlBody = htmlBuilder(Boolean(logo));
     const data = this.buildMessage({
       fromEmail,
       toEmail,
@@ -89,9 +129,39 @@ export class SmtpMailService {
     }
   }
 
-  private buildHtmlBody(
+  private buildVerificationHtmlBody(
     otp: string,
     includeLogo: boolean,
+    expiresInMinutes: number,
+  ): string {
+    return this.buildOtpHtmlBody(
+      'Your NexusFlow verification code is:',
+      'If you did not request this, you can ignore this email.',
+      includeLogo,
+      otp,
+      expiresInMinutes,
+    );
+  }
+
+  private buildPasswordResetHtmlBody(
+    otp: string,
+    includeLogo: boolean,
+    expiresInMinutes: number,
+  ): string {
+    return this.buildOtpHtmlBody(
+      'Your NexusFlow password reset code is:',
+      'If you did not request this reset, you can ignore this email.',
+      includeLogo,
+      otp,
+      expiresInMinutes,
+    );
+  }
+
+  private buildOtpHtmlBody(
+    headline: string,
+    footer: string,
+    includeLogo: boolean,
+    otp: string,
     expiresInMinutes: number,
   ): string {
     const logoSection = includeLogo
@@ -105,10 +175,10 @@ export class SmtpMailService {
     return [
       '<div style="font-family:Arial,sans-serif;line-height:1.6;color:#111827;">',
       logoSection,
-      '<p>Your NexusFlow verification code is:</p>',
+      `<p>${headline}</p>`,
       `<p style="font-size:24px;font-weight:700;letter-spacing:2px;margin:8px 0;">${otp}</p>`,
       `<p>It will expire in ${expiresInMinutes} minutes.</p>`,
-      '<p>If you did not request this, you can ignore this email.</p>',
+      `<p>${footer}</p>`,
       '</div>',
     ].join('');
   }
