@@ -20,6 +20,8 @@ import { MqttService } from 'src/mqtt/mqtt.service';
 import { DevicesService } from 'src/devices/devices.service';
 import { UiService } from './ui.service';
 import { UiItem } from './schemas/uiItem.schema';
+import { Ui } from './schemas/ui.schema';
+import { warn } from 'console';
 
 @Injectable()
 export class FlowsService {
@@ -58,6 +60,7 @@ export class FlowsService {
     let setupData: SetupObject = { setup: [], tasks: [] };
     let logicData: CommandExtraction = { flows: [], warnings: [] };
     let uiData: UiItem[] = [];
+    let ui: Ui | null = null;
     let savedFlow: FlowDocument;
 
     if (nodes && edges) {
@@ -79,9 +82,9 @@ export class FlowsService {
         flowId: savedFlowId,
         program: logicData,
       });
-      await this.uiService.create({
+      ui = await this.uiService.create({
         flowId: savedFlowId,
-        elements: uiData,
+        uiItems: uiData,
       });
     } else {
       throw new BadRequestException(
@@ -92,8 +95,8 @@ export class FlowsService {
 
     return {
       ...savedFlow.toObject(),
-      setup: setupData,
-      logic: logicData,
+      warnings: logicData.warnings,
+      ui: ui,
     };
   }
 
@@ -191,6 +194,7 @@ export class FlowsService {
     let setupData: SetupObject | undefined = { setup: [], tasks: [] };
     let logicData: CommandExtraction | undefined;
     let uiData: UiItem[] | undefined;
+    let ui: Ui | null = null;
     let topicsData: TopicsData | undefined;
 
     if (updatedFlow.nodes && updatedFlow.edges) {
@@ -211,7 +215,7 @@ export class FlowsService {
 
       // Persist setup object for this flow
       await this.setupService.upsertByFlowId(id, setupData);
-      await this.uiService.upsertByFlowId(id, uiData, topicsData);
+      ui = await this.uiService.upsertByFlowId(id, uiData, topicsData);
       await this.logicService.upsertByFlowId(id, logicData);
 
       // this.mqttService.publish(`esp/setup`, setupData);
@@ -235,10 +239,8 @@ export class FlowsService {
 
     return {
       ...flow.toObject(),
-      setup: setupData,
-      logic: logicData,
-      ui: uiData,
-      topics: topicsData,
+      ui: ui,
+      warnings: logicData?.warnings || [],
     };
   }
 

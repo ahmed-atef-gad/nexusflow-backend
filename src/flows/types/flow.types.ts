@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import type { CommandExtraction, SetupObject } from '../flow-builder.service';
+import { UiItem } from '../schemas/uiItem.schema';
 
 export class Position {
   @ApiProperty({ example: 100, description: 'X coordinate' })
@@ -133,5 +134,5 @@ export class UiPayload {
     example: [{ type: 'button', label: 'Turn On', action: 'turn_on' }],
     description: 'Array of UI elements',
   })
-  elements: any[];
+  uiItems: UiItem[];
 }
