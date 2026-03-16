@@ -1,0 +1,116 @@
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Request,
+  UseGuards,
+} from '@nestjs/common';
+import {
+  ApiBadRequestResponse,
+  ApiCookieAuth,
+  ApiForbiddenResponse,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+  ApiUnauthorizedResponse,
+} from '@nestjs/swagger';
+import { Roles } from 'src/auth/decorators/roles.decorator';
+import { getUserIdFromRequest } from 'src/auth/utils/auth.util';
+import type { AuthenticatedRequest } from 'src/auth/utils/auth.util';
+import { AuthGuard } from 'src/gaurds/auth/auth.guard';
+import { RolesGuard } from 'src/gaurds/auth/roles.guard';
+import { Role } from 'src/users/enums/role.enum';
+import { CreateFlowTemplateDto } from './dto/create-flow-template.dto';
+import { ForkFlowTemplateDto } from './dto/fork-flow-template.dto';
+import { UpdateFlowTemplateDto } from './dto/update-flow-template.dto';
+import { FlowTemplatesService } from './flow-templates.service';
+
+@ApiTags('Flow Templates')
+@ApiCookieAuth('jwt')
+@UseGuards(AuthGuard)
+@Controller('flow-templates')
+export class FlowTemplatesController {
+  constructor(private readonly flowTemplatesService: FlowTemplatesService) {}
+
+  @Post()
+  @UseGuards(RolesGuard)
+  @Roles(Role.Admin)
+  @ApiOperation({ summary: 'Create flow template (Admin)' })
+  @ApiResponse({ status: 201, description: 'Flow template created' })
+  @ApiUnauthorizedResponse({ description: 'Unauthorized - Invalid or missing token' })
+  @ApiForbiddenResponse({ description: 'Forbidden - Admin role required' })
+  create(
+    @Body() dto: CreateFlowTemplateDto,
+    @Request() req: AuthenticatedRequest
+  ) {
+    const adminId = getUserIdFromRequest(req);
+    return this.flowTemplatesService.create(dto, adminId);
+  }
+
+  @Get()
+  @ApiOperation({ summary: 'List flow templates' })
+  @ApiOkResponse({ description: 'Templates fetched successfully' })
+  @ApiUnauthorizedResponse({ description: 'Unauthorized - Invalid or missing token' })
+  findAll() {
+    return this.flowTemplatesService.findAll();
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Get flow template by ID' })
+  @ApiOkResponse({ description: 'Template fetched successfully' })
+  @ApiBadRequestResponse({ description: 'Invalid id format' })
+  @ApiNotFoundResponse({ description: 'Template not found' })
+  @ApiUnauthorizedResponse({ description: 'Unauthorized - Invalid or missing token' })
+  findOne(@Param('id') id: string) {
+    return this.flowTemplatesService.findOne(id);
+  }
+
+  @Patch(':id')
+  @UseGuards(RolesGuard)
+  @Roles(Role.Admin)
+  @ApiOperation({ summary: 'Update flow template (Admin)' })
+  @ApiOkResponse({ description: 'Template updated successfully' })
+  @ApiBadRequestResponse({ description: 'Invalid id format' })
+  @ApiNotFoundResponse({ description: 'Template not found' })
+  @ApiUnauthorizedResponse({ description: 'Unauthorized - Invalid or missing token' })
+  @ApiForbiddenResponse({ description: 'Forbidden - Admin role required' })
+  update(@Param('id') id: string, @Body() dto: UpdateFlowTemplateDto) {
+    return this.flowTemplatesService.update(id, dto);
+  }
+
+  @Delete(':id')
+  @UseGuards(RolesGuard)
+  @Roles(Role.Admin)
+  @ApiOperation({ summary: 'Delete flow template (Admin)' })
+  @ApiOkResponse({ description: 'Template deleted successfully' })
+  @ApiBadRequestResponse({ description: 'Invalid id format' })
+  @ApiNotFoundResponse({ description: 'Template not found' })
+  @ApiUnauthorizedResponse({ description: 'Unauthorized - Invalid or missing token' })
+  @ApiForbiddenResponse({ description: 'Forbidden - Admin role required' })
+  delete(@Param('id') id: string) {
+    return this.flowTemplatesService.delete(id);
+  }
+
+  @Post(':id/fork')
+  @ApiOperation({ summary: 'Fork a template into user flows' })
+  @ApiResponse({ status: 201, description: 'Flow forked successfully' })
+  @ApiBadRequestResponse({ description: 'Invalid template id format' })
+  @ApiNotFoundResponse({ description: 'Template not found' })
+  @ApiUnauthorizedResponse({ description: 'Unauthorized - Invalid or missing token' })
+  fork(
+    @Param('id') id: string,
+    @Body() dto: ForkFlowTemplateDto,
+    @Request() req: AuthenticatedRequest
+  ) {
+    const userId = getUserIdFromRequest(req);
+    return this.flowTemplatesService.forkToFlow(id, userId, dto?.name);
+  }
+  
+}
+
