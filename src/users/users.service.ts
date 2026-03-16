@@ -141,6 +141,24 @@ export class UsersService {
     return typeof user.token_version === 'number' ? user.token_version : 0;
   }
 
+  async getAuthStateById(
+    userId: string
+  ): Promise<{ tokenVersion: number; emailVerified: boolean } | null> {
+    const isValidId = Types.ObjectId.isValid(userId);
+    if (!isValidId) return null;
+    const user = await this.userModel
+      .findById(userId)
+      .select('token_version email_verified')
+      .lean()
+      .exec();
+    if (!user) return null;
+    return {
+      tokenVersion:
+        typeof user.token_version === 'number' ? user.token_version : 0,
+      emailVerified: Boolean(user.email_verified),
+    };
+  }
+
   async incrementTokenVersion(userId: string): Promise<boolean> {
     const isValidId = Types.ObjectId.isValid(userId);
     if (!isValidId) return false;

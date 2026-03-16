@@ -157,37 +157,63 @@ export class VerificationService {
   }
 
   async generateOtpForEmail(generateOtpDto: GenerateOtpDto) {
-    const { normalizedEmail, otp } = await this.issueOtp(
-      generateOtpDto.email,
+    const normalizedEmail = this.normalizeEmail(generateOtpDto.email);
+    const user = await this.usersService.findOneByEmail(normalizedEmail);
+    if (!user) {
+      throw new BadRequestException('No account found for this email');
+    }
+    if (user.email_verified) {
+      return {
+        message: 'Email is already verified',
+        sent_to: normalizedEmail,
+        verified: true,
+      };
+    }
+
+    const { normalizedEmail: issuedEmail, otp } = await this.issueOtp(
+      normalizedEmail,
       OtpPurpose.EmailVerification,
     );
     await this.smtpMailService.sendOtpEmail(
-      normalizedEmail,
+      issuedEmail,
       otp,
       this.otpExpiresMinutes,
     );
 
     return {
       message: 'Verification OTP sent',
-      sent_to: normalizedEmail,
+      sent_to: issuedEmail,
       expires_in_minutes: this.otpExpiresMinutes,
     };
   }
 
   async generateOtpForEmailTest(generateOtpDto: GenerateOtpDto) {
-    const { normalizedEmail, otp } = await this.issueOtp(
-      generateOtpDto.email,
+    const normalizedEmail = this.normalizeEmail(generateOtpDto.email);
+    const user = await this.usersService.findOneByEmail(normalizedEmail);
+    if (!user) {
+      throw new BadRequestException('No account found for this email');
+    }
+    if (user.email_verified) {
+      return {
+        message: 'Email is already verified',
+        sent_to: normalizedEmail,
+        verified: true,
+      };
+    }
+
+    const { normalizedEmail: issuedEmail, otp } = await this.issueOtp(
+      normalizedEmail,
       OtpPurpose.EmailVerification,
     );
     await this.smtpMailService.sendOtpEmail(
-      normalizedEmail,
+      issuedEmail,
       otp,
       this.otpExpiresMinutes,
     );
 
     return {
       message: 'Test OTP sent',
-      sent_to: normalizedEmail,
+      sent_to: issuedEmail,
       otp,
       expires_in_minutes: this.otpExpiresMinutes,
     };
