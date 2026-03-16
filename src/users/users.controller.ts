@@ -96,6 +96,7 @@ export class UsersController {
         email: 'john@example.com',
         username: 'john_doe',
         roles: ['User'],
+        isEmailVerified: false,
       },
     },
   })
@@ -112,6 +113,7 @@ export class UsersController {
       email: user?.email,
       username: user?.username,
       roles: user?.roles,
+      isEmailVerified: user?.is_email_verified,
     };
   }
 

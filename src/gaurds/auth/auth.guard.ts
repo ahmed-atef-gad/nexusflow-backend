@@ -35,9 +35,7 @@ export class AuthGuard implements CanActivate {
         await this.jwtService.verifyAsync<AuthenticatedUserPayload>(token, {
           secret: this.configService.get<string>('JWT_SECRET'),
         });
-      const authState = await this.usersService.getAuthStateById(
-        payload.sub
-      );
+      const authState = await this.usersService.getAuthStateById(payload.sub);
       if (
         authState === null ||
         payload.token_version !== authState.tokenVersion
@@ -46,7 +44,10 @@ export class AuthGuard implements CanActivate {
       }
       const requestPath = this.getRequestPath(request);
       const isAllowedForUnverified = this.unverifiedAllowedPrefixes.some(
-        (prefix) => requestPath === prefix || requestPath.startsWith(`${prefix}/`)
+        (prefix) =>
+          requestPath === prefix ||
+          requestPath.startsWith(`${prefix}/`) ||
+          requestPath === '/users/profile' // Allow profile access for unverified users
       );
       if (!authState.emailVerified && !isAllowedForUnverified) {
         throw new ForbiddenException(
@@ -55,6 +56,7 @@ export class AuthGuard implements CanActivate {
       }
       // Assign the payload so route handlers can access it
       request.user = payload;
+      request.user.is_email_verified = authState.emailVerified;
       request.userId = getUserIdFromRequest(request);
     } catch {
       throw new UnauthorizedException();
@@ -63,7 +65,11 @@ export class AuthGuard implements CanActivate {
   }
 
   private getRequestPath(request: AuthenticatedRequest): string {
-    const pathCandidate = (request.path ?? request.originalUrl ?? '/').toString();
+    const pathCandidate = (
+      request.path ??
+      request.originalUrl ??
+      '/'
+    ).toString();
     return pathCandidate.split('?')[0];
   }
 
