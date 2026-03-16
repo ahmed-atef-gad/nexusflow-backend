@@ -4,13 +4,14 @@ import {
   Body,
   UnauthorizedException,
   Res,
-  Get,
   Req,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterUserDto } from './dto/register-user.dto';
 // We will create LocalAuthGuard soon. For login, we'll just use a basic DTO for now.
 import { LoginUserDto } from './dto/login-user.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import {
   ApiBadRequestResponse,
   ApiBody,
@@ -33,7 +34,6 @@ import type { Response, Request } from 'express';
 @Controller('auth')
 export class AuthController {
   constructor(private authService: AuthService) {}
-
 
   /**
    * Register a new user and set auth cookie.
@@ -164,6 +164,60 @@ export class AuthController {
         clientId: loginResult.mqtt_username,
       },
     };
+  }
+
+  @Post('forgot-password')
+  @ApiOperation({
+    summary: 'Request password reset OTP',
+    description:
+      'Sends a one-time password reset code to the user email if the account exists.',
+  })
+  @ApiBody({ type: ForgotPasswordDto })
+  @ApiCreatedResponse({
+    description: 'Password reset OTP request accepted',
+    schema: {
+      example: {
+        message:
+          'If an account exists for this email, a password reset OTP has been sent.',
+        expires_in_minutes: 3,
+      },
+    },
+  })
+  @ApiBadRequestResponse({ description: 'Bad Request' })
+  async forgotPassword(@Body() forgotPasswordDto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(forgotPasswordDto);
+  }
+
+  @Post('reset-password')
+  @ApiOperation({
+    summary: 'Reset password using OTP',
+    description:
+      'Verifies the reset OTP and updates the account password. Existing sessions are invalidated.',
+  })
+  @ApiBody({ type: ResetPasswordDto })
+  @ApiCreatedResponse({
+    description: 'Password reset successful',
+    schema: {
+      example: {
+        message: 'Password reset successful',
+      },
+    },
+  })
+  @ApiUnauthorizedResponse({
+    description: 'Unauthorized - OTP is invalid or expired',
+  })
+  async resetPassword(
+    @Res({ passthrough: true }) response: Response,
+    @Body() resetPasswordDto: ResetPasswordDto
+  ) {
+    const result = await this.authService.resetPassword(resetPasswordDto);
+    response.clearCookie('jwt', {
+      httpOnly: true,
+      path: '/',
+      secure: true,
+      sameSite: 'none',
+    });
+    return result;
   }
 
   /**

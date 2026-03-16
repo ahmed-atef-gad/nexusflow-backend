@@ -1,6 +1,7 @@
 import {
   CanActivate,
   ExecutionContext,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -15,6 +16,8 @@ import {
 
 @Injectable()
 export class AuthGuard implements CanActivate {
+  private readonly unverifiedAllowedPrefixes = ['/auth', '/verification'];
+
   constructor(
     private jwtService: JwtService,
     private configService: ConfigService,
@@ -32,11 +35,23 @@ export class AuthGuard implements CanActivate {
         await this.jwtService.verifyAsync<AuthenticatedUserPayload>(token, {
           secret: this.configService.get<string>('JWT_SECRET'),
         });
-      const tokenVersion = await this.usersService.getTokenVersionById(
+      const authState = await this.usersService.getAuthStateById(
         payload.sub
       );
-      if (tokenVersion === null || payload.token_version !== tokenVersion) {
+      if (
+        authState === null ||
+        payload.token_version !== authState.tokenVersion
+      ) {
         throw new UnauthorizedException();
+      }
+      const requestPath = this.getRequestPath(request);
+      const isAllowedForUnverified = this.unverifiedAllowedPrefixes.some(
+        (prefix) => requestPath === prefix || requestPath.startsWith(`${prefix}/`)
+      );
+      if (!authState.emailVerified && !isAllowedForUnverified) {
+        throw new ForbiddenException(
+          'Email is not verified. Please verify your email first.'
+        );
       }
       // Assign the payload so route handlers can access it
       request.user = payload;
@@ -45,6 +60,11 @@ export class AuthGuard implements CanActivate {
       throw new UnauthorizedException();
     }
     return true;
+  }
+
+  private getRequestPath(request: AuthenticatedRequest): string {
+    const pathCandidate = (request.path ?? request.originalUrl ?? '/').toString();
+    return pathCandidate.split('?')[0];
   }
 
   private extractTokenFromHeader(
