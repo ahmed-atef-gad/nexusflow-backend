@@ -8,6 +8,7 @@ export interface AuthenticatedUserPayload {
   email: string;
   username: string;
   roles: string[];
+  is_email_verified: boolean;
   [key: string]: unknown;
 }
 
