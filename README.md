@@ -38,7 +38,10 @@ Create a `.env` file in the project root (or edit the existing one). Required va
 ```
 MONGO_URI=<your MongoDB connection string>
 JWT_SECRET=<a secure secret for JWT signing>
+CORS_ORIGINS=http://localhost:8080,http://localhost:4173,https://nexusflow-frontend-amber.vercel.app
 ```
+
+`CORS_ORIGINS` should be a comma-separated list of allowed frontend origins.
 
 ## Run (development)
 
