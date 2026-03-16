@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { ModulesModule } from './modules/modules.module';
 import { FlowsModule } from './flows/flows.module';
+import { FlowTemplatesModule } from './flow-templates/flow-templates.module';
 import { MqttModule } from './mqtt/mqtt.module';
 import { DevicesModule } from './devices/devices.module';
 import { VerificationModule } from './verification/verification.module';
@@ -33,6 +34,7 @@ import { FirmwareModule } from './firmware/firmware.module';
     UsersModule,
     ModulesModule,
     FlowsModule,
+    FlowTemplatesModule,
     MqttModule,
     DevicesModule,
     VerificationModule,
@@ -42,3 +44,4 @@ import { FirmwareModule } from './firmware/firmware.module';
   providers: [AppService],
 })
 export class AppModule {}
+
