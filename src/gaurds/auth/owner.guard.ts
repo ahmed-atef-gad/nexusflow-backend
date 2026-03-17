@@ -3,6 +3,7 @@ import {
   CanActivate,
   ExecutionContext,
   ForbiddenException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { InjectConnection } from '@nestjs/mongoose';
@@ -47,7 +48,9 @@ export class OwnerGuard implements CanActivate {
     try {
       userId = getUserIdFromRequest(request);
     } catch {
-      throw new ForbiddenException('Authentication data (User ID) is missing.');
+      throw new UnauthorizedException(
+        'Authentication data (User ID) is missing.'
+      );
     }
 
     const paramKey =
