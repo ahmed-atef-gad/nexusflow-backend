@@ -1,7 +1,8 @@
 import {
   CanActivate,
   ExecutionContext,
-  ForbiddenException,
+  HttpException,
+  HttpStatus,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -19,8 +20,16 @@ export class AuthGuard implements CanActivate {
   private readonly unverifiedAllowedPrefixes = [
     '/auth',
     '/verification',
+    '/user/profile',
     '/users/profile',
   ];
+
+  private readonly unverifiedEmailError = {
+    statusCode: HttpStatus.PRECONDITION_REQUIRED,
+    error: 'Precondition Required',
+    message: 'Email is not verified. Please verify your email first.',
+    code: 'EMAIL_NOT_VERIFIED',
+  };
 
   constructor(
     private jwtService: JwtService,
@@ -52,8 +61,9 @@ export class AuthGuard implements CanActivate {
           requestPath === prefix || requestPath.startsWith(`${prefix}/`)
       );
       if (!authState.emailVerified && !isAllowedForUnverified) {
-        throw new ForbiddenException(
-          'Email is not verified. Please verify your email first.'
+        throw new HttpException(
+          this.unverifiedEmailError,
+          HttpStatus.PRECONDITION_REQUIRED
         );
       }
       // Assign the payload so route handlers can access it
@@ -62,7 +72,10 @@ export class AuthGuard implements CanActivate {
       request.user.isActive = authState.isActive;
       request.isActive = authState.isActive;
       request.userId = getUserIdFromRequest(request);
-    } catch {
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
       throw new UnauthorizedException();
     }
     return true;

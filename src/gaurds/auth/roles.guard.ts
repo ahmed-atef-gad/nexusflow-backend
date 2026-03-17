@@ -1,4 +1,10 @@
-import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ROLES_KEY } from '../../auth/decorators/roles.decorator';
 import { Role } from '../../users/enums/role.enum';
@@ -24,9 +30,19 @@ export class RolesGuard implements CanActivate {
     // This assumes an AuthGuard (like JWT/Passport) has already run
     // and attached the 'user' object to the request.
     const { user } = context.switchToHttp().getRequest();
+    if (!user) {
+      throw new UnauthorizedException('Authentication required');
+    }
 
     // 3. Check if the user has any of the required roles
     // We assume 'user' has a 'roles' array property (e.g., user.roles = [Role.Admin])
-    return requiredRoles.some((role) => user.roles?.includes(role));
+    const hasRequiredRole = requiredRoles.some((role) =>
+      user.roles?.includes(role)
+    );
+    if (!hasRequiredRole) {
+      throw new ForbiddenException('Admin role required');
+    }
+
+    return true;
   }
 }

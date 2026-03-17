@@ -76,6 +76,10 @@ export class DeviceRegistrationController {
     status: 401,
     description: 'Invalid or expired registration code',
   })
+  @ApiResponse({
+    status: 428,
+    description: 'Email is not verified for the registration code owner',
+  })
   @ApiBadRequestResponse({
     description: 'Invalid device registration payload',
   })
