@@ -8,13 +8,15 @@ export interface AuthenticatedUserPayload {
   email: string;
   username: string;
   roles: string[];
-  is_email_verified: boolean;
+  isActive: boolean;
+  isEmailVerified: boolean;
   [key: string]: unknown;
 }
 
 export interface AuthenticatedRequest extends Request {
   user?: AuthenticatedUserPayload;
   userId?: string;
+  isActive?: boolean;
 }
 
 export function getUserIdFromRequest(req: AuthenticatedRequest): string {

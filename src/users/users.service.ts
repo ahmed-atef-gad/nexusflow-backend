@@ -141,14 +141,16 @@ export class UsersService {
     return typeof user.token_version === 'number' ? user.token_version : 0;
   }
 
-  async getAuthStateById(
-    userId: string
-  ): Promise<{ tokenVersion: number; emailVerified: boolean } | null> {
+  async getAuthStateById(userId: string): Promise<{
+    tokenVersion: number;
+    emailVerified: boolean;
+    isActive: boolean;
+  } | null> {
     const isValidId = Types.ObjectId.isValid(userId);
     if (!isValidId) return null;
     const user = await this.userModel
       .findById(userId)
-      .select('token_version email_verified')
+      .select('token_version email_verified is_active')
       .lean()
       .exec();
     if (!user) return null;
@@ -156,6 +158,7 @@ export class UsersService {
       tokenVersion:
         typeof user.token_version === 'number' ? user.token_version : 0,
       emailVerified: Boolean(user.email_verified),
+      isActive: Boolean(user.is_active),
     };
   }
 
@@ -195,10 +198,7 @@ export class UsersService {
   async incrementTokenVersionByEmail(email: string): Promise<boolean> {
     const normalizedEmail = email.trim().toLowerCase();
     const result = await this.userModel
-      .updateOne(
-        { email: normalizedEmail },
-        { $inc: { token_version: 1 } }
-      )
+      .updateOne({ email: normalizedEmail }, { $inc: { token_version: 1 } })
       .exec();
     return result.matchedCount === 1;
   }

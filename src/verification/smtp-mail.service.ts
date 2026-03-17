@@ -22,7 +22,7 @@ export class SmtpMailService {
   async sendOtpEmail(
     toEmail: string,
     otp: string,
-    expiresInMinutes = 3,
+    expiresInMinutes = 3
   ): Promise<void> {
     const subject = 'Your NexusFlow email verification code';
     const textBody = [
@@ -45,7 +45,7 @@ export class SmtpMailService {
   async sendPasswordResetOtpEmail(
     toEmail: string,
     otp: string,
-    expiresInMinutes = 3,
+    expiresInMinutes = 3
   ): Promise<void> {
     const subject = 'Your NexusFlow password reset code';
     const textBody = [
@@ -80,13 +80,14 @@ export class SmtpMailService {
     const port = Number(this.configService.get<string>('SMTP_PORT') ?? 465);
     const username = this.configService.get<string>('SMTP_USER');
     const password = this.configService.get<string>('SMTP_PASS');
-    const secure = (this.configService.get<string>('SMTP_SECURE') ?? 'true')
-      .toLowerCase()
-      .trim() !== 'false';
+    const secure =
+      (this.configService.get<string>('SMTP_SECURE') ?? 'true')
+        .toLowerCase()
+        .trim() !== 'false';
 
     if (!host || !fromEmail) {
       this.logger.warn(
-        `SMTP is not fully configured. OTP for ${toEmail} is ${otp} (fallback log mode).`,
+        `SMTP is not fully configured. OTP for ${toEmail} is ${otp} (fallback log mode).`
       );
       return;
     }
@@ -111,11 +112,11 @@ export class SmtpMailService {
         await this.sendCommand(socket, 'AUTH LOGIN');
         await this.sendCommand(
           socket,
-          Buffer.from(username, 'utf8').toString('base64'),
+          Buffer.from(username, 'utf8').toString('base64')
         );
         await this.sendCommand(
           socket,
-          Buffer.from(password, 'utf8').toString('base64'),
+          Buffer.from(password, 'utf8').toString('base64')
         );
       }
 
@@ -132,28 +133,28 @@ export class SmtpMailService {
   private buildVerificationHtmlBody(
     otp: string,
     includeLogo: boolean,
-    expiresInMinutes: number,
+    expiresInMinutes: number
   ): string {
     return this.buildOtpHtmlBody(
       'Your NexusFlow verification code is:',
       'If you did not request this, you can ignore this email.',
       includeLogo,
       otp,
-      expiresInMinutes,
+      expiresInMinutes
     );
   }
 
   private buildPasswordResetHtmlBody(
     otp: string,
     includeLogo: boolean,
-    expiresInMinutes: number,
+    expiresInMinutes: number
   ): string {
     return this.buildOtpHtmlBody(
       'Your NexusFlow password reset code is:',
       'If you did not request this reset, you can ignore this email.',
       includeLogo,
       otp,
-      expiresInMinutes,
+      expiresInMinutes
     );
   }
 
@@ -162,23 +163,49 @@ export class SmtpMailService {
     footer: string,
     includeLogo: boolean,
     otp: string,
-    expiresInMinutes: number,
+    expiresInMinutes: number
   ): string {
     const logoSection = includeLogo
       ? [
-          '<div style="text-align:center;margin-bottom:20px;">',
-          '<img src="cid:nexusflow-logo" alt="NexusFlow" style="display:inline-block;max-width:600px;width:100%;height:auto;border:0;" />',
+          '<div style="text-align:center;margin:0 0 18px 0;">',
+          '<table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" style="margin:0 auto 24px auto;border-radius:16px;background:#12D7FB;background-image:linear-gradient(135deg,#12D7FB,#B55DFF);">',
+          '<tr>',
+          '<td align="center" valign="middle" width="80" height="80" style="width:80px;height:80px;border-radius:16px;">',
+          '<img src="cid:nexusflow-logo" alt="NexusFlow" width="42" style="display:block;width:42px;max-width:42px;height:auto;border:0;outline:none;text-decoration:none;" />',
+          '</td>',
+          '</tr>',
+          '</table>',
           '</div>',
+          '<h1 style="margin:0 0 24px 0;font-size:44px;line-height:1.05;font-weight:700;text-align:center;color:#12D7FB;">NexusFlow</h1>',
         ].join('')
-      : '';
+      : [
+          '<div style="text-align:center;margin:0 0 18px 0;">',
+          '<div style="display:inline-flex;align-items:center;justify-content:center;width:80px;height:80px;margin:0 0 24px 0;background:#12D7FB;background-image:linear-gradient(135deg,#12D7FB,#B55DFF);border-radius:16px;box-shadow:0 0 24px rgba(18,215,251,.25);">',
+          '<div role="img" aria-label="NexusFlow icon" style="font-size:28px;line-height:1;font-weight:800;letter-spacing:.04em;color:#070B14;font-family:Inter,Segoe UI,Roboto,Arial,sans-serif;">NF</div>',
+          '</div>',
+          '</div>',
+          '<h1 style="margin:0 0 24px 0;font-size:44px;line-height:1.05;font-weight:700;text-align:center;color:#12D7FB;">NexusFlow</h1>',
+        ].join('');
 
     return [
-      '<div style="font-family:Arial,sans-serif;line-height:1.6;color:#111827;">',
+      '<div style="margin:0;padding:24px;background:#070B14;font-family:Inter,Segoe UI,Roboto,Arial,sans-serif;color:#E6EEF9;">',
+      '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">',
+      '<tr><td align="center">',
+      '<div style="max-width:560px;width:100%;margin:0 auto;background:#0B1220;border:1px solid #1F2A44;border-radius:16px;padding:24px;box-sizing:border-box;">',
       logoSection,
-      `<p>${headline}</p>`,
-      `<p style="font-size:24px;font-weight:700;letter-spacing:2px;margin:8px 0;">${otp}</p>`,
-      `<p>It will expire in ${expiresInMinutes} minutes.</p>`,
-      `<p>${footer}</p>`,
+      '<p style="margin:0 0 8px 0;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#8CA0C1;">NexusFlow Security</p>',
+      `<p style="margin:0 0 14px 0;font-size:18px;font-weight:600;line-height:1.4;color:#F5F9FF;">${headline}</p>`,
+      '<p style="margin:0 0 8px 0;font-size:13px;color:#A8B7D3;">Use this one-time code to continue:</p>',
+      '<div style="margin:0 0 14px 0;display:inline-block;background:#12D7FB;background-image:linear-gradient(135deg,#12D7FB,#B55DFF);padding:1px;border-radius:12px;">',
+      `<div style="background:#111A2C;color:#F5F9FF;border-radius:11px;padding:12px 22px;font-size:30px;font-weight:800;letter-spacing:6px;line-height:1;">${otp}</div>`,
+      '</div>',
+      `<p style="margin:0 0 10px 0;font-size:13px;color:#A8B7D3;">This code expires in <strong style="color:#E6EEF9;">${expiresInMinutes} minutes</strong>.</p>`,
+      `<p style="margin:0 0 18px 0;font-size:13px;color:#A8B7D3;">${footer}</p>`,
+      '<div style="height:1px;background:#1F2A44;margin:0 0 14px 0;"></div>',
+      '<p style="margin:0;font-size:12px;line-height:1.5;color:#7D8EAF;">For your security, never share this code. NexusFlow support will never ask for your OTP.</p>',
+      '</div>',
+      '</td></tr>',
+      '</table>',
       '</div>',
     ].join('');
   }
@@ -255,7 +282,12 @@ export class SmtpMailService {
   }
 
   private wrapBase64(value: string): string {
-    return value.replace(/\s+/g, '').match(/.{1,76}/g)?.join('\r\n') ?? '';
+    return (
+      value
+        .replace(/\s+/g, '')
+        .match(/.{1,76}/g)
+        ?.join('\r\n') ?? ''
+    );
   }
 
   private inferImageMimeType(filePath: string): string {
@@ -287,7 +319,9 @@ export class SmtpMailService {
     const base64FromEnv = this.configService
       .get<string>('SMTP_EMAIL_LOGO_BASE64')
       ?.trim();
-    const logoPath = this.configService.get<string>('SMTP_EMAIL_LOGO_PATH')?.trim();
+    const logoPath = this.configService
+      .get<string>('SMTP_EMAIL_LOGO_PATH')
+      ?.trim();
     const mimeTypeFromEnv = this.configService
       .get<string>('SMTP_EMAIL_LOGO_MIME_TYPE')
       ?.trim();
@@ -300,7 +334,8 @@ export class SmtpMailService {
       return {
         contentBase64: base64FromEnv,
         mimeType: resolvedMimeType,
-        fileName: fileNameFromEnv || this.inferFileNameFromMime(resolvedMimeType),
+        fileName:
+          fileNameFromEnv || this.inferFileNameFromMime(resolvedMimeType),
       };
     }
 
@@ -311,7 +346,8 @@ export class SmtpMailService {
     try {
       const resolvedPath = resolve(process.cwd(), logoPath);
       const file = await readFile(resolvedPath);
-      const resolvedMimeType = mimeTypeFromEnv || this.inferImageMimeType(resolvedPath);
+      const resolvedMimeType =
+        mimeTypeFromEnv || this.inferImageMimeType(resolvedPath);
       const resolvedFileName = fileNameFromEnv || basename(resolvedPath);
       this.logger.log(`SMTP inline logo loaded from "${resolvedPath}"`);
       return {
@@ -321,7 +357,7 @@ export class SmtpMailService {
       };
     } catch {
       this.logger.warn(
-        `Failed to load SMTP inline logo from path "${logoPath}". Email will be sent without logo.`,
+        `Failed to load SMTP inline logo from path "${logoPath}". Email will be sent without logo.`
       );
       return null;
     }
@@ -330,13 +366,13 @@ export class SmtpMailService {
   private connect(
     host: string,
     port: number,
-    secure: boolean,
+    secure: boolean
   ): Promise<MailSocket> {
     return new Promise((resolve, reject) => {
       if (secure) {
         const socket = connectTls(
           { host, port, rejectUnauthorized: false },
-          () => resolve(socket),
+          () => resolve(socket)
         );
         socket.once('error', reject);
         return;

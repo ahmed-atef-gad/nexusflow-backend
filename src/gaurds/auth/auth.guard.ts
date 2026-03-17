@@ -16,7 +16,11 @@ import {
 
 @Injectable()
 export class AuthGuard implements CanActivate {
-  private readonly unverifiedAllowedPrefixes = ['/auth', '/verification'];
+  private readonly unverifiedAllowedPrefixes = [
+    '/auth',
+    '/verification',
+    '/users/profile',
+  ];
 
   constructor(
     private jwtService: JwtService,
@@ -45,9 +49,7 @@ export class AuthGuard implements CanActivate {
       const requestPath = this.getRequestPath(request);
       const isAllowedForUnverified = this.unverifiedAllowedPrefixes.some(
         (prefix) =>
-          requestPath === prefix ||
-          requestPath.startsWith(`${prefix}/`) ||
-          requestPath === '/users/profile' // Allow profile access for unverified users
+          requestPath === prefix || requestPath.startsWith(`${prefix}/`)
       );
       if (!authState.emailVerified && !isAllowedForUnverified) {
         throw new ForbiddenException(
@@ -56,7 +58,9 @@ export class AuthGuard implements CanActivate {
       }
       // Assign the payload so route handlers can access it
       request.user = payload;
-      request.user.is_email_verified = authState.emailVerified;
+      request.user.isEmailVerified = authState.emailVerified;
+      request.user.isActive = authState.isActive;
+      request.isActive = authState.isActive;
       request.userId = getUserIdFromRequest(request);
     } catch {
       throw new UnauthorizedException();

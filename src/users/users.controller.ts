@@ -95,6 +95,7 @@ export class UsersController {
         id: '507f1f77bcf86cd799439011',
         email: 'john@example.com',
         username: 'john_doe',
+        isActive: true,
         roles: ['User'],
         isEmailVerified: false,
       },
@@ -113,7 +114,8 @@ export class UsersController {
       email: user?.email,
       username: user?.username,
       roles: user?.roles,
-      isEmailVerified: user?.is_email_verified,
+      isEmailVerified: user?.isEmailVerified,
+      isActive: user?.isActive,
     };
   }
 
