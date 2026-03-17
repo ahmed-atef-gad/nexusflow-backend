@@ -29,14 +29,19 @@ export class DeviceAuthGuard implements CanActivate {
 
     // Retrieve the Authorization header
     const authHeader = request.headers.authorization;
+    const queryToken =
+      typeof request.query?.token === 'string' ? request.query.token : null;
 
-    // Check if Authorization header exists and follows Bearer token format
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      throw new UnauthorizedException('Missing Device Token');
+    let token: string | null = null;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      token = authHeader.split(' ')[1];
+    } else if (queryToken) {
+      token = queryToken;
     }
 
-    // Extract the token from the "Bearer <token>" format
-    const token = authHeader.split(' ')[1];
+    if (!token) {
+      throw new UnauthorizedException('Missing Device Token');
+    }
 
     // Validate the token against the database
     const device = await this.devicesService.validateToken(token);
@@ -53,6 +58,7 @@ export class DeviceAuthGuard implements CanActivate {
 
     // Attach the validated device object to the request for downstream use
     request.device = device;
+    request.deviceToken = token;
 
     // Grant access if all validations pass
     return true;
