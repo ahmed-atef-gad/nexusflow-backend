@@ -13,6 +13,17 @@ import * as crypto from 'crypto';
 export class UsersService {
   constructor(@InjectModel(User.name) private userModel: Model<UserDocument>) {}
 
+  private toStrictBoolean(value: unknown, defaultValue = false): boolean {
+    if (value === true || value === false) return value;
+    if (typeof value === 'number') return value === 1;
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (normalized === 'true' || normalized === '1') return true;
+      if (normalized === 'false' || normalized === '0') return false;
+    }
+    return defaultValue;
+  }
+
   // Change 'undefined' to 'null'
   async findOneByEmail(email: string): Promise<UserDocument | null> {
     return this.userModel.findOne({ email: email }).exec();
@@ -157,8 +168,8 @@ export class UsersService {
     return {
       tokenVersion:
         typeof user.token_version === 'number' ? user.token_version : 0,
-      emailVerified: Boolean(user.email_verified),
-      isActive: Boolean(user.is_active),
+      emailVerified: this.toStrictBoolean(user.email_verified, false),
+      isActive: this.toStrictBoolean(user.is_active, true),
     };
   }
 

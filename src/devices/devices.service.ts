@@ -5,6 +5,8 @@ import {
   NotFoundException,
   forwardRef,
   Inject,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -26,6 +28,7 @@ import {
   DeviceRegistrationCode,
   DeviceRegistrationCodeDocument,
 } from './schemas/device-registration-code.schema';
+import { UsersService } from 'src/users/users.service';
 
 @Injectable()
 export class DevicesService {
@@ -39,7 +42,8 @@ export class DevicesService {
     private registrationCodeModel: Model<DeviceRegistrationCodeDocument>,
     private readonly mqttService: MqttService,
     @Inject(forwardRef(() => FlowsService))
-    private readonly flowsService: FlowsService
+    private readonly flowsService: FlowsService,
+    private readonly usersService: UsersService
   ) {}
 
   private normalizeMacAddress(macAddress: string): string {
@@ -113,6 +117,25 @@ export class DevicesService {
     if (!registrationCode) {
       throw new UnauthorizedException('Invalid or expired registration code');
     }
+
+    const registrationOwnerAuthState = await this.usersService.getAuthStateById(
+      registrationCode.ownerId.toString()
+    );
+    if (registrationOwnerAuthState === null) {
+      throw new UnauthorizedException('Invalid or expired registration code');
+    }
+    if (!registrationOwnerAuthState.emailVerified) {
+      throw new HttpException(
+        {
+          statusCode: HttpStatus.PRECONDITION_REQUIRED,
+          error: 'Precondition Required',
+          message: 'Email is not verified. Please verify your email first.',
+          code: 'EMAIL_NOT_VERIFIED',
+        },
+        HttpStatus.PRECONDITION_REQUIRED
+      );
+    }
+
     let device;
     // cheack if device with same mac address already exists    const existingDevice = await this.deviceModel.findOne({
     const normalizedMac = this.normalizeMacAddress(macAddress);
