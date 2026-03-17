@@ -18,7 +18,7 @@ export class User {
   @Prop({ type: String, nullable: true })
   avatarUrl?: string;
 
-  @Prop({ type: [String], default: [Role.User] }) 
+  @Prop({ type: [String], default: [Role.User] })
   roles: Role[];
 
   @Prop({ default: true })
@@ -33,11 +33,14 @@ export class User {
   @Prop({ type: Date, nullable: true })
   last_login?: Date;
 
+  @Prop({ type: Date, default: null })
+  deleted_at?: Date | null;
+
   // Increment to invalidate existing JWTs (e.g. on logout)
   @Prop({ default: 0 })
   token_version: number;
 
-  @Prop({ type: String, select: false }) 
+  @Prop({ type: String, select: false })
   mqtt_pass_hash?: string;
 
   @Prop({ type: Date, select: false })

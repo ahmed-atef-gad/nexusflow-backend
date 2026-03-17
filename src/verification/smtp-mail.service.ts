@@ -1,4 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { readFile } from 'node:fs/promises';
 import { Socket } from 'node:net';
@@ -86,10 +90,26 @@ export class SmtpMailService {
         .trim() !== 'false';
 
     if (!host || !fromEmail) {
-      this.logger.warn(
-        `SMTP is not fully configured. OTP for ${toEmail} is ${otp} (fallback log mode).`
+      const logOnlyMode =
+        this.configService
+          .get<string>('SMTP_LOG_ONLY')
+          ?.trim()
+          .toLowerCase() === 'true';
+
+      this.logger.error(
+        `SMTP is not fully configured (SMTP_HOST/SMTP_FROM_EMAIL). OTP email to ${toEmail} cannot be sent.`
       );
-      return;
+
+      if (logOnlyMode) {
+        this.logger.warn(
+          `SMTP_LOG_ONLY=true enabled. OTP for ${toEmail} is ${otp}`
+        );
+        return;
+      }
+
+      throw new ServiceUnavailableException(
+        'Email service is not configured. Please contact support.'
+      );
     }
 
     const logo = await this.loadInlineLogo();
@@ -125,6 +145,13 @@ export class SmtpMailService {
       await this.sendCommand(socket, 'DATA');
       await this.sendData(socket, data);
       await this.sendCommand(socket, 'QUIT');
+    } catch (error) {
+      this.logger.error(
+        `Failed to send OTP email to ${toEmail}: ${error instanceof Error ? error.message : String(error)}`
+      );
+      throw new ServiceUnavailableException(
+        'Failed to send email. Please try again later.'
+      );
     } finally {
       socket.end();
     }
