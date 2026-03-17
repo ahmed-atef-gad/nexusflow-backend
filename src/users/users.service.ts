@@ -26,11 +26,13 @@ export class UsersService {
 
   // Change 'undefined' to 'null'
   async findOneByEmail(email: string): Promise<UserDocument | null> {
-    return this.userModel.findOne({ email: email }).exec();
+    return this.userModel.findOne({ email: email, deleted_at: null }).exec();
   }
 
   async findOneByUsername(username: string): Promise<UserDocument | null> {
-    return this.userModel.findOne({ username: username }).exec();
+    return this.userModel
+      .findOne({ username: username, deleted_at: null })
+      .exec();
   }
 
   async authenticateMqttUser(
@@ -41,7 +43,7 @@ export class UsersService {
     if (!normalizedUsername || !mqttPassword) return null;
 
     const user = await this.userModel
-      .findOne({ username: normalizedUsername })
+      .findOne({ username: normalizedUsername, deleted_at: null })
       .select('+mqtt_pass_hash +mqtt_pass_used_at')
       .exec();
     if (!user || !user.mqtt_pass_hash) return null;
@@ -97,7 +99,7 @@ export class UsersService {
     return createdUser.save();
   }
   async findAll(): Promise<UserDocument[]> {
-    return this.userModel.find().exec();
+    return this.userModel.find({ deleted_at: null }).exec();
   }
   async getUserById(@Param('id') id: string): Promise<UserDocument | null> {
     const isValidId = Types.ObjectId.isValid(id);
@@ -105,7 +107,7 @@ export class UsersService {
     if (!isValidId) {
       throw new HttpException('User not found', 404);
     }
-    return this.userModel.findById(id).exec();
+    return this.userModel.findOne({ _id: id, deleted_at: null }).exec();
   }
   async update(
     @Param('id') id: string,
@@ -123,7 +125,9 @@ export class UsersService {
       );
     }
     return this.userModel
-      .findByIdAndUpdate(id, updateUserDto, { new: true })
+      .findOneAndUpdate({ _id: id, deleted_at: null }, updateUserDto, {
+        new: true,
+      })
       .exec();
   }
   async delete(@Param('id') id: string): Promise<{ deleted: boolean }> {
@@ -131,8 +135,19 @@ export class UsersService {
     if (!isValidId) {
       throw new HttpException('User not found', 404);
     }
-    const result = await this.userModel.deleteOne({ _id: id }).exec();
-    return { deleted: result.deletedCount === 1 };
+    const result = await this.userModel
+      .updateOne(
+        { _id: id, deleted_at: null },
+        {
+          $set: {
+            deleted_at: new Date(),
+            is_active: false,
+          },
+          $inc: { token_version: 1 },
+        }
+      )
+      .exec();
+    return { deleted: result.modifiedCount === 1 };
   }
 
   async updateLastLogin(@Param('id') userId: string) {
@@ -145,7 +160,7 @@ export class UsersService {
     const isValidId = Types.ObjectId.isValid(userId);
     if (!isValidId) return null;
     const user = await this.userModel
-      .findById(userId)
+      .findOne({ _id: userId, deleted_at: null })
       .select('token_version')
       .exec();
     if (!user) return null;
@@ -160,7 +175,7 @@ export class UsersService {
     const isValidId = Types.ObjectId.isValid(userId);
     if (!isValidId) return null;
     const user = await this.userModel
-      .findById(userId)
+      .findOne({ _id: userId, deleted_at: null })
       .select('token_version email_verified is_active')
       .lean()
       .exec();
@@ -177,7 +192,10 @@ export class UsersService {
     const isValidId = Types.ObjectId.isValid(userId);
     if (!isValidId) return false;
     const result = await this.userModel
-      .updateOne({ _id: userId }, { $inc: { token_version: 1 } })
+      .updateOne(
+        { _id: userId, deleted_at: null },
+        { $inc: { token_version: 1 } }
+      )
       .exec();
     return result.modifiedCount === 1;
   }
@@ -185,7 +203,7 @@ export class UsersService {
   async markEmailAsVerifiedByEmail(email: string): Promise<boolean> {
     const result = await this.userModel
       .updateOne(
-        { email: email.trim().toLowerCase() },
+        { email: email.trim().toLowerCase(), deleted_at: null },
         { $set: { email_verified: true } }
       )
       .exec();
@@ -199,7 +217,7 @@ export class UsersService {
     const normalizedEmail = email.trim().toLowerCase();
     const result = await this.userModel
       .updateOne(
-        { email: normalizedEmail },
+        { email: normalizedEmail, deleted_at: null },
         { $set: { password: passwordHash } }
       )
       .exec();
@@ -209,7 +227,10 @@ export class UsersService {
   async incrementTokenVersionByEmail(email: string): Promise<boolean> {
     const normalizedEmail = email.trim().toLowerCase();
     const result = await this.userModel
-      .updateOne({ email: normalizedEmail }, { $inc: { token_version: 1 } })
+      .updateOne(
+        { email: normalizedEmail, deleted_at: null },
+        { $inc: { token_version: 1 } }
+      )
       .exec();
     return result.matchedCount === 1;
   }
