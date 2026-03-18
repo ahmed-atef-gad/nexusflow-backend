@@ -68,6 +68,7 @@ export class AuthGuard implements CanActivate {
       }
       // Assign the payload so route handlers can access it
       request.user = payload;
+      request.user.roles = [...authState.roles];
       request.user.isEmailVerified = authState.emailVerified;
       request.user.isActive = authState.isActive;
       request.isActive = authState.isActive;
