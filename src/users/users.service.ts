@@ -24,6 +24,15 @@ export class UsersService {
     return defaultValue;
   }
 
+  private toRoles(value: unknown): Role[] {
+    if (!Array.isArray(value)) return [];
+    const validRoles = new Set<string>(Object.values(Role));
+    return value.filter(
+      (role): role is Role =>
+        typeof role === 'string' && validRoles.has(role)
+    );
+  }
+
   // Change 'undefined' to 'null'
   async findOneByEmail(email: string): Promise<UserDocument | null> {
     return this.userModel.findOne({ email: email, deleted_at: null }).exec();
@@ -171,12 +180,13 @@ export class UsersService {
     tokenVersion: number;
     emailVerified: boolean;
     isActive: boolean;
+    roles: Role[];
   } | null> {
     const isValidId = Types.ObjectId.isValid(userId);
     if (!isValidId) return null;
     const user = await this.userModel
       .findOne({ _id: userId, deleted_at: null })
-      .select('token_version email_verified is_active')
+      .select('token_version email_verified is_active roles')
       .lean()
       .exec();
     if (!user) return null;
@@ -185,6 +195,7 @@ export class UsersService {
         typeof user.token_version === 'number' ? user.token_version : 0,
       emailVerified: this.toStrictBoolean(user.email_verified, false),
       isActive: this.toStrictBoolean(user.is_active, true),
+      roles: this.toRoles(user.roles),
     };
   }
 
