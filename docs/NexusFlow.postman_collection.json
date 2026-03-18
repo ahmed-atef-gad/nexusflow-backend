@@ -1,0 +1,1570 @@
+{
+  "info": {
+    "_postman_id": "1a6de4bc-2a2a-45de-a5f0-2b1df9d9ec61",
+    "name": "NexusFlow Backend API",
+    "description": "Auto-generated Postman collection for NexusFlow backend endpoints.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "App",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Docs",
+      "item": [
+        {
+          "name": "Swagger UI",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api"
+          },
+          "response": []
+        },
+        {
+          "name": "Swagger JSON",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api-json"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/auth/register",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"john_doe\",\n  \"email\": \"john@example.com\",\n  \"password\": \"StrongPass123!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const setCookie = pm.response.headers.get('Set-Cookie');",
+                  "if (setCookie) {",
+                  "  const match = setCookie.match(/jwt=([^;]+)/);",
+                  "  if (match) pm.collectionVariables.set('jwt', match[1]);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"john@example.com\",\n  \"password\": \"StrongPass123!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const setCookie = pm.response.headers.get('Set-Cookie');",
+                  "if (setCookie) {",
+                  "  const match = setCookie.match(/jwt=([^;]+)/);",
+                  "  if (match) pm.collectionVariables.set('jwt', match[1]);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Forgot Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/auth/forgot-password",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"john@example.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Reset Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/auth/reset-password",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"john@example.com\",\n  \"otp\": \"123456\",\n  \"newPassword\": \"NewStrongPass123!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Logout User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/auth/logout"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Verification",
+      "item": [
+        {
+          "name": "Generate Email OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/verification/generate",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"john@example.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Verify Email OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/verification/verify",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"john@example.com\",\n  \"otp\": \"123456\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "Generate MQTT OTP",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/users/mqtt-otp"
+          },
+          "response": []
+        },
+        {
+          "name": "Get My Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/users/profile"
+          },
+          "response": []
+        },
+        {
+          "name": "Create User (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/users",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"new_user\",\n  \"email\": \"new_user@example.com\",\n  \"password\": \"StrongPass123!\",\n  \"roles\": [\n    \"User\"\n  ],\n  \"is_active\": true,\n  \"email_verified\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const json = pm.response.json();",
+                  "  const value = json?._id || json?.id;",
+                  "  if (value) pm.collectionVariables.set('userId', String(value));",
+                  "} catch (e) {}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update User (Admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/users/{{userId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"updated_user\",\n  \"roles\": [\n    \"User\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Users (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/users"
+          },
+          "response": []
+        },
+        {
+          "name": "Get User By ID (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/users/{{userId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete User (Admin)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/users/{{userId}}"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Devices",
+      "item": [
+        {
+          "name": "Generate Registration Code",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/devices/registration-code"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const json = pm.response.json();",
+                  "  const value = json?.code;",
+                  "  if (value) pm.collectionVariables.set('registrationCode', String(value));",
+                  "} catch (e) {}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Register Device With Code",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/devices/verify-registration-code",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"{{registrationCode}}\",\n  \"macAddress\": \"AA:BB:CC:DD:EE:FF\",\n  \"name\": \"Kitchen Sensor\",\n  \"mqtt_pass\": \"DevicePass123!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const json = pm.response.json();",
+                  "  const value = json?._id || json?.deviceId || json?.token?.deviceId;",
+                  "  if (value) pm.collectionVariables.set('deviceId', String(value));",
+                  "} catch (e) {}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const json = pm.response.json();",
+                  "  const value = json?.token?.accessToken || json?.accessToken;",
+                  "  if (value) pm.collectionVariables.set('deviceToken', String(value));",
+                  "} catch (e) {}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Register Device (Mobile)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/devices/register",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"macAddress\": \"AA:BB:CC:DD:EE:FF\",\n  \"mqtt_pass\": \"DevicePass123!\",\n  \"name\": \"Living Room Sensor\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const json = pm.response.json();",
+                  "  const value = json?._id || json?.id;",
+                  "  if (value) pm.collectionVariables.set('deviceId', String(value));",
+                  "} catch (e) {}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Generate Device Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/devices/{{deviceId}}/token"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const json = pm.response.json();",
+                  "  const value = json?.accessToken;",
+                  "  if (value) pm.collectionVariables.set('deviceToken', String(value));",
+                  "} catch (e) {}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const json = pm.response.json();",
+                  "  const value = (json?.accessToken || '').split('.')[0];",
+                  "  if (value) pm.collectionVariables.set('tokenId', String(value));",
+                  "} catch (e) {}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Revoke Device Token",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/devices/token/{{tokenId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Link Device To Flow",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/devices/{{deviceId}}/flow",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"flowId\": \"{{flowId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Device Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/devices/{{deviceId}}/status"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Device By ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/devices/{{deviceId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "List My Devices",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/devices"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Device",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/devices/{{deviceId}}"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Flows",
+      "item": [
+        {
+          "name": "Create Flow",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/flows",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"My IoT Flow\",\n  \"nodes\": [\n    {\n      \"id\": \"node-1\",\n      \"type\": \"default\",\n      \"position\": {\n        \"x\": 100,\n        \"y\": 100\n      },\n      \"data\": {\n        \"id\": \"node-1\",\n        \"name\": \"GPIO Input\",\n        \"moduleId\": \"module-1\",\n        \"type\": \"gpio-input\",\n        \"category\": \"Hardware\",\n        \"color\": \"from-amber-500 to-orange-500\",\n        \"options\": {},\n        \"variables\": {\n          \"pinNumber\": 4,\n          \"intervalMs\": 3000\n        }\n      },\n      \"measured\": {\n        \"width\": 180,\n        \"height\": 80\n      }\n    }\n  ],\n  \"edges\": [\n    {\n      \"id\": \"edge-1\",\n      \"source\": \"node-1\",\n      \"target\": \"node-2\"\n    }\n  ],\n  \"viewport\": {\n    \"x\": 0,\n    \"y\": 0,\n    \"zoom\": 1\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const json = pm.response.json();",
+                  "  const value = json?._id || json?.id;",
+                  "  if (value) pm.collectionVariables.set('flowId', String(value));",
+                  "} catch (e) {}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List My Flows",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/flows"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Flow By ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/flows/{{flowId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Flow",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/flows/{{flowId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Updated IoT Flow\",\n  \"nodes\": [\n    {\n      \"id\": \"node-1\",\n      \"type\": \"default\",\n      \"position\": {\n        \"x\": 100,\n        \"y\": 100\n      },\n      \"data\": {\n        \"id\": \"node-1\",\n        \"name\": \"GPIO Input\",\n        \"moduleId\": \"module-1\",\n        \"type\": \"gpio-input\",\n        \"category\": \"Hardware\",\n        \"color\": \"from-amber-500 to-orange-500\",\n        \"options\": {},\n        \"variables\": {\n          \"pinNumber\": 4,\n          \"intervalMs\": 3000\n        }\n      },\n      \"measured\": {\n        \"width\": 180,\n        \"height\": 80\n      }\n    }\n  ],\n  \"edges\": [\n    {\n      \"id\": \"edge-1\",\n      \"source\": \"node-1\",\n      \"target\": \"node-2\"\n    }\n  ],\n  \"viewport\": {\n    \"x\": 0,\n    \"y\": 0,\n    \"zoom\": 1\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Flow",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/flows/{{flowId}}"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Logics (Admin)",
+      "item": [
+        {
+          "name": "Create Logic",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/logics",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"flowId\": \"{{flowId}}\",\n  \"program\": {\n    \"flows\": [\n      [\n        {\n          \"id\": \"node-1\",\n          \"cmd\": 18\n        }\n      ]\n    ]\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const json = pm.response.json();",
+                  "  const value = json?._id || json?.id;",
+                  "  if (value) pm.collectionVariables.set('logicId', String(value));",
+                  "} catch (e) {}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Logics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/logics"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Logic By ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/logics/{{logicId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Logic By Flow ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/logics/flow/{{flowId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Logic",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/logics/{{logicId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"program\": {\n    \"flows\": [\n      [\n        {\n          \"id\": \"node-1\",\n          \"cmd\": 16\n        }\n      ]\n    ]\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Logic",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/logics/{{logicId}}"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Setups",
+      "item": [
+        {
+          "name": "Create Setup (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/setups",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"flowId\": \"{{flowId}}\",\n  \"elements\": [\n    {\n      \"cmd\": 16,\n      \"pin\": 4,\n      \"mode\": 1\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const json = pm.response.json();",
+                  "  const value = json?._id || json?.id;",
+                  "  if (value) pm.collectionVariables.set('setupId', String(value));",
+                  "} catch (e) {}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Setups (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/setups"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Setup By ID (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/setups/{{setupId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Setup By Flow ID (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/setups/flow/{{flowId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Setup (Admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/setups/{{setupId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"elements\": [\n    {\n      \"cmd\": 16,\n      \"pin\": 4,\n      \"mode\": 0\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Setup (Admin)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/setups/{{setupId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Sync Device Setup (Device Token)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{deviceToken}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/setups/device/sync"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "UI",
+      "item": [
+        {
+          "name": "Get UI By Flow ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/ui/flow/{{flowId}}"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Modules (Admin)",
+      "item": [
+        {
+          "name": "Create Module",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/modules",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"ESP32 GPIO\",\n  \"icon\": \"chip\",\n  \"color\": \"from-green-400 to-blue-500\",\n  \"category\": \"Hardware\",\n  \"ports\": \"both\",\n  \"type\": \"gpio\",\n  \"alias\": \"ESP32_GPIO\",\n  \"notes\": \"GPIO control module\",\n  \"options\": {\n    \"voltage\": \"3.3V\"\n  },\n  \"variables\": {\n    \"pin\": \"12\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const json = pm.response.json();",
+                  "  const value = json?._id || json?.id;",
+                  "  if (value) pm.collectionVariables.set('moduleId', String(value));",
+                  "} catch (e) {}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Modules",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/modules"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Module By ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/modules/{{moduleId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Module",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/modules/{{moduleId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"ESP32 GPIO Controller\",\n  \"category\": \"GPIO\",\n  \"ports\": \"source\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Module",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/modules/{{moduleId}}"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Flow Templates",
+      "item": [
+        {
+          "name": "Create Flow Template (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/flow-templates",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Smart Home Lighting Starter\",\n  \"description\": \"Motion-triggered home lighting flow template\",\n  \"tags\": [\n    \"smart-home\",\n    \"lighting\"\n  ],\n  \"nodes\": [\n    {\n      \"id\": \"node-1\",\n      \"type\": \"default\",\n      \"position\": {\n        \"x\": 100,\n        \"y\": 100\n      },\n      \"data\": {\n        \"id\": \"node-1\",\n        \"name\": \"GPIO Input\",\n        \"moduleId\": \"module-1\",\n        \"type\": \"gpio-input\",\n        \"category\": \"Hardware\",\n        \"color\": \"from-amber-500 to-orange-500\",\n        \"options\": {},\n        \"variables\": {\n          \"pinNumber\": 4,\n          \"intervalMs\": 3000\n        }\n      },\n      \"measured\": {\n        \"width\": 180,\n        \"height\": 80\n      }\n    }\n  ],\n  \"edges\": [\n    {\n      \"id\": \"edge-1\",\n      \"source\": \"node-1\",\n      \"target\": \"node-2\"\n    }\n  ],\n  \"viewport\": {\n    \"x\": 0,\n    \"y\": 0,\n    \"zoom\": 1\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const json = pm.response.json();",
+                  "  const value = json?._id || json?.id;",
+                  "  if (value) pm.collectionVariables.set('templateId', String(value));",
+                  "} catch (e) {}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Flow Templates",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/flow-templates"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Flow Template By ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/flow-templates/{{templateId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Flow Template (Admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/flow-templates/{{templateId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Updated Template Name\",\n  \"description\": \"Updated template description\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Flow Template (Admin)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/flow-templates/{{templateId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Fork Flow Template",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/flow-templates/{{templateId}}/fork",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"My Forked Flow\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const json = pm.response.json();",
+                  "  const value = json?._id || json?.id;",
+                  "  if (value) pm.collectionVariables.set('flowId', String(value));",
+                  "} catch (e) {}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Firmware",
+      "item": [
+        {
+          "name": "Upload Firmware (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/firmware/admin/upload",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "version",
+                  "value": "1.0.0",
+                  "type": "text"
+                },
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": ""
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const json = pm.response.json();",
+                  "  const value = json?.id || json?._id;",
+                  "  if (value) pm.collectionVariables.set('firmwareId', String(value));",
+                  "} catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Delete Firmware (Admin)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/firmware/admin/{{firmwareId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Check Firmware Update (Device Token)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{deviceToken}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/firmware/device/check?currentVersion={{currentVersion}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Download Latest Firmware",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/firmware/device/download"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "MQTT",
+      "item": [
+        {
+          "name": "Publish MQTT Test Message",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/mqtt/test?topic={{mqttTopic}}&message={{mqttMessage}}"
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "jwt",
+      "value": ""
+    },
+    {
+      "key": "deviceToken",
+      "value": ""
+    },
+    {
+      "key": "userId",
+      "value": ""
+    },
+    {
+      "key": "deviceId",
+      "value": ""
+    },
+    {
+      "key": "tokenId",
+      "value": ""
+    },
+    {
+      "key": "flowId",
+      "value": ""
+    },
+    {
+      "key": "logicId",
+      "value": ""
+    },
+    {
+      "key": "setupId",
+      "value": ""
+    },
+    {
+      "key": "moduleId",
+      "value": ""
+    },
+    {
+      "key": "templateId",
+      "value": ""
+    },
+    {
+      "key": "firmwareId",
+      "value": ""
+    },
+    {
+      "key": "registrationCode",
+      "value": ""
+    },
+    {
+      "key": "currentVersion",
+      "value": "1.0.0"
+    },
+    {
+      "key": "mqttTopic",
+      "value": "test/topic"
+    },
+    {
+      "key": "mqttMessage",
+      "value": "Hello from NexusFlow backend"
+    }
+  ]
+}
