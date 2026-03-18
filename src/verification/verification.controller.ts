@@ -1,10 +1,12 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import { RateLimit, RateLimiterGuard } from 'nestjs-rate-limiter';
 import {
   ApiBadRequestResponse,
   ApiBody,
   ApiCreatedResponse,
   ApiOperation,
   ApiTags,
+  ApiTooManyRequestsResponse,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { GenerateOtpDto } from './dto/generate-otp.dto';
@@ -23,10 +25,21 @@ export class VerificationController {
   })
   @ApiBody({ type: GenerateOtpDto })
   @Post('generate')
+  @UseGuards(RateLimiterGuard)
+  @RateLimit({
+    keyPrefix: 'verification-generate-otp',
+    points: 3,
+    duration: 60 * 60,
+    errorMessage:
+      'You can only request 3 OTPs per hour. Please try again later.',
+  })
   @ApiCreatedResponse({
     description: 'OTP generated and sent to the provided email',
   })
   @ApiBadRequestResponse({ description: 'No account found for this email' })
+  @ApiTooManyRequestsResponse({
+    description: 'Too many OTP requests. Please try again later.',
+  })
   async generateOtp(@Body() generateOtpDto: GenerateOtpDto) {
     return this.verificationService.generateOtpForEmail(generateOtpDto);
   }

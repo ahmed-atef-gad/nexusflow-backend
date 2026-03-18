@@ -13,6 +13,7 @@ import {
   UseInterceptors,
   UploadedFile,
 } from '@nestjs/common';
+import { RateLimit, RateLimiterGuard } from 'nestjs-rate-limiter';
 import {
   ApiBody,
   ApiConsumes,
@@ -167,17 +168,22 @@ export class FirmwareController {
     summary: 'Download latest firmware binary',
     description: 'Downloads the latest active firmware binary (.bin file).',
   })
-  @ApiSecurity('device-token')
-  @ApiHeader({
-    name: 'Authorization',
-    description: 'Device Bearer token (format: Bearer <tokenId.secret>)',
-    required: true,
-  })
   @ApiResponse({
     status: 200,
     description: 'Firmware binary stream',
   })
-  @UseGuards(DeviceAuthGuard)
+  @ApiResponse({
+    status: 429,
+    description: 'Too many download requests. Please try again later.',
+  })
+  @UseGuards(RateLimiterGuard)
+  @RateLimit({
+    keyPrefix: 'firmware-download',
+    points: 3,
+    duration: 60 * 60,
+    errorMessage:
+      'You can only download firmware 3 times per hour. Please try again later.',
+  })
   @Get('device/download')
   async downloadLatestFirmware(@Res() res: Response) {
     const firmware = await this.firmwareService.getLatestFirmwareOrThrow();

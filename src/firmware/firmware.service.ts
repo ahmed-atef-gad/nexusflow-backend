@@ -111,9 +111,7 @@ export class FirmwareService {
       latestVersion: latestFirmware.version,
       checksum: latestFirmware.checksum,
       size: latestFirmware.size,
-      downloadUrl: updateAvailable
-        ? this.buildDownloadUrl(request, request?.deviceToken)
-        : null,
+      downloadUrl: updateAvailable ? this.buildDownloadUrl(request) : null,
     };
   }
 
@@ -202,7 +200,7 @@ export class FirmwareService {
     return this.firmwareModel.findOne().sort({ createdAt: -1 }).exec();
   }
 
-  private buildDownloadUrl(request: any, deviceToken?: string): string {
+  private buildDownloadUrl(request: any): string {
     const forwardedProto = request.headers?.['x-forwarded-proto'];
     const protocol =
       typeof forwardedProto === 'string'
@@ -211,18 +209,16 @@ export class FirmwareService {
     const host = request.get?.('host') ?? request.headers?.host;
 
     if (!protocol || !host) {
-      return deviceToken
-        ? `/firmware/device/download?token=${encodeURIComponent(deviceToken)}`
-        : '/firmware/device/download';
+      return '/firmware/device/download';
     }
 
-    const tokenQuery = deviceToken
-      ? `?token=${encodeURIComponent(deviceToken)}`
-      : '';
-    return `${protocol}://${host}/firmware/device/download${tokenQuery}`;
+    return `${protocol}://${host}/firmware/device/download`;
   }
 
-  private compareVersions(latestVersion: string, currentVersion: string): number {
+  private compareVersions(
+    latestVersion: string,
+    currentVersion: string
+  ): number {
     const latestParts = this.extractVersionParts(latestVersion);
     const currentParts = this.extractVersionParts(currentVersion);
     const maxLength = Math.max(latestParts.length, currentParts.length);

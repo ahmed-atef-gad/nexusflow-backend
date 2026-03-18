@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
+import { RateLimiterModule } from 'nestjs-rate-limiter';
 import { UsersModule } from 'src/users/users.module';
 import {
   EmailVerificationOtp,
@@ -12,6 +13,10 @@ import { VerificationService } from './verification.service';
 @Module({
   imports: [
     UsersModule,
+    RateLimiterModule.register({
+      for: 'Express',
+      type: 'Memory',
+    }),
     MongooseModule.forFeature([
       { name: EmailVerificationOtp.name, schema: EmailVerificationOtpSchema },
     ]),
