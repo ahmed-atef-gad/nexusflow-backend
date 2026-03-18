@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
+import { RateLimiterModule } from 'nestjs-rate-limiter';
 import { AuthModule } from '../auth/auth.module';
 import { DevicesModule } from '../devices/devices.module';
 import { RolesGuard } from '../gaurds/auth/roles.guard';
@@ -10,7 +11,13 @@ import { Firmware, FirmwareSchema } from './schemas/firmware.schema';
 
 @Module({
   imports: [
-    MongooseModule.forFeature([{ name: Firmware.name, schema: FirmwareSchema }]),
+    MongooseModule.forFeature([
+      { name: Firmware.name, schema: FirmwareSchema },
+    ]),
+    RateLimiterModule.register({
+      for: 'Express',
+      type: 'Memory',
+    }),
     AuthModule,
     DevicesModule,
     UsersModule,

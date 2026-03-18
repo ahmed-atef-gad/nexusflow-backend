@@ -1,7 +1,5 @@
 import {
   BadRequestException,
-  HttpException,
-  HttpStatus,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -22,14 +20,12 @@ import { SmtpMailService } from './smtp-mail.service';
 export class VerificationService {
   private readonly otpExpiresMinutes = 3;
   private readonly maxFailedAttempts = 5;
-  private readonly otpRateLimitPerHour = 3;
-  private readonly otpRateLimitWindowMs = 60 * 60_000;
 
   constructor(
     @InjectModel(EmailVerificationOtp.name)
     private readonly otpModel: Model<EmailVerificationOtpDocument>,
     private readonly usersService: UsersService,
-    private readonly smtpMailService: SmtpMailService,
+    private readonly smtpMailService: SmtpMailService
   ) {}
 
   private normalizeEmail(email: string): string {
@@ -41,7 +37,7 @@ export class VerificationService {
   }
 
   private getPurposeFilter(
-    purpose: OtpPurpose,
+    purpose: OtpPurpose
   ): OtpPurpose | { $in: (OtpPurpose | null)[] } {
     if (purpose === OtpPurpose.EmailVerification) {
       // Backward compatibility for OTPs created before `purpose` was introduced.
@@ -52,14 +48,13 @@ export class VerificationService {
 
   private async issueOtp(
     email: string,
-    purpose: OtpPurpose,
+    purpose: OtpPurpose
   ): Promise<{ normalizedEmail: string; otp: string }> {
     const normalizedEmail = this.normalizeEmail(email);
     const user = await this.usersService.findOneByEmail(normalizedEmail);
     if (!user) {
       throw new BadRequestException('No account found for this email');
     }
-    await this.assertOtpRateLimit(normalizedEmail, purpose);
 
     await this.otpModel
       .updateMany(
@@ -69,7 +64,7 @@ export class VerificationService {
           consumed_at: null,
           expires_at: { $gt: new Date() },
         },
-        { $set: { consumed_at: new Date() } },
+        { $set: { consumed_at: new Date() } }
       )
       .exec();
 
@@ -89,31 +84,10 @@ export class VerificationService {
     return { normalizedEmail, otp };
   }
 
-  private async assertOtpRateLimit(
-    email: string,
-    purpose: OtpPurpose,
-  ): Promise<void> {
-    const windowStart = new Date(Date.now() - this.otpRateLimitWindowMs);
-    const issuedInWindow = await this.otpModel
-      .countDocuments({
-        email,
-        purpose: this.getPurposeFilter(purpose),
-        createdAt: { $gte: windowStart },
-      })
-      .exec();
-
-    if (issuedInWindow >= this.otpRateLimitPerHour) {
-      throw new HttpException(
-        `You can only request ${this.otpRateLimitPerHour} OTPs per hour. Please try again later.`,
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
-    }
-  }
-
   private async consumeOtp(
     email: string,
     otp: string,
-    purpose: OtpPurpose,
+    purpose: OtpPurpose
   ): Promise<string> {
     const normalizedEmail = this.normalizeEmail(email);
     const otpDoc = await this.otpModel
@@ -138,19 +112,13 @@ export class VerificationService {
 
     if (!isOtpValid) {
       await this.otpModel
-        .updateOne(
-          { _id: otpDoc._id },
-          { $inc: { failed_attempts: 1 } },
-        )
+        .updateOne({ _id: otpDoc._id }, { $inc: { failed_attempts: 1 } })
         .exec();
       throw new UnauthorizedException('OTP is invalid or expired');
     }
 
     await this.otpModel
-      .updateOne(
-        { _id: otpDoc._id },
-        { $set: { consumed_at: new Date() } },
-      )
+      .updateOne({ _id: otpDoc._id }, { $set: { consumed_at: new Date() } })
       .exec();
 
     return normalizedEmail;
@@ -172,12 +140,12 @@ export class VerificationService {
 
     const { normalizedEmail: issuedEmail, otp } = await this.issueOtp(
       normalizedEmail,
-      OtpPurpose.EmailVerification,
+      OtpPurpose.EmailVerification
     );
     await this.smtpMailService.sendOtpEmail(
       issuedEmail,
       otp,
-      this.otpExpiresMinutes,
+      this.otpExpiresMinutes
     );
 
     return {
@@ -203,12 +171,12 @@ export class VerificationService {
 
     const { normalizedEmail: issuedEmail, otp } = await this.issueOtp(
       normalizedEmail,
-      OtpPurpose.EmailVerification,
+      OtpPurpose.EmailVerification
     );
     await this.smtpMailService.sendOtpEmail(
       issuedEmail,
       otp,
-      this.otpExpiresMinutes,
+      this.otpExpiresMinutes
     );
 
     return {
@@ -234,12 +202,12 @@ export class VerificationService {
 
     const { otp } = await this.issueOtp(
       normalizedEmail,
-      OtpPurpose.PasswordReset,
+      OtpPurpose.PasswordReset
     );
     await this.smtpMailService.sendPasswordResetOtpEmail(
       normalizedEmail,
       otp,
-      this.otpExpiresMinutes,
+      this.otpExpiresMinutes
     );
 
     return {
@@ -253,7 +221,7 @@ export class VerificationService {
     return this.consumeOtp(
       verifyOtpDto.email,
       verifyOtpDto.otp,
-      OtpPurpose.PasswordReset,
+      OtpPurpose.PasswordReset
     );
   }
 
@@ -261,7 +229,7 @@ export class VerificationService {
     const normalizedEmail = await this.consumeOtp(
       verifyOtpDto.email,
       verifyOtpDto.otp,
-      OtpPurpose.EmailVerification,
+      OtpPurpose.EmailVerification
     );
 
     await this.usersService.markEmailAsVerifiedByEmail(normalizedEmail);
