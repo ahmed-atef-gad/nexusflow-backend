@@ -101,7 +101,7 @@ export class VerificationService {
       .exec();
 
     if (!otpDoc) {
-      throw new UnauthorizedException('OTP is invalid or expired');
+      throw new BadRequestException('OTP is invalid or expired');
     }
 
     if (otpDoc.failed_attempts >= this.maxFailedAttempts) {
@@ -114,7 +114,7 @@ export class VerificationService {
       await this.otpModel
         .updateOne({ _id: otpDoc._id }, { $inc: { failed_attempts: 1 } })
         .exec();
-      throw new UnauthorizedException('OTP is invalid or expired');
+      throw new BadRequestException('OTP is invalid or expired');
     }
 
     await this.otpModel
