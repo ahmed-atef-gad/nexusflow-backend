@@ -6,6 +6,7 @@ import { RegisterUserDto } from 'src/auth/dto/register-user.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { Role } from './enums/role.enum';
+import { ListUsersQueryDto } from './dto/list-users-query.dto';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 
@@ -28,8 +29,7 @@ export class UsersService {
     if (!Array.isArray(value)) return [];
     const validRoles = new Set<string>(Object.values(Role));
     return value.filter(
-      (role): role is Role =>
-        typeof role === 'string' && validRoles.has(role)
+      (role): role is Role => typeof role === 'string' && validRoles.has(role)
     );
   }
 
@@ -107,8 +107,61 @@ export class UsersService {
     const createdUser = new this.userModel(createUserDto);
     return createdUser.save();
   }
-  async findAll(): Promise<UserDocument[]> {
-    return this.userModel.find({ deleted_at: null }).exec();
+  async findAll(query: ListUsersQueryDto): Promise<{
+    data: UserDocument[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  }> {
+    const parsedPage = Number(query.page);
+    const parsedLimit = Number(query.limit);
+
+    const page = Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1;
+    const limit =
+      Number.isFinite(parsedLimit) && parsedLimit > 0
+        ? Math.min(parsedLimit, 100)
+        : 10;
+
+    const filter: Record<string, unknown> = { deleted_at: null };
+
+    if (query.search?.trim()) {
+      const escaped = query.search
+        .trim()
+        .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const searchRegex = new RegExp(escaped, 'i');
+      filter.$or = [{ username: searchRegex }, { email: searchRegex }];
+    }
+
+    if (query.role) {
+      filter.roles = query.role;
+    }
+
+    if (query.is_active === 'true' || query.is_active === 'false') {
+      filter.is_active = query.is_active === 'true';
+    }
+
+    const skip = (page - 1) * limit;
+
+    const [data, total] = await Promise.all([
+      this.userModel
+        .find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .exec(),
+      this.userModel.countDocuments(filter).exec(),
+    ]);
+
+    const totalPages = total > 0 ? Math.ceil(total / limit) : 1;
+
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages,
+    };
   }
   async getUserById(@Param('id') id: string): Promise<UserDocument | null> {
     const isValidId = Types.ObjectId.isValid(id);

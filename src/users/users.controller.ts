@@ -5,6 +5,7 @@ import {
   Get,
   Param,
   Post,
+  Query,
   Request,
   Req,
   UseGuards,
@@ -33,6 +34,7 @@ import { Role } from './enums/role.enum';
 import { OwnerGuard } from '../gaurds/auth/owner.guard';
 import type { AuthenticatedRequest } from '../auth/utils/auth.util';
 import { getUserIdFromRequest } from '../auth/utils/auth.util';
+import { ListUsersQueryDto } from './dto/list-users-query.dto';
 /**
  * UsersController
  *
@@ -214,16 +216,22 @@ export class UsersController {
   @ApiOkResponse({
     description: 'Users fetched successfully',
     schema: {
-      example: [
-        {
-          _id: '507f1f77bcf86cd799439011',
-          username: 'john_doe',
-          email: 'john@example.com',
-          roles: ['User'],
-          is_active: true,
-          email_verified: false,
-        },
-      ],
+      example: {
+        data: [
+          {
+            _id: '507f1f77bcf86cd799439011',
+            username: 'john_doe',
+            email: 'john@example.com',
+            roles: ['user'],
+            is_active: true,
+            email_verified: false,
+          },
+        ],
+        total: 1,
+        page: 1,
+        limit: 10,
+        totalPages: 1,
+      },
     },
   })
   @ApiUnauthorizedResponse({
@@ -231,8 +239,8 @@ export class UsersController {
   })
   @ApiForbiddenResponse({ description: 'Forbidden - Admin role required' })
   @Roles(Role.Admin)
-  async getUsers() {
-    return this.userService.findAll();
+  async getUsers(@Query() query: ListUsersQueryDto) {
+    return this.userService.findAll(query);
   }
 
   /**
