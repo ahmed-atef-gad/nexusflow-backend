@@ -21,12 +21,20 @@ type MqttClientAttributes = {
   esp?: boolean;
   clientType?: 'esp' | 'user';
   macAddress?: string;
+  deviceId?: string;
+  deviceName?: string;
   username?: string;
+  ownerId?: string;
+  ownerUsername?: string;
 };
 
 type MqttClientContext = {
   id?: string;
   deviceMac?: string;
+  deviceId?: string;
+  deviceName?: string;
+  ownerId?: string;
+  ownerUsername?: string;
   linkedFlowId?: string | null;
   isEsp?: boolean;
   isUserClient?: boolean;
@@ -203,7 +211,20 @@ export class MqttHandlers implements OnModuleInit {
           );
         }
 
+        const ownerId = device.ownerId?.toString();
+        const deviceId = device._id?.toString();
+        const deviceName = typeof device.name === 'string' ? device.name : null;
+        let ownerUsername: string | undefined;
+        if (ownerId) {
+          const owner = await this.usersService.getUserById(ownerId);
+          ownerUsername = owner?.username;
+        }
+
         client.deviceMac = normalizedClientMac;
+        client.deviceId = deviceId;
+        client.deviceName = deviceName ?? undefined;
+        client.ownerId = ownerId;
+        client.ownerUsername = ownerUsername;
         client.linkedFlowId = device.activeFlowId?.toString() ?? null;
         client.isEsp = true;
         client.isUserClient = false;
@@ -212,6 +233,10 @@ export class MqttHandlers implements OnModuleInit {
           esp: true,
           clientType: 'esp',
           macAddress: normalizedClientMac,
+          deviceId,
+          deviceName: deviceName ?? undefined,
+          ownerId,
+          ownerUsername,
         };
 
         this.logger.log(
