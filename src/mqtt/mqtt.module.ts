@@ -9,12 +9,15 @@ import { MqttHandlers } from './mqtt.handlers';
 import { UsersModule } from '../users/users.module';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Logic, LogicSchema } from '../flows/schemas/logic.schema';
+import { AuthModule } from '../auth/auth.module';
+import { RolesGuard } from '../gaurds/auth/roles.guard';
 
 @Global()
 @Module({
   imports: [
     DevicesModule,
     UsersModule,
+    AuthModule,
     MongooseModule.forFeature([{ name: Logic.name, schema: LogicSchema }]),
     PigeonModule.forRootAsync({
       inject: [ConfigService],
@@ -52,7 +55,7 @@ import { Logic, LogicSchema } from '../flows/schemas/logic.schema';
   ],
 
   controllers: [MqttController],
-  providers: [MqttService, MqttHandlers],
+  providers: [MqttService, MqttHandlers, RolesGuard],
   exports: [MqttService, MqttHandlers],
 })
 export class MqttModule {}
