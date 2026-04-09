@@ -4,8 +4,8 @@ import { UsersService } from './users.service';
 import { Role } from './enums/role.enum';
 
 @Injectable()
-export class DefaultAdminSeed implements OnModuleInit {
-  private readonly logger = new Logger(DefaultAdminSeed.name);
+export class DefaultOwnerSeed implements OnModuleInit {
+  private readonly logger = new Logger(DefaultOwnerSeed.name);
 
   constructor(
     private readonly usersService: UsersService,
@@ -14,32 +14,32 @@ export class DefaultAdminSeed implements OnModuleInit {
 
   async onModuleInit() {
     const email = this.configService
-      .get<string>('DEFAULT_ADMIN_EMAIL')
+      .get<string>('DEFAULT_OWNER_EMAIL')
       ?.trim()
       .toLowerCase();
 
     if (!email) {
       this.logger.warn(
-        'Default admin seed skipped: DEFAULT_ADMIN_EMAIL is missing.'
+        'Default owner seed skipped: DEFAULT_OWNER_EMAIL is missing.'
       );
       return;
     }
 
     const username =
-      this.configService.get<string>('DEFAULT_ADMIN_USERNAME')?.trim() ??
-      'admin';
-    const password = this.configService.get<string>('DEFAULT_ADMIN_PASSWORD');
+      this.configService.get<string>('DEFAULT_OWNER_USERNAME')?.trim() ??
+      'owner';
+    const password = this.configService.get<string>('DEFAULT_OWNER_PASSWORD');
 
     if (!password) {
       this.logger.warn(
-        'Default admin seed skipped: DEFAULT_ADMIN_PASSWORD is missing.'
+        'Default owner seed skipped: DEFAULT_OWNER_PASSWORD is missing.'
       );
       return;
     }
 
     const existingByEmail = await this.usersService.findOneByEmail(email);
     if (existingByEmail) {
-      this.logger.log(`Default admin already exists: ${email}`);
+      this.logger.log(`Default owner already exists: ${email}`);
       return;
     }
 
@@ -47,7 +47,7 @@ export class DefaultAdminSeed implements OnModuleInit {
       await this.usersService.findOneByUsername(username);
     if (existingByUsername) {
       this.logger.warn(
-        `Default admin seed skipped: username "${username}" already exists.`
+        `Default owner seed skipped: username "${username}" already exists.`
       );
       return;
     }
@@ -56,11 +56,11 @@ export class DefaultAdminSeed implements OnModuleInit {
       email,
       username,
       password,
-      roles: [Role.Admin],
+      roles: [Role.Owner],
       is_active: true,
       email_verified: true,
     });
 
-    this.logger.log(`Default admin created: ${email}`);
+    this.logger.log(`Default owner created: ${email}`);
   }
 }
