@@ -34,13 +34,18 @@ export class RolesGuard implements CanActivate {
       throw new UnauthorizedException('Authentication required');
     }
 
+    // Owner is a super-role and can access all role-protected endpoints.
+    if (user.roles?.includes(Role.Owner)) {
+      return true;
+    }
+
     // 3. Check if the user has any of the required roles
     // We assume 'user' has a 'roles' array property (e.g., user.roles = [Role.Admin])
     const hasRequiredRole = requiredRoles.some((role) =>
       user.roles?.includes(role)
     );
     if (!hasRequiredRole) {
-      throw new ForbiddenException('Admin role required');
+      throw new ForbiddenException('Required role is missing');
     }
 
     return true;

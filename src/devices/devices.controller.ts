@@ -26,6 +26,7 @@ import {
 import { IsOwner } from '../auth/decorators/owner.decorator';
 import type { AuthenticatedRequest } from '../auth/utils/auth.util';
 import { getUserIdFromRequest } from '../auth/utils/auth.util';
+import { Role } from '../users/enums/role.enum';
 
 /**
  * DevicesController
@@ -40,6 +41,10 @@ import { getUserIdFromRequest } from '../auth/utils/auth.util';
 @Controller('devices')
 export class DevicesController {
   constructor(private readonly devicesService: DevicesService) {}
+
+  private hasOwnerRole(req: AuthenticatedRequest): boolean {
+    return req.user?.roles?.includes(Role.Owner) ?? false;
+  }
 
   /**
    * Register a new ESP device by MAC address
@@ -206,7 +211,7 @@ export class DevicesController {
       throw new NotFoundException('Device not found');
     }
 
-    if (device.ownerId.toString() !== userId) {
+    if (!this.hasOwnerRole(req) && device.ownerId.toString() !== userId) {
       throw new UnauthorizedException('You do not own this device');
     }
 
@@ -282,11 +287,13 @@ export class DevicesController {
   ) {
     const userId = getUserIdFromRequest(req);
     const device = await this.devicesService.findOne(deviceId);
-    if (device.ownerId.toString() !== userId) {
+    const isOwner = this.hasOwnerRole(req);
+    if (!isOwner && device.ownerId.toString() !== userId) {
       throw new UnauthorizedException('You do not own this device');
     }
 
-    return this.devicesService.updateDeviceFlow(deviceId, flowId, userId);
+    const effectiveUserId = isOwner ? device.ownerId.toString() : userId;
+    return this.devicesService.updateDeviceFlow(deviceId, flowId, effectiveUserId);
   }
 
   /**
@@ -304,7 +311,7 @@ export class DevicesController {
   ) {
     const userId = getUserIdFromRequest(req);
     const device = await this.devicesService.findOne(deviceId);
-    if (device.ownerId.toString() !== userId) {
+    if (!this.hasOwnerRole(req) && device.ownerId.toString() !== userId) {
       throw new UnauthorizedException('You do not own this device');
     }
 
@@ -339,7 +346,7 @@ export class DevicesController {
   ) {
     const userId = getUserIdFromRequest(req);
     const device = await this.devicesService.findOne(deviceId);
-    if (device.ownerId.toString() !== userId) {
+    if (!this.hasOwnerRole(req) && device.ownerId.toString() !== userId) {
       throw new UnauthorizedException('You do not own this device');
     }
     return {
@@ -505,7 +512,7 @@ export class DevicesController {
     // Verify device exists and belongs to the user
     const device = await this.devicesService.findOne(deviceId);
 
-    if (device.ownerId.toString() !== userId) {
+    if (!this.hasOwnerRole(req) && device.ownerId.toString() !== userId) {
       throw new UnauthorizedException('You do not own this device');
     }
 

@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Param,
   Post,
@@ -155,7 +156,15 @@ export class UsersController {
   })
   @ApiForbiddenResponse({ description: 'Forbidden - Admin role required' })
   @Roles(Role.Admin)
-  async createUser(@Body() createUserDto: CreateUserDto) {
+  async createUser(
+    @Req() req: AuthenticatedRequest,
+    @Body() createUserDto: CreateUserDto
+  ) {
+    const isOwner = req.user?.roles?.includes(Role.Owner) ?? false;
+    if (createUserDto.roles !== undefined && !isOwner) {
+      throw new ForbiddenException('Only owner can set user roles');
+    }
+
     return this.userService.create(createUserDto);
   }
 
@@ -197,9 +206,15 @@ export class UsersController {
   @ApiForbiddenResponse({ description: 'Forbidden - Admin role required' })
   @Roles(Role.Admin)
   async updateUser(
+    @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
     @Body() updateUserDto: UpdateUserDto
   ) {
+    const isOwner = req.user?.roles?.includes(Role.Owner) ?? false;
+    if (updateUserDto.roles !== undefined && !isOwner) {
+      throw new ForbiddenException('Only owner can change user roles');
+    }
+
     return this.userService.update(id, updateUserDto);
   }
 

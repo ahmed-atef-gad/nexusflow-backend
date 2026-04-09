@@ -24,6 +24,7 @@ import {
   AuthenticatedRequest,
   getUserIdFromRequest,
 } from '../../auth/utils/auth.util';
+import { Role } from '../../users/enums/role.enum';
 
 @Injectable()
 export class OwnerGuard implements CanActivate {
@@ -43,6 +44,15 @@ export class OwnerGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
+    const requestRoles = Array.isArray(request.user?.roles)
+      ? request.user.roles
+      : [];
+
+    // Owner is a super-role and bypasses resource ownership checks.
+    if (requestRoles.includes(Role.Owner)) {
+      return true;
+    }
+
     let userId: string;
 
     try {
