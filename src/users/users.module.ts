@@ -6,14 +6,14 @@ import { User, UserSchema } from './schemas/user.schema';
 import { JwtService } from '@nestjs/jwt';
 import { RolesGuard } from '../gaurds/auth/roles.guard';
 import { OwnerGuard } from '../gaurds/auth/owner.guard';
-import { DefaultAdminSeed } from './default-admin.seed';
+import { DefaultOwnerSeed } from './default-owner.seed';
 
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
   ],
   controllers: [UsersController],
-  providers: [UsersService, JwtService, RolesGuard, OwnerGuard, DefaultAdminSeed],
+  providers: [UsersService, JwtService, RolesGuard, OwnerGuard, DefaultOwnerSeed],
   exports: [UsersService],
 })
 export class UsersModule {}

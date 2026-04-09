@@ -1497,6 +1497,36 @@
             "url": "{{baseUrl}}/mqtt/test?topic={{mqttTopic}}&message={{mqttMessage}}"
           },
           "response": []
+        },
+        {
+          "name": "Get Active MQTT User Count (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/mqtt/active-users/count"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Active MQTT Users (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/mqtt/active-users"
+          },
+          "response": []
         }
       ]
     }
