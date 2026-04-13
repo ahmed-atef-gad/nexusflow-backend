@@ -1,60 +1,324 @@
 # NexusFlow Backend
 
-Minimal NestJS backend for the NexusFlow project.  
-Key pieces:
+The NexusFlow backend is the control plane of the project. It exposes the HTTP API used by the frontend, persists users/devices/flows in MongoDB, handles authentication and verification, serves firmware metadata and binaries, and runs the MQTT infrastructure used for real-time communication with ESP32 devices and web clients.
 
-- Entry: [`src/main.ts`](src/main.ts) (bootstrap + Swagger at `/api`)  
-- App wiring: [`AppModule`](src/app.module.ts)  
-- Auth: [`AuthController`](src/auth/auth.controller.ts) and [`AuthService`](src/auth/auth.service.ts) using [`LoginUserDto`](src/auth/dto/login-user.dto.ts) and [`RegisterUserDto`](src/auth/dto/register-user.dto.ts)  
-- Users: [`UsersService`](src/users/users.service.ts) and the [`User` schema](src/users/schemas/user.schema.ts)  
-- Scripts and deps: [package.json](package.json)  
-- Environment: [.env]
+This service is not just a CRUD API. In the current architecture it is responsible for:
 
-## Requirements
+- User authentication, authorization, and role-aware access control
+- Email verification and password-reset OTP delivery
+- Device onboarding through one-time registration codes
+- Device token issuance and device-authenticated endpoints
+- Flow persistence and transformation into firmware-consumable setup/logic structures
+- Flow UI metadata generation for the frontend
+- Firmware upload, version tracking, update checks, and binary download
+- Embedded MQTT broker startup plus backend-side MQTT event handling
+- Admin-facing visibility into active MQTT connections
 
-- Node.js 18+ (or a recent LTS)
-- npm 9+ (or yarn)
-- A MongoDB instance (connection string in `MONGO_URI`)
+## Tech Stack
 
-## Install
+- NestJS 11
+- TypeScript
+- MongoDB + Mongoose
+- JWT + Passport
+- Swagger / OpenAPI
+- MQTT + WebSocket MQTT
+- Jest + Supertest
+- Docker
 
-1. Clone the repository (if you haven't already)
+## Architecture Summary
 
-```sh
-git clone <repo-url>
-cd nexusflow-backend
+The application boots from [`src/main.ts`](src/main.ts) and composes feature modules in [`src/app.module.ts`](src/app.module.ts).
+
+At startup, the backend:
+
+1. Loads environment variables through `ConfigModule`
+2. Connects to MongoDB
+3. Enables validated CORS from `CORS_ORIGINS`
+4. Registers a global `ValidationPipe`
+5. Enables cookie parsing
+6. Builds Swagger docs at `/api`
+7. Starts Nest microservices
+8. Starts the HTTP server
+
+The backend serves two communication layers:
+
+- HTTP API for the web app, firmware setup sync, registration, verification, and firmware operations
+- MQTT broker services for telemetry, commands, online/offline presence, and real-time control
+
+## Module Breakdown
+
+### `auth`
+
+Files: [`src/auth`](src/auth)
+
+Responsibilities:
+
+- User registration and login
+- JWT issuance
+- Password reset entry points
+- Shared auth guard wiring
+
+Notes:
+
+- JWT secret is loaded from `JWT_SECRET`
+- Tokens are currently signed with a `1d` expiration window
+
+### `users`
+
+Files: [`src/users`](src/users)
+
+Responsibilities:
+
+- User persistence
+- Roles and account activation state
+- Default admin seeding
+
+Related seed logic:
+
+- [`src/users/default-admin.seed.ts`](src/users/default-admin.seed.ts)
+
+### `verification`
+
+Files: [`src/verification`](src/verification)
+
+Responsibilities:
+
+- Email OTP generation and verification
+- Password reset OTP flow
+- SMTP-based email delivery
+
+Related mailer:
+
+- [`src/verification/smtp-mail.service.ts`](src/verification/smtp-mail.service.ts)
+
+This service supports both real SMTP delivery and a fallback `SMTP_LOG_ONLY=true` mode for development.
+
+### `devices`
+
+Files: [`src/devices`](src/devices)
+
+Responsibilities:
+
+- Device registration by user
+- One-time registration code generation
+- Device self-registration with registration code
+- Device token generation and revocation
+- Device-to-flow linking
+- Device status lookup
+- Device ownership enforcement
+
+Important controllers:
+
+- [`src/devices/devices.controller.ts`](src/devices/devices.controller.ts)
+- [`src/devices/device-registration.controller.ts`](src/devices/device-registration.controller.ts)
+
+### `flows`
+
+Files: [`src/flows`](src/flows)
+
+Responsibilities:
+
+- Flow CRUD
+- Setup document generation for firmware
+- Logic extraction from node/edge graphs
+- UI document generation for the frontend
+
+Key implementation:
+
+- [`src/flows/flows.controller.ts`](src/flows/flows.controller.ts)
+- [`src/flows/flow-builder.service.ts`](src/flows/flow-builder.service.ts)
+- [`src/flows/setup.service.ts`](src/flows/setup.service.ts)
+- [`src/flows/logic.service.ts`](src/flows/logic.service.ts)
+- [`src/flows/ui.service.ts`](src/flows/ui.service.ts)
+
+The flow builder converts visual graph nodes into:
+
+- `setup`: low-level pin/mode configuration for firmware startup
+- `tasks`: periodic runtime tasks for sensor polling and GPIO operations
+- `ui`: frontend-facing module/topic metadata
+- logic command mappings from input nodes to output nodes
+
+### `flow-templates`
+
+Files: [`src/flow-templates`](src/flow-templates)
+
+Responsibilities:
+
+- Reusable starter flows
+- Template creation, update, and forking workflows
+
+### `modules`
+
+Files: [`src/modules`](src/modules)
+
+Responsibilities:
+
+- Central catalog of supported modules
+- Metadata used by the frontend flow editor and flow-builder pipeline
+
+### `firmware`
+
+Files: [`src/firmware`](src/firmware)
+
+Responsibilities:
+
+- Admin firmware upload
+- Firmware metadata persistence
+- Device update checks
+- Secure-ish download endpoint with rate limiting
+
+Key controller:
+
+- [`src/firmware/firmware.controller.ts`](src/firmware/firmware.controller.ts)
+
+Behavior:
+
+- Accepts `.bin` firmware uploads
+- Stores metadata such as version, checksum, and size
+- Exposes `/firmware/device/check` for device-side version checks
+- Exposes `/firmware/device/download` for binary delivery
+
+### `mqtt`
+
+Files: [`src/mqtt`](src/mqtt)
+
+Responsibilities:
+
+- MQTT broker bootstrapping
+- WebSocket MQTT support
+- Real-time publish helpers
+- Tracking and exposing active MQTT client state
+- Wiring handlers that react to live MQTT events
+
+Key files:
+
+- [`src/mqtt/mqtt.module.ts`](src/mqtt/mqtt.module.ts)
+- [`src/mqtt/mqtt.service.ts`](src/mqtt/mqtt.service.ts)
+- [`src/mqtt/mqtt.handlers.ts`](src/mqtt/mqtt.handlers.ts)
+- [`src/mqtt/mqtt.controller.ts`](src/mqtt/mqtt.controller.ts)
+
+The MQTT module currently configures:
+
+- TCP broker on `8883`
+- MQTT over WebSocket on `8884` by default
+- optional TLS/WSS material via environment variables
+
+## Request / Data Flow
+
+Typical user-side path:
+
+1. User authenticates through the frontend
+2. Frontend creates or edits a visual flow
+3. Backend stores the flow and derives setup/logic/UI data
+4. User links a device to that flow
+5. Device syncs setup from backend
+6. Device publishes telemetry over MQTT
+7. Frontend subscribes to real-time updates through MQTT over WebSocket
+
+Typical device-side onboarding path:
+
+1. Authenticated user generates a one-time registration code
+2. ESP32 firmware submits the code and its device metadata
+3. Backend verifies the code and owner state
+4. Backend creates the device record and issues a long-lived device token
+5. Firmware stores the token and later uses it for authenticated device endpoints
+6. Firmware checks for updates and fetches its setup document
+
+## Environment Variables
+
+The project reads configuration from `.env` through Nest `ConfigModule`.
+
+### Required
+
+```env
+MONGO_URI=mongodb://localhost:27017/nexusflow
+JWT_SECRET=replace-with-a-strong-secret
+CORS_ORIGINS=http://localhost:8080,http://localhost:4173
 ```
 
-2. Install dependencies
+### Common Core Variables
+
+```env
+PORT=3000
+```
+
+### MQTT / Broker
+
+```env
+MQTT_WS_PORT=8884
+MQTT_WS_PATH=/mqtt-ws
+MQTT_TLS_KEY=
+MQTT_TLS_CERT=
+MQTT_TLS_CA=
+MQTT_TLS_PASSPHRASE=
+MQTT_WSS_KEY=
+MQTT_WSS_CERT=
+MQTT_WSS_CA=
+MQTT_WSS_PASSPHRASE=
+```
+
+### SMTP / Verification
+
+```env
+SMTP_HOST=
+SMTP_PORT=465
+SMTP_USER=
+SMTP_PASS=
+SMTP_FROM_EMAIL=
+SMTP_SECURE=true
+SMTP_LOG_ONLY=false
+SMTP_EMAIL_LOGO_PATH=
+SMTP_EMAIL_LOGO_BASE64=
+SMTP_EMAIL_LOGO_MIME_TYPE=
+SMTP_EMAIL_LOGO_FILENAME=
+```
+
+### Default Admin Seed
+
+```env
+DEFAULT_ADMIN_EMAIL=
+DEFAULT_ADMIN_USERNAME=admin
+DEFAULT_ADMIN_PASSWORD=
+```
+
+### Flow Builder Tuning
+
+```env
+MIN_INTERVAL_MS=250
+MAX_INTERVAL_MS=60000
+DEFAULT_GPIO_INTERVAL_MS=1000
+DEFAULT_GPIO_OUTPUT_INTERVAL_MS=10000
+DEFAULT_SENSOR_INTERVAL_MS=5000
+DEFAULT_PIR_INTERVAL_MS=1000
+```
+
+Notes:
+
+- `MONGO_URI` is mandatory. The app throws if it is missing.
+- `CORS_ORIGINS` must contain valid `http` or `https` origins.
+- `JWT_SECRET` should always be explicitly set.
+- SMTP can be left unconfigured only if you accept mail delivery failure or use `SMTP_LOG_ONLY=true`.
+- MQTT WebSocket defaults are defined in [`src/mqtt/mqtt.module.ts`](src/mqtt/mqtt.module.ts).
+
+## Installation
 
 ```sh
 npm install
 ```
 
-3. Configure environment variables
+## Running Locally
 
-Create a `.env` file in the project root (or edit the existing one). Required variables:
-
-```
-MONGO_URI=<your MongoDB connection string>
-JWT_SECRET=<a secure secret for JWT signing>
-CORS_ORIGINS=http://localhost:8080,http://localhost:4173,https://nexusflow-frontend-amber.vercel.app
-```
-
-`CORS_ORIGINS` should be a comma-separated list of allowed frontend origins.
-
-## Run (development)
-
-Start the app in watch mode:
+Development mode:
 
 ```sh
 npm run start:dev
 ```
 
-- Swagger UI will be available at: <http://localhost:3000/api> (configured in [`src/main.ts`](src/main.ts))
-- AppModule and providers are defined in [`src/app.module.ts`](src/app.module.ts)
+Useful local endpoints:
 
-## Build / Run (production)
+- HTTP API: `http://localhost:3000`
+- Swagger UI: `http://localhost:3000/api`
+- MQTT over WebSocket default path: `ws://localhost:8884/mqtt-ws`
 
 Build:
 
@@ -62,41 +326,115 @@ Build:
 npm run build
 ```
 
-Run:
+Production run:
 
 ```sh
 npm run start:prod
 ```
 
-## Tests
+## Docker
 
-Run unit tests:
+The included [`Dockerfile`](Dockerfile) builds the app in a multi-stage image and exposes:
+
+- `3000` for HTTP API
+- `1883`
+- `8883`
+- `8884`
+
+Example:
+
+```sh
+docker build -t nexusflow-backend .
+docker run --env-file .env -p 3000:3000 -p 8883:8883 -p 8884:8884 nexusflow-backend
+```
+
+## API Surface Overview
+
+This README is not a full API reference. Swagger at `/api` is the source of truth. The main route groups are:
+
+- `/auth`: login, register, forgot password, reset password
+- `/verification`: OTP generation and verification flows
+- `/users`: user/admin operations
+- `/devices`: device CRUD, tokens, status, flow linking
+- `/devices/registration-code`: one-time code generation
+- `/devices/verify-registration-code`: firmware/device self-registration
+- `/flows`: flow CRUD
+- `/setups` and related flow-derived endpoints: firmware sync/setup material
+- `/ui`: frontend-facing flow UI representation
+- `/modules`: available editor modules
+- `/flow-templates`: reusable template management
+- `/firmware/admin/*`: admin firmware management
+- `/firmware/device/*`: device firmware update endpoints
+- `/mqtt/*`: MQTT test/admin visibility endpoints
+
+## MQTT Role In The System
+
+MQTT is part of the backend deployment, not a separate external broker in this repo’s current architecture.
+
+It is used for:
+
+- Device telemetry
+- Device online/offline state
+- Device metrics
+- Real-time command dispatch
+- Flow-triggered output control
+- Admin visibility into connected clients
+
+From the device/controller code and flow-builder output, common topic patterns include:
+
+- `esp/<MAC>/cmd`
+- `esp/<MAC>/resetwifi`
+- `esp/<MAC>/instant`
+- `client/<MAC>/online`
+- `client/<MAC>/metrics`
+- `logic/input/<nodeId>`
+- `esp/<nodeId>/response`
+
+## Testing
+
+Unit tests:
 
 ```sh
 npm test
 ```
 
-Run e2e tests:
+Coverage:
+
+```sh
+npm run test:cov
+```
+
+End-to-end tests:
 
 ```sh
 npm run test:e2e
 ```
 
-## Repository mind map
+Current test coverage in the repo includes:
 
-- See [`docs/repo-mind-map.md`](docs/repo-mind-map.md) for a visual Mermaid mind map of the project structure and dependencies.
+- auth
+- users
+- modules
+- flows
+- guards
+- app bootstrap
+- e2e smoke path
 
-## Important files & symbols
+## Project References
 
-- Application bootstrap: [`src/main.ts`](src/main.ts) (`bootstrap`)  
-- Module: [`AppModule`](src/app.module.ts)  
-- Auth controller/service: [`AuthController`](src/auth/auth.controller.ts), [`AuthService`](src/auth/auth.service.ts)  
-- DTOs: [`LoginUserDto`](src/auth/dto/login-user.dto.ts), [`RegisterUserDto`](src/auth/dto/register-user.dto.ts)  
-- Users service & schema: [`UsersService`](src/users/users.service.ts), [`User` schema](src/users/schemas/user.schema.ts)  
-- Scripts & metadata: [package.json](package.json)
+- [`src/main.ts`](src/main.ts): app bootstrap
+- [`src/app.module.ts`](src/app.module.ts): root wiring
+- [`src/flows/flow-builder.service.ts`](src/flows/flow-builder.service.ts): graph-to-setup/logic translation
+- [`src/devices/devices.controller.ts`](src/devices/devices.controller.ts): user device operations
+- [`src/devices/device-registration.controller.ts`](src/devices/device-registration.controller.ts): firmware onboarding flow
+- [`src/firmware/firmware.controller.ts`](src/firmware/firmware.controller.ts): firmware lifecycle endpoints
+- [`src/mqtt/mqtt.module.ts`](src/mqtt/mqtt.module.ts): broker configuration
+- [`src/verification/smtp-mail.service.ts`](src/verification/smtp-mail.service.ts): SMTP integration
+- [`docs/repo-mind-map.md`](docs/repo-mind-map.md): repository-level overview
+- [`docs/NexusFlow.postman_collection.json`](docs/NexusFlow.postman_collection.json): Postman collection
 
-## Notes
+## Integration Notes
 
-- Passwords are hashed via `bcrypt` in [`AuthService`](src/auth/auth.service.ts).
-- JWT configuration uses `@nestjs/jwt` and reads `JWT_SECRET` from the environment (configured in [`src/auth/auth.module.ts`](src/auth/auth.module.ts)).
-- Ensure unique indexes for `email`/`username` in the database to match schema constraints in [`src/users/schemas/user.schema.ts`](src/users/schemas/user.schema.ts).
+- The frontend depends on this backend for auth, flow persistence, admin data, device management, verification, and firmware workflows.
+- The ESP32 firmware depends on this backend for registration verification, device token provisioning, setup synchronization, and firmware update checks.
+- Because the MQTT broker is started by the backend itself, HTTP and MQTT availability are coupled in the current deployment model.
