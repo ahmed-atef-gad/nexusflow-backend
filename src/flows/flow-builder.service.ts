@@ -4,6 +4,8 @@ import { Edge as RFEdge } from './types/flow.types';
 import { Node } from './schemas/node.schema';
 import { UiItem } from './schemas/uiItem.schema';
 import { randomInt } from 'crypto';
+import { parse } from 'acorn';
+import * as walk from 'acorn-walk';
 
 const MODE_MAP: Record<string, number> = {
   INPUT: 1,
@@ -683,14 +685,127 @@ export class FlowBuilderService {
     };
   }
 
+  private validateFunctionCode(code: string): string | null {
+    try {
+      const ast = parse(`(function(msg) { ${code}\n})`, {
+        ecmaVersion: 'latest',
+      });
+
+      const errors: string[] = [];
+      let hasReturn = false;
+
+      walk.full(ast, (node) => {
+        // Block require()
+        if (
+          node.type === 'CallExpression' &&
+          node.callee?.type === 'Identifier' &&
+          node.callee?.name === 'require'
+        ) {
+          errors.push('require() is not allowed');
+          return;
+        }
+
+        // Block eval()
+        if (
+          node.type === 'CallExpression' &&
+          node.callee?.type === 'Identifier' &&
+          node.callee?.name === 'eval'
+        ) {
+          errors.push('eval() is not allowed');
+          return;
+        }
+
+        // Block Function constructor
+        if (
+          node.type === 'NewExpression' &&
+          node.callee?.type === 'Identifier' &&
+          node.callee?.name === 'Function'
+        ) {
+          errors.push('Function constructor is not allowed');
+          return;
+        }
+
+        // Block process, global, globalThis
+        if (
+          node.type === 'Identifier' &&
+          ['process', 'global', 'globalThis'].includes(node.name)
+        ) {
+          errors.push(`${node.name} is not allowed`);
+          return;
+        }
+
+        // Block this
+        if (node.type === 'ThisExpression') {
+          errors.push('this is not allowed');
+          return;
+        }
+
+        // Block loops
+        if (
+          node.type === 'WhileStatement' ||
+          node.type === 'DoWhileStatement' ||
+          node.type === 'ForStatement'
+        ) {
+          errors.push('Loops are not allowed');
+          return;
+        }
+
+        // Block try/catch
+        if (node.type === 'TryStatement') {
+          errors.push('try/catch is not allowed');
+          return;
+        }
+
+        // Block function declarations
+        if (
+          node.type === 'FunctionDeclaration' ||
+          node.type === 'ArrowFunctionExpression'
+        ) {
+          errors.push('Defining functions is not allowed');
+          return;
+        }
+
+        // Track return statements
+        if (node.type === 'ReturnStatement') {
+          hasReturn = true;
+        }
+      });
+
+      // Return first error if any
+      if (errors.length > 0) {
+        return errors[0];
+      }
+
+      // 3) Enforce return statement
+      if (!hasReturn) {
+        return 'Code must return msg';
+      }
+
+      // Valid code
+      return null;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      return `Syntax error: ${message}`;
+    }
+  }
+
   private buildFunctionStepFromNode(
     node: Node,
     warnings: string[]
   ): RuntimeStep {
     const code = String(node.data?.variables?.code ?? '').trim();
+
+    const validationError = this.validateFunctionCode(code);
+
+    if (validationError) {
+      throw new BadRequestException(
+        `Syntax error in function node ${node.data?.alias || node.data.name}: ${validationError}`
+      );
+    }
+
     if (!code) {
       warnings.push(
-        `Function node ${node.id} has no code. It will behave like "return msg;".`
+        `Function node ${node.data?.alias || node.data.name} has no code. It will behave like "return msg;".`
       );
     }
 
@@ -757,7 +872,7 @@ export class FlowBuilderService {
 
         if (!downstreamPaths.length) {
           warnings.push(
-            `Function node ${targetNode.id} has no valid downstream output.`
+            `Function node ${targetNode.data?.alias || targetNode.data.name} has no valid downstream output.`
           );
           continue;
         }
@@ -769,7 +884,7 @@ export class FlowBuilderService {
       }
 
       warnings.push(
-        `Node ${targetNode.id} with module ${targetModuleId} is not supported in server-side logic paths.`
+        `Node ${targetNode.data?.alias || targetNode.data.name} with module ${targetModuleId} is not supported in server-side logic paths.`
       );
     }
 
