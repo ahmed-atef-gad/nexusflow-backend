@@ -3,18 +3,6 @@ import { ApiProperty } from '@nestjs/swagger';
 import { Schema as MongooseSchema } from 'mongoose';
 
 @Schema({ _id: false })
-export class NodeDataVariables {
-  @ApiProperty() @Prop() id: string;
-  @ApiProperty() @Prop() pinNumber?: number;
-  @ApiProperty() @Prop() analogPin?: number;
-  @ApiProperty() @Prop() digitalPin?: number;
-  @ApiProperty() @Prop() intervalMs?: number;
-  @ApiProperty() @Prop() isDigital?: boolean;
-  @ApiProperty() @Prop() isAnalog?: boolean;
-}
-const NodeDataVariablesSchema = SchemaFactory.createForClass(NodeDataVariables);
-
-@Schema({ _id: false })
 export class NodeData {
   @ApiProperty() @Prop() id: string;
   @ApiProperty() @Prop() name: string;
@@ -30,8 +18,8 @@ export class NodeData {
   @Prop({ type: MongooseSchema.Types.Mixed })
   options: any;
   @ApiProperty({ required: false })
-  @Prop({ type: NodeDataVariablesSchema, default: {} })
-  variables: NodeDataVariables;
+  @Prop({ type: MongooseSchema.Types.Mixed, default: {} })
+  variables: Record<string, string | number | boolean>;
 }
 const NodeDataSchema = SchemaFactory.createForClass(NodeData);
 

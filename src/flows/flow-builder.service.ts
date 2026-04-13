@@ -35,6 +35,7 @@ const CMD_MAP: Record<string, number> = {
 const INPUT_TOPIC_PREFIX = 'logic/input';
 
 type OutputModuleType = 'pwm' | 'digital' | 'dac' | 'other';
+type RuntimeStepType = 'input' | 'function' | 'output';
 
 export const INPUT_GPIO_TASK_NAME = 'GpioTask';
 export const OUTPUT_GPIO_TASK_NAME = 'GpioOutput';
@@ -64,20 +65,20 @@ export type FlowExtraction = {
   warnings: string[];
 };
 
-export type CommandStep = {
+export type RuntimeStep = {
   id: string;
   moduleId: string;
-  commands?: Array<{
-    targetModuleType: OutputModuleType;
-    cmd: number;
-    pin?: number;
-    value?: number | string;
-    topic?: string;
-  }>;
+  stepType: RuntimeStepType;
+  code?: string;
+  targetModuleType?: OutputModuleType;
+  cmd?: number;
+  pin?: number;
+  value?: number | string;
+  topic?: string;
 };
 
 export type CommandExtraction = {
-  flows: CommandStep[][];
+  flows: RuntimeStep[][];
   warnings: string[];
 };
 
@@ -463,7 +464,7 @@ export class FlowBuilderService {
     nodes.forEach((node) => {
       const module = node.data;
       if (module.moduleId.startsWith('ESP32-gpio-output')) {
-        const pinNumber = module.variables?.pinNumber;
+        const pinNumber = this.toOptionalNumber(module.variables?.pinNumber);
         if (pinNumber !== undefined) {
           uiElements.push({
             moduleId: module.moduleId,
@@ -484,11 +485,11 @@ export class FlowBuilderService {
         module.moduleId.startsWith('Rain-Sensor') ||
         module.moduleId.startsWith('Soil-Sensor')
       ) {
-        const isDigital = module.variables?.isDigital;
-        const isAnalog = module.variables?.isAnalog;
+        const isDigital = this.toBoolean(module.variables?.isDigital);
+        const isAnalog = this.toBoolean(module.variables?.isAnalog);
 
-        const digitalPin = module.variables?.digitalPin;
-        const analogPin = module.variables?.analogPin;
+        const digitalPin = this.toOptionalNumber(module.variables?.digitalPin);
+        const analogPin = this.toOptionalNumber(module.variables?.analogPin);
 
         if (
           (isDigital && digitalPin === undefined) ||
@@ -540,7 +541,7 @@ export class FlowBuilderService {
         module.moduleId.startsWith('DHT-Sensor') ||
         module.moduleId.startsWith('PIR-Sensor')
       ) {
-        const pinNumber = module.variables?.pinNumber;
+        const pinNumber = this.toOptionalNumber(module.variables?.pinNumber);
         if (pinNumber === undefined) {
           throw new BadRequestException(
             `Missing pin configuration for ${module?.alias || module.name}`
@@ -585,6 +586,10 @@ export class FlowBuilderService {
       moduleId.startsWith('Rain-Sensor') ||
       moduleId.startsWith('Soil-Sensor')
     );
+  }
+
+  private isFunctionModule(moduleId: string): boolean {
+    return moduleId === 'logic-function';
   }
 
   private resolveTargetModuleType(moduleId: string): OutputModuleType {
@@ -636,19 +641,10 @@ export class FlowBuilderService {
     return outgoingEdgesByNode;
   }
 
-  private buildOutputCommandFromEdge(
-    edge: RFEdge,
-    nodeById: Map<string, Node>,
+  private buildOutputStepFromNode(
+    targetNode: Node,
     warnings: string[]
-  ): NonNullable<CommandStep['commands']>[number] | null {
-    const targetNode = nodeById.get(edge.target);
-    if (!targetNode) {
-      warnings.push(
-        `Edge ${edge.id || `${edge.source}->${edge.target}`} references missing target node ${edge.target}.`
-      );
-      return null;
-    }
-
+  ): RuntimeStep | null {
     const targetModuleId = targetNode.data?.moduleId ?? '';
     if (!this.isOutputModule(targetModuleId)) {
       return null;
@@ -671,12 +667,139 @@ export class FlowBuilderService {
     }
 
     return {
+      id: targetNode.id,
+      moduleId: targetModuleId,
+      stepType: 'output',
       targetModuleType: this.resolveTargetModuleType(targetModuleId),
       cmd,
       pin,
       value: '$prev',
       topic: `esp/${targetNode.id}/response`,
     };
+  }
+
+  private buildFunctionStepFromNode(
+    node: Node,
+    warnings: string[]
+  ): RuntimeStep {
+    const code = String(node.data?.variables?.code ?? '').trim();
+    if (!code) {
+      warnings.push(
+        `Function node ${node.id} has no code. It will behave like "return msg;".`
+      );
+    }
+
+    return {
+      id: node.id,
+      moduleId: node.data?.moduleId ?? 'logic-function',
+      stepType: 'function',
+      code: code || 'return msg;',
+    };
+  }
+
+  private buildPathsFromNode(
+    node: Node,
+    nodeById: Map<string, Node>,
+    outgoingEdgesByNode: Map<string, RFEdge[]>,
+    warnings: string[],
+    visited: Set<string>
+  ): RuntimeStep[][] {
+    if (visited.has(node.id)) {
+      warnings.push(
+        `Cycle detected at node ${node.id}. This path was skipped.`
+      );
+      return [];
+    }
+
+    const nextVisited = new Set(visited);
+    nextVisited.add(node.id);
+    const outgoing = outgoingEdgesByNode.get(node.id) ?? [];
+
+    if (!outgoing.length) {
+      return [];
+    }
+
+    const paths: RuntimeStep[][] = [];
+
+    for (const edge of outgoing) {
+      const targetNode = nodeById.get(edge.target);
+      if (!targetNode) {
+        warnings.push(
+          `Edge ${edge.id || `${edge.source}->${edge.target}`} references missing target node ${edge.target}.`
+        );
+        continue;
+      }
+
+      const targetModuleId = targetNode.data?.moduleId ?? '';
+      const outputStep = this.buildOutputStepFromNode(targetNode, warnings);
+      if (outputStep) {
+        paths.push([outputStep]);
+        continue;
+      }
+
+      if (this.isFunctionModule(targetModuleId)) {
+        const functionStep = this.buildFunctionStepFromNode(
+          targetNode,
+          warnings
+        );
+        const downstreamPaths = this.buildPathsFromNode(
+          targetNode,
+          nodeById,
+          outgoingEdgesByNode,
+          warnings,
+          nextVisited
+        );
+
+        if (!downstreamPaths.length) {
+          warnings.push(
+            `Function node ${targetNode.id} has no valid downstream output.`
+          );
+          continue;
+        }
+
+        downstreamPaths.forEach((path) => {
+          paths.push([functionStep, ...path]);
+        });
+        continue;
+      }
+
+      warnings.push(
+        `Node ${targetNode.id} with module ${targetModuleId} is not supported in server-side logic paths.`
+      );
+    }
+
+    return paths;
+  }
+
+  private buildInputStep(node: Node): RuntimeStep {
+    return {
+      id: node.id,
+      moduleId: node.data?.moduleId ?? '',
+      stepType: 'input',
+    };
+  }
+
+  private hasRuntimeOutputStep(path: RuntimeStep[]): boolean {
+    return path.some((step) => step.stepType === 'output');
+  }
+
+  private buildLogicPathForInputNode(
+    inputNode: Node,
+    nodeById: Map<string, Node>,
+    outgoingEdgesByNode: Map<string, RFEdge[]>,
+    warnings: string[]
+  ): RuntimeStep[][] {
+    const downstreamPaths = this.buildPathsFromNode(
+      inputNode,
+      nodeById,
+      outgoingEdgesByNode,
+      warnings,
+      new Set<string>()
+    );
+
+    return downstreamPaths
+      .filter((path) => this.hasRuntimeOutputStep(path))
+      .map((path) => [this.buildInputStep(inputNode), ...path]);
   }
 
   buildLogicCommandsFromGraph(
@@ -688,7 +811,7 @@ export class FlowBuilderService {
     }
 
     const warnings: string[] = [];
-    const flows: CommandStep[][] = [];
+    const flows: RuntimeStep[][] = [];
 
     const nodeById = this.buildNodeByIdMap(nodes);
     const outgoingEdgesByNode = this.buildOutgoingEdgesMap(edges);
@@ -699,36 +822,13 @@ export class FlowBuilderService {
         continue;
       }
 
-      const outgoing = outgoingEdgesByNode.get(inputNode.id) ?? [];
-      if (!outgoing.length) {
-        continue;
-      }
-
-      const commands: NonNullable<CommandStep['commands']> = [];
-
-      for (const edge of outgoing) {
-        const command = this.buildOutputCommandFromEdge(
-          edge,
-          nodeById,
-          warnings
-        );
-        if (!command) {
-          continue;
-        }
-        commands.push(command);
-      }
-
-      if (!commands.length) {
-        continue;
-      }
-
-      flows.push([
-        {
-          id: inputNode.id,
-          moduleId: inputModuleId,
-          commands,
-        },
-      ]);
+      const paths = this.buildLogicPathForInputNode(
+        inputNode,
+        nodeById,
+        outgoingEdgesByNode,
+        warnings
+      );
+      paths.forEach((path) => flows.push(path));
     }
 
     return { flows, warnings };
