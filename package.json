@@ -29,6 +29,8 @@
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^11.0.1",
     "@nestjs/swagger": "^11.2.1",
+    "acorn-walk": "^8.3.5",
+    "acron": "^1.0.5",
     "aedes": "^0.48.1",
     "bcrypt": "^6.0.0",
     "class-transformer": "^0.5.1",
