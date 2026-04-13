@@ -4,7 +4,7 @@ import { Edge as RFEdge } from './types/flow.types';
 import { Node } from './schemas/node.schema';
 import { UiItem } from './schemas/uiItem.schema';
 import { randomInt } from 'crypto';
-import { parse } from 'acorn';
+import { parse, AnyNode } from 'acorn';
 import * as walk from 'acorn-walk';
 
 const MODE_MAP: Record<string, number> = {
@@ -694,38 +694,49 @@ export class FlowBuilderService {
       const errors: string[] = [];
       let hasReturn = false;
 
-      walk.full(ast, (node) => {
-        // Block require()
+      const declared = new Set<string>(['msg']); // msg is always available
+      const used = new Set<string>();
+
+      const allowedGlobals = new Set([
+        'msg',
+        'Number',
+        'Math',
+        'parseInt',
+        'parseFloat',
+        'isNaN',
+      ]);
+
+      walk.fullAncestor(ast, (node, ancestors: AnyNode[]) => {
+        const parent = ancestors[ancestors.length - 2];
+
+        //  Security rules
         if (
           node.type === 'CallExpression' &&
           node.callee?.type === 'Identifier' &&
-          node.callee?.name === 'require'
+          node.callee.name === 'require'
         ) {
           errors.push('require() is not allowed');
           return;
         }
 
-        // Block eval()
         if (
           node.type === 'CallExpression' &&
           node.callee?.type === 'Identifier' &&
-          node.callee?.name === 'eval'
+          node.callee.name === 'eval'
         ) {
           errors.push('eval() is not allowed');
           return;
         }
 
-        // Block Function constructor
         if (
           node.type === 'NewExpression' &&
           node.callee?.type === 'Identifier' &&
-          node.callee?.name === 'Function'
+          node.callee.name === 'Function'
         ) {
           errors.push('Function constructor is not allowed');
           return;
         }
 
-        // Block process, global, globalThis
         if (
           node.type === 'Identifier' &&
           ['process', 'global', 'globalThis'].includes(node.name)
@@ -734,13 +745,11 @@ export class FlowBuilderService {
           return;
         }
 
-        // Block this
         if (node.type === 'ThisExpression') {
           errors.push('this is not allowed');
           return;
         }
 
-        // Block loops
         if (
           node.type === 'WhileStatement' ||
           node.type === 'DoWhileStatement' ||
@@ -750,13 +759,11 @@ export class FlowBuilderService {
           return;
         }
 
-        // Block try/catch
         if (node.type === 'TryStatement') {
           errors.push('try/catch is not allowed');
           return;
         }
 
-        // Block function declarations
         if (
           node.type === 'FunctionDeclaration' ||
           node.type === 'ArrowFunctionExpression'
@@ -765,23 +772,50 @@ export class FlowBuilderService {
           return;
         }
 
-        // Track return statements
         if (node.type === 'ReturnStatement') {
           hasReturn = true;
         }
+
+        // Variable tracking
+
+        // Collect declared variables
+        if (node.type === 'VariableDeclarator') {
+          if (node.id.type === 'Identifier') {
+            declared.add(node.id.name);
+          }
+        }
+
+        // Track identifier usage
+        if (node.type === 'Identifier') {
+          // Ignore property access: msg.payload
+          if (
+            parent?.type === 'MemberExpression' &&
+            parent.property === node &&
+            !parent.computed
+          ) {
+            return;
+          }
+
+          // Ignore declarations
+          if (parent?.type === 'VariableDeclarator' && parent.id === node) {
+            return;
+          }
+
+          used.add(node.name);
+        }
       });
 
-      // Return first error if any
-      if (errors.length > 0) {
-        return errors[0];
+      // Undefined variables check
+      for (const name of used) {
+        if (!declared.has(name) && !allowedGlobals.has(name)) {
+          return `'${name}' is not defined`;
+        }
       }
 
-      // 3) Enforce return statement
       if (!hasReturn) {
-        return 'Code must return msg';
+        return 'Code must  have return value';
       }
 
-      // Valid code
       return null;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
