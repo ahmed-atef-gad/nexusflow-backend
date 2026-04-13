@@ -6,15 +6,40 @@ import { MqttService } from './mqtt.service';
 import { InjectModel } from '@nestjs/mongoose';
 import { Logic, LogicDocument } from '../flows/schemas/logic.schema';
 import { Model } from 'mongoose';
+import * as vm from 'node:vm';
 
 type OutputModuleType = 'pwm' | 'digital' | 'dac' | 'other';
 
 type RuntimeCommand = {
+  id?: string;
+  moduleId?: string;
+  stepType?: 'input' | 'function' | 'output';
+  code?: string;
   targetModuleType?: OutputModuleType;
-  cmd: number;
+  cmd?: number;
   pin?: number;
   value?: number | string;
   topic?: string;
+};
+
+type RuntimeMessage = {
+  payload: unknown;
+  value: unknown;
+  topic: string;
+  nodeId: string;
+  moduleId: string;
+  flowId: string;
+  device: {
+    macAddress: string;
+  };
+  input: {
+    payload: unknown;
+    normalized: number | null;
+    topic: string;
+  };
+  metadata: {
+    timestamp: string;
+  };
 };
 
 type MqttClientAttributes = {
@@ -508,12 +533,148 @@ export class MqttHandlers implements OnModuleInit {
     }
   }
 
+  private extractRawInputPayload(
+    packet: MqttPacketContext
+  ): InputPayload | null {
+    const payload = packet?.payload;
+    if (!Buffer.isBuffer(payload)) {
+      return null;
+    }
+
+    try {
+      const parsed: unknown = JSON.parse(payload.toString('utf8'));
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return null;
+      }
+
+      return parsed as InputPayload;
+    } catch {
+      return null;
+    }
+  }
+
   private isGpioRuntimeCommand(command: RuntimeCommand): boolean {
     return (
-      command.targetModuleType === 'digital' ||
-      command.targetModuleType === 'pwm' ||
-      command.targetModuleType === 'dac'
+      command.stepType === 'output' &&
+      (command.targetModuleType === 'digital' ||
+        command.targetModuleType === 'pwm' ||
+        command.targetModuleType === 'dac')
     );
+  }
+
+  private createRuntimeMessage(params: {
+    inputNodeId: string;
+    inputModuleId: string;
+    payload: unknown;
+    normalizedInput: number | null;
+    topic: string;
+    flowId: string;
+    deviceMac: string;
+  }): RuntimeMessage {
+    const timestamp = new Date().toISOString();
+
+    return {
+      payload: params.payload,
+      value: params.payload,
+      topic: params.topic,
+      nodeId: params.inputNodeId,
+      moduleId: params.inputModuleId,
+      flowId: params.flowId,
+      device: {
+        macAddress: params.deviceMac,
+      },
+      input: {
+        payload: params.payload,
+        normalized: params.normalizedInput,
+        topic: params.topic,
+      },
+      metadata: {
+        timestamp,
+      },
+    };
+  }
+
+  private pathUsesFunctionSteps(flow: unknown[]): boolean {
+    return flow.some(
+      (step) =>
+        typeof step === 'object' &&
+        step !== null &&
+        'stepType' in step &&
+        (step as RuntimeCommand).stepType === 'function'
+    );
+  }
+
+  private normalizeFunctionResult(
+    result: unknown,
+    currentMessage: RuntimeMessage
+  ): RuntimeMessage | null {
+    if (result === null || result === undefined) {
+      return null;
+    }
+
+    if (typeof result !== 'object' || Array.isArray(result)) {
+      return {
+        ...currentMessage,
+        payload: result,
+        value: result,
+      };
+    }
+
+    const candidate = result as Partial<RuntimeMessage> & { payload?: unknown };
+
+    return {
+      ...currentMessage,
+      ...candidate,
+      payload:
+        candidate.payload !== undefined
+          ? candidate.payload
+          : currentMessage.payload,
+      value:
+        candidate.payload !== undefined
+          ? candidate.payload
+          : candidate.value !== undefined
+            ? candidate.value
+            : currentMessage.value,
+    };
+  }
+
+  private executeFunctionStep(
+    step: RuntimeCommand,
+    currentMessage: RuntimeMessage
+  ): RuntimeMessage | null {
+    const code = String(step.code ?? '').trim() || 'return msg;';
+    const msg = {
+      ...currentMessage,
+      nodeId: String(step.id ?? currentMessage.nodeId),
+      moduleId: String(step.moduleId ?? currentMessage.moduleId),
+      device: { ...currentMessage.device },
+      input: { ...currentMessage.input },
+      metadata: { ...currentMessage.metadata },
+    };
+
+    const script = new vm.Script(`(function(msg) { ${code}\n})`);
+    const context = vm.createContext({});
+    const runner = script.runInContext(context, { timeout: 1000 });
+    const result = runner(msg);
+
+    return this.normalizeFunctionResult(result, msg);
+  }
+
+  private coerceRuntimeOutputValue(message: RuntimeMessage): number | null {
+    const payload = message.payload;
+    if (typeof payload === 'number' && Number.isFinite(payload)) {
+      return this.clampToByte(payload);
+    }
+    if (typeof payload === 'boolean') {
+      return payload ? 1 : 0;
+    }
+    if (typeof payload === 'string') {
+      const parsed = Number(payload);
+      if (Number.isFinite(parsed)) {
+        return this.clampToByte(parsed);
+      }
+    }
+    return null;
   }
 
   private async executeGpioLogicForInputTopic(
@@ -534,9 +695,10 @@ export class MqttHandlers implements OnModuleInit {
     }
 
     const inputValue = this.extractNumericInputValue(packet);
-    if (inputValue === null) {
+    const rawPayload = this.extractRawInputPayload(packet);
+    if (inputValue === null && rawPayload === null) {
       this.logger.debug(
-        `Skip GPIO logic: could not extract numeric value from payload for topic ${topic}`
+        `Skip GPIO logic: could not extract usable payload for topic ${topic}`
       );
       return;
     }
@@ -550,7 +712,7 @@ export class MqttHandlers implements OnModuleInit {
 
     const flowId = client.linkedFlowId;
     this.logger.debug(
-      `Received MQTT input. topic=${topic} nodeId=${inputNodeId} value=${inputValue} deviceMac=${deviceMac} flowId=${flowId ?? 'none'}`
+      `Received MQTT input. topic=${topic} nodeId=${inputNodeId} value=${inputValue ?? 'n/a'} deviceMac=${deviceMac} flowId=${flowId ?? 'none'}`
     );
     if (!flowId) {
       this.logger.debug(
@@ -585,51 +747,89 @@ export class MqttHandlers implements OnModuleInit {
     let publishedCommands = 0;
 
     for (const flow of flows) {
-      if (!Array.isArray(flow)) {
+      if (!Array.isArray(flow) || !flow.length) {
         continue;
       }
 
-      for (const step of flow) {
-        if (step?.id !== inputNodeId) {
+      const firstStep = flow[0] as RuntimeCommand | undefined;
+      if (firstStep?.id !== inputNodeId) {
+        continue;
+      }
+
+      matchedSteps++;
+      this.logger.debug(
+        `Matched runtime path for nodeId=${inputNodeId} with ${flow.length} steps`
+      );
+
+      const usesFunctionSteps = this.pathUsesFunctionSteps(flow);
+      const initialPayload =
+        usesFunctionSteps && rawPayload !== null ? rawPayload : inputValue;
+
+      let currentMessage = this.createRuntimeMessage({
+        inputNodeId,
+        inputModuleId: String(firstStep.moduleId ?? ''),
+        payload: initialPayload,
+        normalizedInput: inputValue,
+        topic,
+        flowId,
+        deviceMac: this.normalizeMacAddress(deviceMac),
+      });
+      let pathStopped = false;
+
+      for (const rawStep of flow.slice(1)) {
+        const step = rawStep as RuntimeCommand;
+
+        if (step.stepType === 'function') {
+          try {
+            const nextMessage = this.executeFunctionStep(step, currentMessage);
+            if (nextMessage === null) {
+              pathStopped = true;
+              break;
+            }
+            currentMessage = nextMessage;
+          } catch (error) {
+            this.logger.warn(
+              `Function node ${step.id ?? 'unknown'} failed: ${(error as Error).message}`
+            );
+            pathStopped = true;
+            break;
+          }
           continue;
         }
 
-        matchedSteps++;
+        if (!this.isGpioRuntimeCommand(step)) {
+          continue;
+        }
 
-        const commands = Array.isArray(step?.commands)
-          ? (step.commands as RuntimeCommand[])
-          : [];
+        if (typeof step.cmd !== 'number' || typeof step.pin !== 'number') {
+          continue;
+        }
+
+        const outputValue = this.coerceRuntimeOutputValue(currentMessage);
+        if (outputValue === null) {
+          this.logger.warn(
+            `Output step ${step.id ?? 'unknown'} skipped because payload is not a numeric, boolean, or numeric string value.`
+          );
+          continue;
+        }
+
+        await this.mqttService.publish(commandTopic, {
+          command: {
+            cmd: step.cmd,
+            pin: step.pin,
+            value: outputValue,
+            topic: step.topic,
+          },
+        });
+        publishedCommands++;
 
         this.logger.debug(
-          `Matched step for nodeId=${inputNodeId} with ${commands.length} commands`
+          `Published GPIO logic command. cmd=${step.cmd} pin=${step.pin} value=${outputValue} topic=${commandTopic}`
         );
+      }
 
-        for (const command of commands) {
-          if (!this.isGpioRuntimeCommand(command)) {
-            continue;
-          }
-
-          if (
-            typeof command.cmd !== 'number' ||
-            typeof command.pin !== 'number'
-          ) {
-            continue;
-          }
-
-          await this.mqttService.publish(commandTopic, {
-            command: {
-              cmd: command.cmd,
-              pin: command.pin,
-              value: inputValue,
-              topic: command.topic,
-            },
-          });
-          publishedCommands++;
-
-          this.logger.debug(
-            `Published GPIO logic command. cmd=${command.cmd} pin=${command.pin} value=${inputValue} topic=${commandTopic}`
-          );
-        }
+      if (pathStopped) {
+        continue;
       }
     }
 
