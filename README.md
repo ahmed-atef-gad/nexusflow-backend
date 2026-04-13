@@ -136,7 +136,56 @@ The flow builder converts visual graph nodes into:
 - `setup`: low-level pin/mode configuration for firmware startup
 - `tasks`: periodic runtime tasks for sensor polling and GPIO operations
 - `ui`: frontend-facing module/topic metadata
-- logic command mappings from input nodes to output nodes
+- logic runtime paths from input nodes through optional function nodes to output nodes
+
+### Function Node Runtime
+
+The backend now supports a `logic-function` node in flow logic.
+
+High-level behavior:
+
+- Flow graphs can now compile paths like `input -> function -> output`
+- Multiple function nodes can be chained in one path
+- Function code is stored on the flow node under `data.variables.code`
+- Runtime execution happens server-side inside [`src/mqtt/mqtt.handlers.ts`](src/mqtt/mqtt.handlers.ts)
+
+Compilation details:
+
+- [`src/flows/flow-builder.service.ts`](src/flows/flow-builder.service.ts) now compiles logic into ordered runtime steps:
+  - `input`
+  - `function`
+  - `output`
+- Cycles are detected and skipped with warnings
+- Function nodes without valid downstream outputs are skipped with warnings
+
+Runtime message contract:
+
+- For paths that include a function node, `msg.payload` starts as the raw MQTT task/telemetry packet
+- For direct non-function paths, behavior remains compatible with the old normalized scalar flow
+- `msg` currently includes:
+  - `msg.payload`
+  - `msg.value`
+  - `msg.topic`
+  - `msg.nodeId`
+  - `msg.moduleId`
+  - `msg.flowId`
+  - `msg.device.macAddress`
+  - `msg.input.payload`
+  - `msg.input.normalized`
+  - `msg.input.topic`
+  - `msg.metadata.timestamp`
+
+Function return contract:
+
+- `return msg;`
+- `return { payload: ... };`
+- `return <primitive>;`
+- `return null;` to stop the path
+
+Important runtime note:
+
+- Function code is executed with Node `vm` and a timeout
+- This is acceptable for trusted/internal authors, but it is not a hardened sandbox for hostile multi-tenant code execution
 
 ### `flow-templates`
 
@@ -213,7 +262,8 @@ Typical user-side path:
 4. User links a device to that flow
 5. Device syncs setup from backend
 6. Device publishes telemetry over MQTT
-7. Frontend subscribes to real-time updates through MQTT over WebSocket
+7. Backend may execute server-side function/runtime logic for linked flows
+8. Frontend subscribes to real-time updates through MQTT over WebSocket
 
 Typical device-side onboarding path:
 
@@ -389,6 +439,11 @@ From the device/controller code and flow-builder output, common topic patterns i
 - `client/<MAC>/metrics`
 - `logic/input/<nodeId>`
 - `esp/<nodeId>/response`
+
+Function-node payload note:
+
+- Sensor/task packets published to `logic/input/<nodeId>` are preserved as raw payload objects when a flow path contains a function node
+- Direct input-to-output paths still use the existing normalized scalar behavior for compatibility with GPIO output control
 
 ## Testing
 

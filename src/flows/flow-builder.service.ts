@@ -463,6 +463,11 @@ export class FlowBuilderService {
 
     nodes.forEach((node) => {
       const module = node.data;
+
+      if (module.moduleId.startsWith('logic-function')) {
+        return; // Skip function nodes in UI generation
+      }
+
       if (module.moduleId.startsWith('ESP32-gpio-output')) {
         const pinNumber = this.toOptionalNumber(module.variables?.pinNumber);
         if (pinNumber !== undefined) {
@@ -589,7 +594,7 @@ export class FlowBuilderService {
   }
 
   private isFunctionModule(moduleId: string): boolean {
-    return moduleId === 'logic-function';
+    return moduleId.startsWith('logic-function');
   }
 
   private resolveTargetModuleType(moduleId: string): OutputModuleType {
