@@ -464,7 +464,7 @@ export class FlowBuilderService {
     nodes.forEach((node) => {
       const module = node.data;
 
-      if (module.moduleId === 'logic-function') {
+      if (module.moduleId.startsWith('logic-function')) {
         return; // Skip function nodes in UI generation
       }
 
@@ -594,7 +594,7 @@ export class FlowBuilderService {
   }
 
   private isFunctionModule(moduleId: string): boolean {
-    return moduleId === 'logic-function';
+    return moduleId.startsWith('logic-function');
   }
 
   private resolveTargetModuleType(moduleId: string): OutputModuleType {
