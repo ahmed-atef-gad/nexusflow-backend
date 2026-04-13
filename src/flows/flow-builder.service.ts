@@ -805,6 +805,10 @@ export class FlowBuilderService {
         }
       });
 
+      if (errors.length) {
+        return errors[0];
+      }
+
       // Undefined variables check
       for (const name of used) {
         if (!declared.has(name) && !allowedGlobals.has(name)) {
@@ -813,7 +817,7 @@ export class FlowBuilderService {
       }
 
       if (!hasReturn) {
-        return 'Code must  have return value';
+        return 'Code must have a return value';
       }
 
       return null;
