@@ -184,8 +184,9 @@ Function return contract:
 
 Important runtime note:
 
-- Function code is executed with Node `vm` and a timeout
-- This is acceptable for trusted/internal authors, but it is not a hardened sandbox for hostile multi-tenant code execution
+- Function code is statically validated (AST checks) at compile time and again before runtime execution
+- Runtime execution uses a strict VM context with dynamic code generation disabled, payload-size guardrails, and execution timeout limits
+- Function code that violates validation/security rules is rejected and the logic path is stopped safely
 
 ### `flow-templates`
 
@@ -340,6 +341,10 @@ DEFAULT_GPIO_INTERVAL_MS=1000
 DEFAULT_GPIO_OUTPUT_INTERVAL_MS=10000
 DEFAULT_SENSOR_INTERVAL_MS=5000
 DEFAULT_PIR_INTERVAL_MS=1000
+FUNCTION_NODE_MAX_CODE_LENGTH=2000
+FUNCTION_NODE_MAX_AST_NODES=300
+FUNCTION_NODE_EXECUTION_TIMEOUT_MS=100
+FUNCTION_NODE_MAX_PAYLOAD_BYTES=8192
 ```
 
 Notes:
