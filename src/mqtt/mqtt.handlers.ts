@@ -1,4 +1,5 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PigeonService } from '../pigeon-mqtt/pigeon.service';
 import { DevicesService } from '../devices/devices.service';
 import { UsersService } from '../users/users.service';
@@ -7,6 +8,11 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Logic, LogicDocument } from '../flows/schemas/logic.schema';
 import { Model } from 'mongoose';
 import * as vm from 'node:vm';
+import {
+  DEFAULT_FUNCTION_NODE_MAX_AST_NODES,
+  DEFAULT_FUNCTION_NODE_MAX_CODE_LENGTH,
+  validateFunctionNodeCode,
+} from '../flows/function-node-security.util';
 
 type OutputModuleType = 'pwm' | 'digital' | 'dac' | 'other';
 
@@ -88,10 +94,20 @@ type InputPayload = {
 
 const INPUT_TOPIC_PATTERN = /^logic\/input\/([^/]+)$/;
 const LEGACY_INPUT_TOPIC_PATTERN = /^esp\/([^/]+)$/;
+const DEFAULT_FUNCTION_NODE_EXECUTION_TIMEOUT_MS = 100;
+const DEFAULT_FUNCTION_NODE_MAX_PAYLOAD_BYTES = 8192;
+const MAX_FUNCTION_VALIDATION_CACHE_SIZE = 500;
+const MAX_RUNTIME_STEPS_PER_PATH = 64;
+const MAX_RUNTIME_FUNCTION_STEPS_PER_PATH = 16;
 
 @Injectable()
 export class MqttHandlers implements OnModuleInit {
   private readonly logger = new Logger(MqttHandlers.name);
+  private readonly functionExecutionTimeoutMs: number;
+  private readonly functionNodeMaxCodeLength: number;
+  private readonly functionNodeMaxAstNodes: number;
+  private readonly functionNodeMaxPayloadBytes: number;
+  private readonly functionValidationCache = new Map<string, string | null>();
 
   constructor(
     private readonly pigeonService: PigeonService,
@@ -99,8 +115,26 @@ export class MqttHandlers implements OnModuleInit {
     private readonly usersService: UsersService,
     private readonly mqttService: MqttService,
     @InjectModel(Logic.name)
-    private readonly logicModel: Model<LogicDocument>
-  ) {}
+    private readonly logicModel: Model<LogicDocument>,
+    private readonly configService: ConfigService
+  ) {
+    this.functionExecutionTimeoutMs = this.readPositiveConfigNumber(
+      'FUNCTION_NODE_EXECUTION_TIMEOUT_MS',
+      DEFAULT_FUNCTION_NODE_EXECUTION_TIMEOUT_MS
+    );
+    this.functionNodeMaxCodeLength = this.readPositiveConfigNumber(
+      'FUNCTION_NODE_MAX_CODE_LENGTH',
+      DEFAULT_FUNCTION_NODE_MAX_CODE_LENGTH
+    );
+    this.functionNodeMaxAstNodes = this.readPositiveConfigNumber(
+      'FUNCTION_NODE_MAX_AST_NODES',
+      DEFAULT_FUNCTION_NODE_MAX_AST_NODES
+    );
+    this.functionNodeMaxPayloadBytes = this.readPositiveConfigNumber(
+      'FUNCTION_NODE_MAX_PAYLOAD_BYTES',
+      DEFAULT_FUNCTION_NODE_MAX_PAYLOAD_BYTES
+    );
+  }
 
   onModuleInit() {
     const broker = this.pigeonService.getBrokerInstance();
@@ -110,6 +144,15 @@ export class MqttHandlers implements OnModuleInit {
     broker.authorizeForward = this.onAuthorizeForward.bind(this);
     broker.on('clientDisconnect', this.onClientDisconnect.bind(this));
     broker.on('publish', this.onClientPublish.bind(this));
+  }
+
+  private readPositiveConfigNumber(name: string, fallback: number): number {
+    const raw = this.configService.get<string | number>(name);
+    if (raw === undefined || raw === null || raw === '') return fallback;
+
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+    return Math.trunc(parsed);
   }
 
   private normalizeMacAddress(value: string): string {
@@ -604,6 +647,85 @@ export class MqttHandlers implements OnModuleInit {
     );
   }
 
+  private cloneMessageForSandbox(message: RuntimeMessage): RuntimeMessage {
+    try {
+      return structuredClone(message);
+    } catch {
+      return JSON.parse(JSON.stringify(message)) as RuntimeMessage;
+    }
+  }
+
+  private isPayloadSizeAllowed(payload: unknown): boolean {
+    if (payload === null || payload === undefined) return true;
+
+    if (typeof payload === 'number' || typeof payload === 'boolean') {
+      return true;
+    }
+
+    if (typeof payload === 'string') {
+      return (
+        Buffer.byteLength(payload, 'utf8') <= this.functionNodeMaxPayloadBytes
+      );
+    }
+
+    try {
+      const serialized = JSON.stringify(payload);
+      if (serialized === undefined) return false;
+      return (
+        Buffer.byteLength(serialized, 'utf8') <= this.functionNodeMaxPayloadBytes
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  private validateFunctionCodeAtRuntime(code: string): string | null {
+    if (this.functionValidationCache.has(code)) {
+      return this.functionValidationCache.get(code) ?? null;
+    }
+
+    const validationError = validateFunctionNodeCode(code, {
+      maxCodeLength: this.functionNodeMaxCodeLength,
+      maxAstNodes: this.functionNodeMaxAstNodes,
+    });
+
+    if (this.functionValidationCache.size >= MAX_FUNCTION_VALIDATION_CACHE_SIZE) {
+      this.functionValidationCache.clear();
+    }
+
+    this.functionValidationCache.set(code, validationError);
+    return validationError;
+  }
+
+  private executeFunctionCodeInSandbox(
+    code: string,
+    message: RuntimeMessage
+  ): unknown {
+    const script = `'use strict'; (function(msg) { ${code}\n})(msg);`;
+    const sandbox = {
+      msg: message,
+      Number,
+      Math,
+      parseInt,
+      parseFloat,
+      isNaN,
+      Boolean,
+      String,
+      Date,
+      JSON,
+    };
+
+    return vm.runInNewContext(script, sandbox, {
+      timeout: this.functionExecutionTimeoutMs,
+      displayErrors: true,
+      contextCodeGeneration: {
+        strings: false,
+        wasm: false,
+      },
+      microtaskMode: 'afterEvaluate',
+    });
+  }
+
   private normalizeFunctionResult(
     result: unknown,
     currentMessage: RuntimeMessage
@@ -613,6 +735,10 @@ export class MqttHandlers implements OnModuleInit {
     }
 
     if (typeof result !== 'object' || Array.isArray(result)) {
+      if (!this.isPayloadSizeAllowed(result)) {
+        throw new Error('Function result payload exceeds allowed size');
+      }
+
       return {
         ...currentMessage,
         payload: result,
@@ -621,18 +747,24 @@ export class MqttHandlers implements OnModuleInit {
     }
 
     const candidate = result as Partial<RuntimeMessage> & { payload?: unknown };
+    const hasPayload = Object.prototype.hasOwnProperty.call(
+      candidate,
+      'payload'
+    );
+    const hasValue = Object.prototype.hasOwnProperty.call(candidate, 'value');
+
+    const payload = hasPayload ? candidate.payload : currentMessage.payload;
+    if (!this.isPayloadSizeAllowed(payload)) {
+      throw new Error('Function result payload exceeds allowed size');
+    }
 
     return {
       ...currentMessage,
-      ...candidate,
-      payload:
-        candidate.payload !== undefined
-          ? candidate.payload
-          : currentMessage.payload,
+      payload,
       value:
-        candidate.payload !== undefined
+        hasPayload
           ? candidate.payload
-          : candidate.value !== undefined
+          : hasValue
             ? candidate.value
             : currentMessage.value,
     };
@@ -643,7 +775,12 @@ export class MqttHandlers implements OnModuleInit {
     currentMessage: RuntimeMessage
   ): RuntimeMessage | null {
     const code = String(step.code ?? '').trim() || 'return msg;';
-    const msg = {
+    const validationError = this.validateFunctionCodeAtRuntime(code);
+    if (validationError) {
+      throw new Error(`Invalid function code: ${validationError}`);
+    }
+
+    const msg: RuntimeMessage = {
       ...currentMessage,
       nodeId: String(step.id ?? currentMessage.nodeId),
       moduleId: String(step.moduleId ?? currentMessage.moduleId),
@@ -652,10 +789,8 @@ export class MqttHandlers implements OnModuleInit {
       metadata: { ...currentMessage.metadata },
     };
 
-    const script = new vm.Script(`(function(msg) { ${code}\n})`);
-    const context = vm.createContext({});
-    const runner = script.runInContext(context, { timeout: 1000 });
-    const result = runner(msg);
+    const sandboxMessage = this.cloneMessageForSandbox(msg);
+    const result = this.executeFunctionCodeInSandbox(code, sandboxMessage);
 
     return this.normalizeFunctionResult(result, msg);
   }
@@ -748,6 +883,23 @@ export class MqttHandlers implements OnModuleInit {
 
     for (const flow of flows) {
       if (!Array.isArray(flow) || !flow.length) {
+        continue;
+      }
+      if (flow.length > MAX_RUNTIME_STEPS_PER_PATH) {
+        this.logger.warn(
+          `Skipping runtime path due to excessive length (${flow.length} steps).`
+        );
+        continue;
+      }
+
+      const functionStepsInPath = flow.reduce((count, step) => {
+        const runtimeStep = step as RuntimeCommand;
+        return runtimeStep?.stepType === 'function' ? count + 1 : count;
+      }, 0);
+      if (functionStepsInPath > MAX_RUNTIME_FUNCTION_STEPS_PER_PATH) {
+        this.logger.warn(
+          `Skipping runtime path due to excessive function node depth (${functionStepsInPath}).`
+        );
         continue;
       }
 

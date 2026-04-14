@@ -4,8 +4,11 @@ import { Edge as RFEdge } from './types/flow.types';
 import { Node } from './schemas/node.schema';
 import { UiItem } from './schemas/uiItem.schema';
 import { randomInt } from 'crypto';
-import { parse, AnyNode } from 'acorn';
-import * as walk from 'acorn-walk';
+import {
+  DEFAULT_FUNCTION_NODE_MAX_AST_NODES,
+  DEFAULT_FUNCTION_NODE_MAX_CODE_LENGTH,
+  validateFunctionNodeCode,
+} from './function-node-security.util';
 
 const MODE_MAP: Record<string, number> = {
   INPUT: 1,
@@ -122,6 +125,8 @@ export class FlowBuilderService {
   private readonly defaultGpioOutputIntervalMs: number;
   private readonly defaultSensorIntervalMs: number;
   private readonly defaultPirIntervalMs: number;
+  private readonly functionNodeMaxCodeLength: number;
+  private readonly functionNodeMaxAstNodes: number;
 
   constructor(private readonly configService: ConfigService) {
     this.minIntervalMs = this.readConfigNumber('MIN_INTERVAL_MS', 250);
@@ -141,6 +146,14 @@ export class FlowBuilderService {
     this.defaultPirIntervalMs = this.readConfigNumber(
       'DEFAULT_PIR_INTERVAL_MS',
       1000
+    );
+    this.functionNodeMaxCodeLength = this.readConfigNumber(
+      'FUNCTION_NODE_MAX_CODE_LENGTH',
+      DEFAULT_FUNCTION_NODE_MAX_CODE_LENGTH
+    );
+    this.functionNodeMaxAstNodes = this.readConfigNumber(
+      'FUNCTION_NODE_MAX_AST_NODES',
+      DEFAULT_FUNCTION_NODE_MAX_AST_NODES
     );
   }
 
@@ -686,145 +699,10 @@ export class FlowBuilderService {
   }
 
   private validateFunctionCode(code: string): string | null {
-    try {
-      const ast = parse(`(function(msg) { ${code}\n})`, {
-        ecmaVersion: 'latest',
-      });
-
-      const errors: string[] = [];
-      let hasReturn = false;
-
-      const declared = new Set<string>(['msg']); // msg is always available
-      const used = new Set<string>();
-
-      const allowedGlobals = new Set([
-        'msg',
-        'Number',
-        'Math',
-        'parseInt',
-        'parseFloat',
-        'isNaN',
-      ]);
-
-      walk.fullAncestor(ast, (node, ancestors: AnyNode[]) => {
-        const parent = ancestors[ancestors.length - 2];
-
-        //  Security rules
-        if (
-          node.type === 'CallExpression' &&
-          node.callee?.type === 'Identifier' &&
-          node.callee.name === 'require'
-        ) {
-          errors.push('require() is not allowed');
-          return;
-        }
-
-        if (
-          node.type === 'CallExpression' &&
-          node.callee?.type === 'Identifier' &&
-          node.callee.name === 'eval'
-        ) {
-          errors.push('eval() is not allowed');
-          return;
-        }
-
-        if (
-          node.type === 'NewExpression' &&
-          node.callee?.type === 'Identifier' &&
-          node.callee.name === 'Function'
-        ) {
-          errors.push('Function constructor is not allowed');
-          return;
-        }
-
-        if (
-          node.type === 'Identifier' &&
-          ['process', 'global', 'globalThis'].includes(node.name)
-        ) {
-          errors.push(`${node.name} is not allowed`);
-          return;
-        }
-
-        if (node.type === 'ThisExpression') {
-          errors.push('this is not allowed');
-          return;
-        }
-
-        if (
-          node.type === 'WhileStatement' ||
-          node.type === 'DoWhileStatement' ||
-          node.type === 'ForStatement'
-        ) {
-          errors.push('Loops are not allowed');
-          return;
-        }
-
-        if (node.type === 'TryStatement') {
-          errors.push('try/catch is not allowed');
-          return;
-        }
-
-        if (
-          node.type === 'FunctionDeclaration' ||
-          node.type === 'ArrowFunctionExpression'
-        ) {
-          errors.push('Defining functions is not allowed');
-          return;
-        }
-
-        if (node.type === 'ReturnStatement') {
-          hasReturn = true;
-        }
-
-        // Variable tracking
-
-        // Collect declared variables
-        if (node.type === 'VariableDeclarator') {
-          if (node.id.type === 'Identifier') {
-            declared.add(node.id.name);
-          }
-        }
-
-        // Track identifier usage
-        if (node.type === 'Identifier') {
-          // Ignore property access: msg.payload
-          if (
-            parent?.type === 'MemberExpression' &&
-            parent.property === node &&
-            !parent.computed
-          ) {
-            return;
-          }
-
-          // Ignore declarations
-          if (parent?.type === 'VariableDeclarator' && parent.id === node) {
-            return;
-          }
-
-          used.add(node.name);
-        }
-      });
-
-      if (errors.length) {
-        return errors[0];
-      }
-
-      // Undefined variables check
-      for (const name of used) {
-        if (!declared.has(name) && !allowedGlobals.has(name)) {
-          return `'${name}' is not defined`;
-        }
-      }
-
-      if (!hasReturn) {
-        return 'Code must have a return value';
-      }
-
-      return null;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      return `Syntax error: ${message}`;
-    }
+    return validateFunctionNodeCode(code, {
+      maxCodeLength: this.functionNodeMaxCodeLength,
+      maxAstNodes: this.functionNodeMaxAstNodes,
+    });
   }
 
   private buildFunctionStepFromNode(
@@ -832,18 +710,23 @@ export class FlowBuilderService {
     warnings: string[]
   ): RuntimeStep {
     const code = String(node.data?.variables?.code ?? '').trim();
-
-    const validationError = this.validateFunctionCode(code);
-
-    if (validationError) {
-      throw new BadRequestException(
-        `Syntax error in function node ${node.data?.alias || node.data.name}: ${validationError}`
-      );
-    }
-
     if (!code) {
       warnings.push(
         `Function node ${node.data?.alias || node.data.name} has no code. It will behave like "return msg;".`
+      );
+
+      return {
+        id: node.id,
+        moduleId: node.data?.moduleId ?? 'logic-function',
+        stepType: 'function',
+        code: 'return msg;',
+      };
+    }
+
+    const validationError = this.validateFunctionCode(code);
+    if (validationError) {
+      throw new BadRequestException(
+        `Syntax error in function node ${node.data?.alias || node.data.name}: ${validationError}`
       );
     }
 
@@ -851,7 +734,7 @@ export class FlowBuilderService {
       id: node.id,
       moduleId: node.data?.moduleId ?? 'logic-function',
       stepType: 'function',
-      code: code || 'return msg;',
+      code,
     };
   }
 
