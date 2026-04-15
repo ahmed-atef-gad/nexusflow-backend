@@ -205,7 +205,7 @@ export class FlowBuilderService {
       );
     }
     if (!edges) {
-      throw new BadRequestException('Flow edges are required to be created');
+      throw new BadRequestException('Flow edges are required to create a flow');
     }
 
     const targetNodeConnectionCount: Record<string, number> = {};

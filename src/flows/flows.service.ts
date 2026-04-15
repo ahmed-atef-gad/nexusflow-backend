@@ -191,12 +191,12 @@ export class FlowsService {
     let ui: Ui | null = null;
     let topicsData: TopicsData | undefined;
 
-    this.flowBuilderService.validateFlowStructure(
-      updatedFlow.nodes,
-      updatedFlow.edges
-    );
-
     if (updatedFlow.nodes && updatedFlow.edges) {
+      this.flowBuilderService.validateFlowStructure(
+        updatedFlow.nodes,
+        updatedFlow.edges
+      );
+
       setupData = this.flowBuilderService.buildSetupFromNodes(
         updatedFlow.nodes
       );
