@@ -198,6 +198,33 @@ export class FlowBuilderService {
     return `${INPUT_TOPIC_PREFIX}/${nodeId}`;
   }
 
+  validateFlowStructure(nodes: Node[], edges: RFEdge[]): void {
+    if (!nodes || nodes.length === 0) {
+      throw new BadRequestException(
+        'Flow must contain at least one node to be created'
+      );
+    }
+    if (!edges) {
+      throw new BadRequestException('Flow edges are required to be created');
+    }
+
+    const targetNodeConnectionCount: Record<string, number> = {};
+    edges.forEach((edge) => {
+      if (!targetNodeConnectionCount[edge.target]) {
+        targetNodeConnectionCount[edge.target] = 0;
+      }
+      targetNodeConnectionCount[edge.target]++;
+    });
+    for (const [nodeId, count] of Object.entries(targetNodeConnectionCount)) {
+      if (count > 1) {
+        const targetNode = nodes.find((n) => n.id === nodeId);
+        throw new BadRequestException(
+          `Node ${targetNode?.data.alias || targetNode?.data.name} is connected to multiple nodes`
+        );
+      }
+    }
+  }
+
   buildSetupFromNodes(nodes: Node[]): SetupObject {
     const setupPins: Record<number, SetupItem> = {};
     const gpioTask: Task = {
@@ -726,7 +753,7 @@ export class FlowBuilderService {
     const validationError = this.validateFunctionCode(code);
     if (validationError) {
       throw new BadRequestException(
-        `Syntax error in function node ${node.data?.alias || node.data.name}: ${validationError}`
+        `Invalid function code in node ${node.data?.alias || node.data.name}: ${validationError}`
       );
     }
 
