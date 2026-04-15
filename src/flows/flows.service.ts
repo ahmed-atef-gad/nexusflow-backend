@@ -21,7 +21,6 @@ import { DevicesService } from 'src/devices/devices.service';
 import { UiService } from './ui.service';
 import { UiItem } from './schemas/uiItem.schema';
 import { Ui } from './schemas/ui.schema';
-import { warn } from 'console';
 
 @Injectable()
 export class FlowsService {
@@ -61,37 +60,32 @@ export class FlowsService {
     let logicData: CommandExtraction = { flows: [], warnings: [] };
     let uiData: UiItem[] = [];
     let ui: Ui | null = null;
-    let savedFlow: FlowDocument;
 
-    if (nodes && edges) {
-      setupData = this.flowBuilderService.buildSetupFromNodes(nodes);
+    this.flowBuilderService.validateFlowStructure(nodes, edges);
 
-      logicData = this.flowBuilderService.buildLogicCommandsFromGraph(
-        nodes,
-        edges
-      );
-      uiData = this.flowBuilderService.buildUiFromNodes(nodes, edges);
-      savedFlow = await createdFlow.save();
-      const savedFlowId = savedFlow.id as string;
+    setupData = this.flowBuilderService.buildSetupFromNodes(nodes);
 
-      await this.setupService.create({
-        flowId: savedFlowId,
-        elements: setupData,
-      });
-      await this.logicService.create({
-        flowId: savedFlowId,
-        program: logicData,
-      });
-      ui = await this.uiService.create({
-        flowId: savedFlowId,
-        uiItems: uiData,
-      });
-    } else {
-      throw new BadRequestException(
-        'Nodes and edges are required to create a flow'
-      );
-    }
-    // this.mqttService.publish(`esp/setup`, setupData);
+    logicData = this.flowBuilderService.buildLogicCommandsFromGraph(
+      nodes,
+      edges
+    );
+    uiData = this.flowBuilderService.buildUiFromNodes(nodes, edges);
+
+    const savedFlow = await createdFlow.save();
+    const savedFlowId = savedFlow.id as string;
+
+    await this.setupService.create({
+      flowId: savedFlowId,
+      elements: setupData,
+    });
+    await this.logicService.create({
+      flowId: savedFlowId,
+      program: logicData,
+    });
+    ui = await this.uiService.create({
+      flowId: savedFlowId,
+      uiItems: uiData,
+    });
 
     return {
       ...savedFlow.toObject(),
@@ -198,6 +192,11 @@ export class FlowsService {
     let topicsData: TopicsData | undefined;
 
     if (updatedFlow.nodes && updatedFlow.edges) {
+      this.flowBuilderService.validateFlowStructure(
+        updatedFlow.nodes,
+        updatedFlow.edges
+      );
+
       setupData = this.flowBuilderService.buildSetupFromNodes(
         updatedFlow.nodes
       );
