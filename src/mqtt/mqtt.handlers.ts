@@ -109,6 +109,7 @@ const DEFAULT_MQTT_LOGIC_CACHE_MAX_ENTRIES = 1000;
 const DEFAULT_MQTT_LOGIC_CACHE_SWEEP_INTERVAL_MS = 30000;
 
 type CachedLogicFlows = {
+  flowId: string;
   flows: unknown[][];
   expiresAt: number;
 };
@@ -209,9 +210,9 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     if (!this.logicFlowsCache.size) return;
 
     const now = Date.now();
-    for (const [flowId, cachedEntry] of this.logicFlowsCache.entries()) {
+    for (const [cacheKey, cachedEntry] of this.logicFlowsCache.entries()) {
       if (cachedEntry.expiresAt <= now) {
-        this.logicFlowsCache.delete(flowId);
+        this.logicFlowsCache.delete(cacheKey);
       }
     }
   }
@@ -219,30 +220,46 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
   private trimLogicCacheIfNeeded(): void {
     if (this.logicFlowsCache.size < this.logicCacheMaxEntries) return;
 
-    let oldestFlowId: string | null = null;
+    let oldestCacheKey: string | null = null;
     let oldestExpiresAt = Number.POSITIVE_INFINITY;
 
-    for (const [flowId, cachedEntry] of this.logicFlowsCache.entries()) {
+    for (const [cacheKey, cachedEntry] of this.logicFlowsCache.entries()) {
       if (cachedEntry.expiresAt < oldestExpiresAt) {
         oldestExpiresAt = cachedEntry.expiresAt;
-        oldestFlowId = flowId;
+        oldestCacheKey = cacheKey;
       }
     }
 
-    if (oldestFlowId) {
-      this.logicFlowsCache.delete(oldestFlowId);
+    if (oldestCacheKey) {
+      this.logicFlowsCache.delete(oldestCacheKey);
     }
   }
 
-  private async getLogicFlowsForFlowId(flowId: string): Promise<unknown[][]> {
+  private buildLogicCacheKey(deviceMac: string): string {
+    return this.normalizeMacAddress(deviceMac);
+  }
+
+  private evictLogicCacheForDevice(deviceMac: string): void {
+    this.logicFlowsCache.delete(this.buildLogicCacheKey(deviceMac));
+  }
+
+  private async getLogicFlowsForFlowId(
+    flowId: string,
+    deviceMac: string
+  ): Promise<unknown[][]> {
+    const cacheKey = this.buildLogicCacheKey(deviceMac);
     const now = Date.now();
-    const cachedEntry = this.logicFlowsCache.get(flowId);
-    if (cachedEntry && cachedEntry.expiresAt > now) {
+    const cachedEntry = this.logicFlowsCache.get(cacheKey);
+    if (
+      cachedEntry &&
+      cachedEntry.expiresAt > now &&
+      cachedEntry.flowId === flowId
+    ) {
       return cachedEntry.flows;
     }
 
     if (cachedEntry) {
-      this.logicFlowsCache.delete(flowId);
+      this.logicFlowsCache.delete(cacheKey);
     }
 
     const logicDoc = await this.logicModel
@@ -257,7 +274,8 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     const safeFlows = rawFlows.filter(Array.isArray);
 
     this.trimLogicCacheIfNeeded();
-    this.logicFlowsCache.set(flowId, {
+    this.logicFlowsCache.set(cacheKey, {
+      flowId,
       flows: safeFlows,
       expiresAt: now + this.logicCacheTtlMs,
     });
@@ -589,6 +607,11 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
   private async onClientDisconnect(client: MqttClientContext) {
     const clientId = client?.id?.toString?.() ?? '';
     if (clientId && client?.isEsp) {
+      const normalizedMac = this.normalizeMacAddress(
+        client.deviceMac ?? clientId
+      );
+      this.evictLogicCacheForDevice(normalizedMac);
+
       await this.mqttService.publish(`client/${clientId}/online`, {
         online: false,
         timestamp: new Date().toISOString(),
@@ -775,7 +798,8 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       const serialized = JSON.stringify(payload);
       if (serialized === undefined) return false;
       return (
-        Buffer.byteLength(serialized, 'utf8') <= this.functionNodeMaxPayloadBytes
+        Buffer.byteLength(serialized, 'utf8') <=
+        this.functionNodeMaxPayloadBytes
       );
     } catch {
       return false;
@@ -792,7 +816,9 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       maxAstNodes: this.functionNodeMaxAstNodes,
     });
 
-    if (this.functionValidationCache.size >= MAX_FUNCTION_VALIDATION_CACHE_SIZE) {
+    if (
+      this.functionValidationCache.size >= MAX_FUNCTION_VALIDATION_CACHE_SIZE
+    ) {
       this.functionValidationCache.clear();
     }
 
@@ -864,12 +890,11 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     return {
       ...currentMessage,
       payload,
-      value:
-        hasPayload
-          ? candidate.payload
-          : hasValue
-            ? candidate.value
-            : currentMessage.value,
+      value: hasPayload
+        ? candidate.payload
+        : hasValue
+          ? candidate.value
+          : currentMessage.value,
     };
   }
 
@@ -959,7 +984,7 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    const flows = await this.getLogicFlowsForFlowId(flowId);
+    const flows = await this.getLogicFlowsForFlowId(flowId, deviceMac);
 
     if (!flows.length) {
       this.logger.debug(
