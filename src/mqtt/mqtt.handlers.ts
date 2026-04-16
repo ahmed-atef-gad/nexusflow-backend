@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PigeonService } from '../pigeon-mqtt/pigeon.service';
 import { DevicesService } from '../devices/devices.service';
@@ -99,15 +104,28 @@ const DEFAULT_FUNCTION_NODE_MAX_PAYLOAD_BYTES = 8192;
 const MAX_FUNCTION_VALIDATION_CACHE_SIZE = 500;
 const MAX_RUNTIME_STEPS_PER_PATH = 64;
 const MAX_RUNTIME_FUNCTION_STEPS_PER_PATH = 16;
+const DEFAULT_MQTT_LOGIC_CACHE_TTL_MS = 3000;
+const DEFAULT_MQTT_LOGIC_CACHE_MAX_ENTRIES = 1000;
+const DEFAULT_MQTT_LOGIC_CACHE_SWEEP_INTERVAL_MS = 30000;
+
+type CachedLogicFlows = {
+  flows: unknown[][];
+  expiresAt: number;
+};
 
 @Injectable()
-export class MqttHandlers implements OnModuleInit {
+export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(MqttHandlers.name);
   private readonly functionExecutionTimeoutMs: number;
   private readonly functionNodeMaxCodeLength: number;
   private readonly functionNodeMaxAstNodes: number;
   private readonly functionNodeMaxPayloadBytes: number;
+  private readonly logicCacheTtlMs: number;
+  private readonly logicCacheMaxEntries: number;
+  private readonly logicCacheSweepIntervalMs: number;
   private readonly functionValidationCache = new Map<string, string | null>();
+  private readonly logicFlowsCache = new Map<string, CachedLogicFlows>();
+  private logicCacheSweepTimer: NodeJS.Timeout | null = null;
 
   constructor(
     private readonly pigeonService: PigeonService,
@@ -134,6 +152,18 @@ export class MqttHandlers implements OnModuleInit {
       'FUNCTION_NODE_MAX_PAYLOAD_BYTES',
       DEFAULT_FUNCTION_NODE_MAX_PAYLOAD_BYTES
     );
+    this.logicCacheTtlMs = this.readPositiveConfigNumber(
+      'MQTT_LOGIC_CACHE_TTL_MS',
+      DEFAULT_MQTT_LOGIC_CACHE_TTL_MS
+    );
+    this.logicCacheMaxEntries = this.readPositiveConfigNumber(
+      'MQTT_LOGIC_CACHE_MAX_ENTRIES',
+      DEFAULT_MQTT_LOGIC_CACHE_MAX_ENTRIES
+    );
+    this.logicCacheSweepIntervalMs = this.readPositiveConfigNumber(
+      'MQTT_LOGIC_CACHE_SWEEP_INTERVAL_MS',
+      DEFAULT_MQTT_LOGIC_CACHE_SWEEP_INTERVAL_MS
+    );
   }
 
   onModuleInit() {
@@ -144,6 +174,19 @@ export class MqttHandlers implements OnModuleInit {
     broker.authorizeForward = this.onAuthorizeForward.bind(this);
     broker.on('clientDisconnect', this.onClientDisconnect.bind(this));
     broker.on('publish', this.onClientPublish.bind(this));
+
+    this.logicCacheSweepTimer = setInterval(
+      () => this.pruneLogicCache(),
+      this.logicCacheSweepIntervalMs
+    );
+    this.logicCacheSweepTimer.unref();
+  }
+
+  onModuleDestroy() {
+    if (this.logicCacheSweepTimer) {
+      clearInterval(this.logicCacheSweepTimer);
+      this.logicCacheSweepTimer = null;
+    }
   }
 
   private readPositiveConfigNumber(name: string, fallback: number): number {
@@ -160,6 +203,66 @@ export class MqttHandlers implements OnModuleInit {
   }
   private normalizeUsername(value: string): string {
     return value.trim();
+  }
+
+  private pruneLogicCache(): void {
+    if (!this.logicFlowsCache.size) return;
+
+    const now = Date.now();
+    for (const [flowId, cachedEntry] of this.logicFlowsCache.entries()) {
+      if (cachedEntry.expiresAt <= now) {
+        this.logicFlowsCache.delete(flowId);
+      }
+    }
+  }
+
+  private trimLogicCacheIfNeeded(): void {
+    if (this.logicFlowsCache.size < this.logicCacheMaxEntries) return;
+
+    let oldestFlowId: string | null = null;
+    let oldestExpiresAt = Number.POSITIVE_INFINITY;
+
+    for (const [flowId, cachedEntry] of this.logicFlowsCache.entries()) {
+      if (cachedEntry.expiresAt < oldestExpiresAt) {
+        oldestExpiresAt = cachedEntry.expiresAt;
+        oldestFlowId = flowId;
+      }
+    }
+
+    if (oldestFlowId) {
+      this.logicFlowsCache.delete(oldestFlowId);
+    }
+  }
+
+  private async getLogicFlowsForFlowId(flowId: string): Promise<unknown[][]> {
+    const now = Date.now();
+    const cachedEntry = this.logicFlowsCache.get(flowId);
+    if (cachedEntry && cachedEntry.expiresAt > now) {
+      return cachedEntry.flows;
+    }
+
+    if (cachedEntry) {
+      this.logicFlowsCache.delete(flowId);
+    }
+
+    const logicDoc = await this.logicModel
+      .findOne({ flowId })
+      .select('program')
+      .lean()
+      .exec();
+
+    const rawFlows = Array.isArray((logicDoc as any)?.program?.flows)
+      ? ((logicDoc as any).program.flows as unknown[][])
+      : [];
+    const safeFlows = rawFlows.filter(Array.isArray);
+
+    this.trimLogicCacheIfNeeded();
+    this.logicFlowsCache.set(flowId, {
+      flows: safeFlows,
+      expiresAt: now + this.logicCacheTtlMs,
+    });
+
+    return safeFlows;
   }
 
   private isMacAddress(value: string): boolean {
@@ -856,15 +959,7 @@ export class MqttHandlers implements OnModuleInit {
       return;
     }
 
-    const logicDoc = await this.logicModel
-      .findOne({ flowId })
-      .select('program')
-      .lean()
-      .exec();
-
-    const flows = Array.isArray((logicDoc as any)?.program?.flows)
-      ? (logicDoc as any).program.flows
-      : [];
+    const flows = await this.getLogicFlowsForFlowId(flowId);
 
     if (!flows.length) {
       this.logger.debug(
@@ -892,7 +987,7 @@ export class MqttHandlers implements OnModuleInit {
         continue;
       }
 
-      const functionStepsInPath = flow.reduce((count, step) => {
+      const functionStepsInPath = flow.reduce<number>((count, step) => {
         const runtimeStep = step as RuntimeCommand;
         return runtimeStep?.stepType === 'function' ? count + 1 : count;
       }, 0);
