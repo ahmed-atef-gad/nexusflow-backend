@@ -21,6 +21,7 @@ import {
   ApiParam,
   ApiBody,
   ApiBadRequestResponse,
+  ApiQuery,
 } from '@nestjs/swagger';
 import type { AuthenticatedRequest } from '../auth/utils/auth.util';
 import { getUserIdFromRequest } from '../auth/utils/auth.util';
@@ -53,6 +54,18 @@ export class FlowsController {
   @ApiOperation({ summary: 'Get all flows for authenticated user' })
   @ApiResponse({ status: 200, description: 'List of flows' })
   @ApiBadRequestResponse({ description: 'Bad request' })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    description: 'Page number, starts from 1',
+    example: '1',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    description: 'Items per page, max 100',
+    example: '10',
+  })
   @Get()
   async findAll(
     @Request() req: AuthenticatedRequest,

@@ -19,6 +19,7 @@ import {
   ApiOkResponse,
   ApiOperation,
   ApiParam,
+  ApiQuery,
   ApiResponse,
   ApiTags,
   ApiUnauthorizedResponse,
@@ -107,6 +108,18 @@ export class ModulesController {
         },
       ],
     },
+  })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    description: 'Page number, starts from 1',
+    example: '1',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    description: 'Items per page, max 100',
+    example: '10',
   })
   @ApiInternalServerErrorResponse({ description: 'Server error while fetching modules' })
   @ApiUnauthorizedResponse({ description: 'Unauthorized - Invalid or missing token' })
