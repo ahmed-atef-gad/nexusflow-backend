@@ -164,7 +164,6 @@ export class DevicesController {
    * @note Token format: <tokenId>.<secret> where tokenId is a UUID and secret is a hex string
    * @note Token expires in 1 year
    */
-  /*
   @ApiOperation({
     summary: 'Generate a long-lived token for the device',
     description:
@@ -222,7 +221,6 @@ export class DevicesController {
 
     return this.devicesService.generateDeviceToken(deviceId);
   }
-  */
 
   /**
    * Revoke a device token
