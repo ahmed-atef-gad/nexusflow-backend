@@ -1,48 +1,68 @@
-# NexusFlow Backend — Repository Mind Map
+# NexusFlow Backend - Repository Mind Map
 
 ```mermaid
 mindmap
   root((NexusFlow Backend))
-    Runtime & Boot
+    Runtime and Boot
       src/main.ts
-        HTTP API server
-        MQTT microservice connector
-        Global validation + CORS + cookies
+        CORS from CORS_ORIGINS
+        Global ValidationPipe
+        Cookie parser
         Swagger at /api
       src/app.module.ts
-        ConfigModule (global)
-        MongoDB connection (MONGO_URI)
-        Feature module composition
+        ConfigModule global
+        Mongoose connection via MONGO_URI
+        Feature modules wired at root
+
     Feature Modules
       Auth
         src/auth/auth.module.ts
-          JWT + Passport setup
-          Exports AuthService + JwtModule
+          JWT + Passport wiring
+          Depends on Users + Verification
         src/auth/auth.controller.ts
-          Register/Login endpoints
+          register, login, logout
+          forgot-password, reset-password
         src/auth/auth.service.ts
-          Password hashing
-          JWT issuing
-        src/auth/dto
-          login-user.dto.ts
-          register-user.dto.ts
-        src/auth/decorators
-          owner.decorator.ts
-          roles.decorator.ts
+          JWT issuance
+          MQTT password rotation on login
+          token_version invalidation support
+
       Users
         src/users/users.module.ts
+          Includes default-owner seeding
         src/users/users.controller.ts
+          profile + mqtt-otp
+          admin user CRUD/list
         src/users/users.service.ts
         src/users/schemas/user.schema.ts
-        src/users/enums/role.enum.ts
-      Modules
-        src/modules/modules.module.ts
-        src/modules/modules.controller.ts
-        src/modules/modules.service.ts
-        src/modules/schemas/module.schema.ts
+
+      Verification
+        src/verification/verification.module.ts
+          RateLimiter module
+          OTP schema + SMTP service
+        src/verification/verification.controller.ts
+          /verification/generate
+          /verification/verify
+        src/verification/verification.service.ts
+          email verification OTP flow
+          password-reset OTP flow
+
+      Devices
+        src/devices/devices.module.ts
+          DeviceAuthGuard provider/export
+          registration code schema included
+        src/devices/device-registration.controller.ts
+          /devices/registration-code
+          /devices/verify-registration-code
+        src/devices/devices.controller.ts
+          device CRUD
+          token issuance/revocation
+          flow linking + status
+        src/devices/devices.service.ts
+
       Flows
         src/flows/flows.module.ts
-          Depends on AuthModule + DevicesModule
+          Depends on Auth + Devices + Users
         Controllers
           flows.controller.ts
           setup.controller.ts
@@ -55,31 +75,52 @@ mindmap
           logic.service.ts
           ui.service.ts
         Schemas
-          flow.schema.ts
-          setup.schema.ts
-          logic.schema.ts
-          ui.schema.ts
-          node.schema.ts
-          edge.schema.ts
-          viewport.schema.ts
-          uiItem.schema.ts
-        Types
-          types/flow.types.ts
-      Devices
-        src/devices/devices.module.ts
-          DeviceAuthGuard provider/export
-        src/devices/devices.controller.ts
-        src/devices/devices.service.ts
-        src/devices/schemas
-          device.schema.ts
-          device-token.schema.ts
-          device-audit.schema.ts
+          flow, setup, logic, ui
+          node, edge, viewport, uiItem
+        Security utility
+          function-node-security.util.ts
+
+      Flow Templates
+        src/flow-templates/flow-templates.module.ts
+        src/flow-templates/flow-templates.controller.ts
+          admin template CRUD
+          user fork endpoint
+        src/flow-templates/flow-templates.service.ts
+
+      Modules Catalog
+        src/modules/modules.module.ts
+        src/modules/modules.controller.ts
+          admin-only module catalog CRUD
+        src/modules/modules.service.ts
+        src/modules/schemas/module.schema.ts
+
+      Firmware
+        src/firmware/firmware.module.ts
+          RateLimiter module
+        src/firmware/firmware.controller.ts
+          /firmware/admin/upload
+          /firmware/admin/:id
+          /firmware/device/check
+          /firmware/device/download
+        src/firmware/firmware.service.ts
+
       MQTT
         src/mqtt/mqtt.module.ts
           Global module
-          MQTT client registration
+          Embedded broker via PigeonModule
         src/mqtt/mqtt.controller.ts
+          test publish endpoint
+          admin active-clients endpoints
         src/mqtt/mqtt.service.ts
+        src/mqtt/mqtt.handlers.ts
+          broker auth/authz hooks
+          server-side flow runtime execution
+
+      Pigeon MQTT Infra
+        src/pigeon-mqtt
+          custom transport abstraction
+          decorators/providers/validators
+
     Cross-Cutting
       Guards (src/gaurds)
         auth/auth.guard.ts
@@ -87,15 +128,19 @@ mindmap
         auth/owner.guard.ts
         device-auth.guard.ts
       Persistence
-        Mongoose schemas per feature
+        MongoDB with Mongoose schemas per domain
       Security
-        JWT auth
-        Role/owner decorators
-        Device token guard
-    Quality & Tooling
-      Tests
-        Unit specs in src/**/**.spec.ts
-        E2E in test/app.e2e-spec.ts
+        JWT cookie auth
+        Role + ownership authorization
+        device token authentication
+
+    Docs and Tooling
+      docs/arch.md
+      docs/repo-mind-map.md
+      docs/NexusFlow.postman_collection.json
+      Testing
+        unit specs under src/**/*.spec.ts
+        e2e in test/app.e2e-spec.ts
       Config
         package.json scripts
         eslint.config.mjs
@@ -103,10 +148,11 @@ mindmap
         nest-cli.json
 ```
 
-## Suggested reading order
+## Suggested Reading Order
 
-1. `src/main.ts` → understand runtime setup.
-2. `src/app.module.ts` → understand dependency wiring.
-3. `src/auth` + `src/users` → baseline identity model.
-4. `src/devices` + `src/mqtt` → device connectivity.
-5. `src/flows` → domain-specific orchestration logic.
+1. `src/main.ts` -> runtime bootstrap and global middleware
+2. `src/app.module.ts` -> dependency and module composition
+3. `src/auth` + `src/users` + `src/verification` -> identity and access model
+4. `src/devices` + `src/mqtt` + `src/pigeon-mqtt` -> device connectivity and broker behavior
+5. `src/flows` + `src/flow-templates` + `src/modules` -> domain logic and flow orchestration
+6. `src/firmware` -> OTA firmware lifecycle

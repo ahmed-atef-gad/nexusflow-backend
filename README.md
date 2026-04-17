@@ -37,7 +37,7 @@ At startup, the backend:
 4. Registers a global `ValidationPipe`
 5. Enables cookie parsing
 6. Builds Swagger docs at `/api`
-7. Starts Nest microservices
+7. Starts Nest microservices (if any are configured)
 8. Starts the HTTP server
 
 The backend serves two communication layers:
@@ -71,11 +71,11 @@ Responsibilities:
 
 - User persistence
 - Roles and account activation state
-- Default admin seeding
+- Default owner seeding
 
 Related seed logic:
 
-- [`src/users/default-admin.seed.ts`](src/users/default-admin.seed.ts)
+- [`src/users/default-owner.seed.ts`](src/users/default-owner.seed.ts)
 
 ### `verification`
 
@@ -324,12 +324,12 @@ SMTP_EMAIL_LOGO_MIME_TYPE=
 SMTP_EMAIL_LOGO_FILENAME=
 ```
 
-### Default Admin Seed
+### Default Owner Seed
 
 ```env
-DEFAULT_ADMIN_EMAIL=
-DEFAULT_ADMIN_USERNAME=admin
-DEFAULT_ADMIN_PASSWORD=
+DEFAULT_OWNER_EMAIL=
+DEFAULT_OWNER_USERNAME=owner
+DEFAULT_OWNER_PASSWORD=
 ```
 
 ### Flow Builder Tuning
@@ -345,6 +345,9 @@ FUNCTION_NODE_MAX_CODE_LENGTH=2000
 FUNCTION_NODE_MAX_AST_NODES=300
 FUNCTION_NODE_EXECUTION_TIMEOUT_MS=100
 FUNCTION_NODE_MAX_PAYLOAD_BYTES=8192
+MQTT_LOGIC_CACHE_TTL_MS=3000
+MQTT_LOGIC_CACHE_MAX_ENTRIES=1000
+MQTT_LOGIC_CACHE_SWEEP_INTERVAL_MS=30000
 ```
 
 Notes:
@@ -424,7 +427,7 @@ This README is not a full API reference. Swagger at `/api` is the source of trut
 
 ## MQTT Role In The System
 
-MQTT is part of the backend deployment, not a separate external broker in this repo’s current architecture.
+MQTT is part of the backend deployment, not a separate external broker in this repo's current architecture.
 
 It is used for:
 
