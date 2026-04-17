@@ -4,7 +4,11 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Logic, LogicDocument } from './schemas/logic.schema';
 import { LogicPayload } from './types/flow.types';
-import { CommandExtraction, RuntimeStep } from './flow-builder.service';
+import {
+  CommandExtraction,
+  FlowNodeDiagnostic,
+  RuntimeStep,
+} from './flow-builder.service';
 import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
 import {
   DEFAULT_FUNCTION_NODE_MAX_AST_NODES,
@@ -14,6 +18,21 @@ import {
 
 const MAX_RUNTIME_FLOW_PATHS = 500;
 const MAX_RUNTIME_STEPS_PER_PATH = 64;
+
+const isFlowNodeDiagnostic = (
+  value: unknown
+): value is FlowNodeDiagnostic => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const diagnostic = value as Partial<FlowNodeDiagnostic>;
+  return (
+    typeof diagnostic.nodeId === 'string' &&
+    typeof diagnostic.message === 'string' &&
+    (diagnostic.severity === 'warning' || diagnostic.severity === 'error')
+  );
+};
 
 @Injectable()
 export class LogicService {
@@ -206,9 +225,7 @@ export class LogicService {
     });
 
     const warnings = Array.isArray(program.warnings)
-      ? program.warnings.filter(
-          (warning): warning is string => typeof warning === 'string'
-        )
+      ? program.warnings.filter(isFlowNodeDiagnostic)
       : [];
 
     return {

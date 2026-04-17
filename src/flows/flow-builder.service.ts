@@ -67,7 +67,7 @@ export type FlowStep = {
 
 export type FlowExtraction = {
   flows: FlowStep[][];
-  warnings: string[];
+  warnings: FlowNodeDiagnostic[];
 };
 
 export type RuntimeStep = {
@@ -84,8 +84,24 @@ export type RuntimeStep = {
 
 export type CommandExtraction = {
   flows: RuntimeStep[][];
-  warnings: string[];
+  warnings: FlowNodeDiagnostic[];
 };
+
+export type FlowNodeDiagnosticSeverity = 'warning' | 'error';
+
+export type FlowNodeDiagnostic = {
+  nodeId: string;
+  severity: FlowNodeDiagnosticSeverity;
+  message: string;
+  code?: string;
+  nodeName?: string;
+  moduleId?: string;
+};
+
+type NodeStoredDiagnostic = Pick<
+  FlowNodeDiagnostic,
+  'severity' | 'message' | 'code'
+>;
 
 type Task = {
   taskName: string;
@@ -196,6 +212,96 @@ export class FlowBuilderService {
     );
   }
 
+  private getNodeLabel(node: Node | undefined): string {
+    return node?.data?.alias || node?.data?.name || node?.id || 'Unknown node';
+  }
+
+  private createNodeDiagnostic(
+    node: Node,
+    severity: FlowNodeDiagnosticSeverity,
+    message: string,
+    code?: string
+  ): FlowNodeDiagnostic {
+    return {
+      nodeId: node.id,
+      severity,
+      message,
+      code,
+    };
+  }
+
+  private appendNodeWarning(
+    node: Node,
+    message: string,
+    code?: string
+  ): FlowNodeDiagnostic {
+    const warning = this.createNodeDiagnostic(node, 'warning', message, code);
+    const existingWarnings: NodeStoredDiagnostic[] = Array.isArray(
+      node.data?.warnings
+    )
+      ? (node.data.warnings as NodeStoredDiagnostic[])
+      : [];
+
+    node.data = {
+      ...node.data,
+      warnings: [
+        ...existingWarnings,
+        {
+          severity: warning.severity,
+          message: warning.message,
+          code: warning.code,
+        },
+      ],
+    };
+
+    return warning;
+  }
+
+  private collectNodeWarnings(nodes: Node[]): FlowNodeDiagnostic[] {
+    return nodes.flatMap((node) => {
+      const nodeWarnings: NodeStoredDiagnostic[] = Array.isArray(
+        node.data?.warnings
+      )
+        ? (node.data.warnings as NodeStoredDiagnostic[])
+        : [];
+
+      return nodeWarnings
+        .filter((warning) => warning.severity === 'warning')
+        .map((warning) => ({
+          nodeId: node.id,
+          severity: warning.severity,
+          message: warning.message,
+          code: warning.code,
+        }));
+    });
+  }
+
+  private throwNodeError(node: Node, message: string, code?: string): never {
+    const diagnostic = this.createNodeDiagnostic(node, 'error', message, code);
+    const existingErrors: NodeStoredDiagnostic[] = Array.isArray(
+      node.data?.errors
+    )
+      ? (node.data.errors as NodeStoredDiagnostic[])
+      : [];
+    node.data = {
+      ...node.data,
+      errors: [
+        ...existingErrors,
+        {
+          severity: diagnostic.severity,
+          message: diagnostic.message,
+          code: diagnostic.code,
+        },
+      ],
+    };
+
+    throw new BadRequestException({
+      message,
+      code,
+      nodeDiagnostics: [diagnostic],
+    });
+  }
+
   private buildInputTopic(nodeId: string): string {
     return `${INPUT_TOPIC_PREFIX}/${nodeId}`;
   }
@@ -301,8 +407,16 @@ export class FlowBuilderService {
     for (const [nodeId, count] of Object.entries(targetNodeConnectionCount)) {
       if (count > 1) {
         const targetNode = nodes.find((n) => n.id === nodeId);
+        if (targetNode) {
+          this.throwNodeError(
+            targetNode,
+            `Node ${targetNode?.data.alias || targetNode?.data.name} is connected to multiple nodes`,
+            'NODE_MULTIPLE_INCOMING_CONNECTIONS'
+          );
+        }
+
         throw new BadRequestException(
-          `Node ${targetNode?.data.alias || targetNode?.data.name} is connected to multiple nodes`
+          `Node ${nodeId} is connected to multiple nodes`
         );
       }
     }
@@ -334,8 +448,10 @@ export class FlowBuilderService {
         if (pinNumber !== undefined && pinModeStr) {
           const pinMode = MODE_MAP[pinModeStr];
           if (pinMode === undefined) {
-            throw new BadRequestException(
-              `Invalid pin configuration for ${module?.alias || module.name}`
+            this.throwNodeError(
+              node,
+              `Invalid pin configuration for ${module?.alias || module.name}`,
+              'NODE_PIN_CONFIGURATION_INVALID'
             );
           }
           // Build setup item
@@ -386,8 +502,10 @@ export class FlowBuilderService {
                 cmd = CMD_MAP['ANALOG_READ'];
                 break;
               default:
-                throw new BadRequestException(
-                  `Unsupported module ${module?.alias || module.name}`
+                this.throwNodeError(
+                  node,
+                  `Unsupported module ${module?.alias || module.name}`,
+                  'MODULE_UNSUPPORTED'
                 );
             }
 
@@ -429,8 +547,10 @@ export class FlowBuilderService {
                 cmd = CMD_MAP['DAC_READ'];
                 break;
               default:
-                throw new BadRequestException(
-                  `Unsupported module ${module?.alias || module.name}`
+                this.throwNodeError(
+                  node,
+                  `Unsupported module ${module?.alias || module.name}`,
+                  'MODULE_UNSUPPORTED'
                 );
             }
             outputTask.commands!.push({
@@ -440,8 +560,10 @@ export class FlowBuilderService {
             });
           }
         } else {
-          throw new BadRequestException(
-            `Missing configuration for node ${module?.alias || module.name}`
+          this.throwNodeError(
+            node,
+            `Missing configuration for node ${module?.alias || module.name}`,
+            'NODE_CONFIGURATION_MISSING'
           );
         }
       }
@@ -459,8 +581,10 @@ export class FlowBuilderService {
           module.moduleId.startsWith('Ultrasonic-Sensor') &&
           (triggerPin === undefined || echoPin === undefined)
         ) {
-          throw new BadRequestException(
-            `Missing trigger/echo pin configuration for ${module?.alias || module.name}`
+          this.throwNodeError(
+            node,
+            `Missing trigger/echo pin configuration for ${module?.alias || module.name}`,
+            'ULTRASONIC_TRIGGER_ECHO_MISSING'
           );
         }
 
@@ -468,8 +592,10 @@ export class FlowBuilderService {
           !module.moduleId.startsWith('Ultrasonic-Sensor') &&
           pinNumber === undefined
         ) {
-          throw new BadRequestException(
-            `Missing pin configuration for  ${module?.alias || module.name}`
+          this.throwNodeError(
+            node,
+            `Missing pin configuration for  ${module?.alias || module.name}`,
+            'NODE_PIN_CONFIGURATION_MISSING'
           );
         }
 
@@ -546,8 +672,10 @@ export class FlowBuilderService {
             useAnalog: isAnalog,
           });
         } else {
-          throw new BadRequestException(
-            `Missing pin configuration for ${module?.alias || module.name}`
+          this.throwNodeError(
+            node,
+            `Missing pin configuration for ${module?.alias || module.name}`,
+            'NODE_PIN_CONFIGURATION_MISSING'
           );
         }
       }
@@ -643,8 +771,10 @@ export class FlowBuilderService {
           (isDigital && digitalPin === undefined) ||
           (isAnalog && analogPin === undefined)
         ) {
-          throw new BadRequestException(
-            `Missing pin configuration for ${module?.alias || module.name}`
+          this.throwNodeError(
+            node,
+            `Missing pin configuration for ${module?.alias || module.name}`,
+            'NODE_PIN_CONFIGURATION_MISSING'
           );
         }
 
@@ -670,8 +800,10 @@ export class FlowBuilderService {
       if (module.moduleId.startsWith('ESP32-gpio-input')) {
         const pinNumber = this.toOptionalNumber(module.variables?.pinNumber);
         if (pinNumber === undefined) {
-          throw new BadRequestException(
-            `Missing pin configuration for ${module?.alias || module.name}`
+          this.throwNodeError(
+            node,
+            `Missing pin configuration for ${module?.alias || module.name}`,
+            'NODE_PIN_CONFIGURATION_MISSING'
           );
         }
         uiElements.push({
@@ -698,8 +830,10 @@ export class FlowBuilderService {
           module.moduleId.startsWith('Ultrasonic-Sensor') &&
           (triggerPin === undefined || echoPin === undefined)
         ) {
-          throw new BadRequestException(
-            `Missing trigger/echo pin configuration for ${module?.alias || module.name}`
+          this.throwNodeError(
+            node,
+            `Missing trigger/echo pin configuration for ${module?.alias || module.name}`,
+            'ULTRASONIC_TRIGGER_ECHO_MISSING'
           );
         }
 
@@ -707,8 +841,10 @@ export class FlowBuilderService {
           !module.moduleId.startsWith('Ultrasonic-Sensor') &&
           pinNumber === undefined
         ) {
-          throw new BadRequestException(
-            `Missing pin configuration for ${module?.alias || module.name}`
+          this.throwNodeError(
+            node,
+            `Missing pin configuration for ${module?.alias || module.name}`,
+            'NODE_PIN_CONFIGURATION_MISSING'
           );
         }
 
@@ -813,10 +949,7 @@ export class FlowBuilderService {
     return outgoingEdgesByNode;
   }
 
-  private buildOutputStepFromNode(
-    targetNode: Node,
-    warnings: string[]
-  ): RuntimeStep | null {
+  private buildOutputStepFromNode(targetNode: Node): RuntimeStep | null {
     const targetModuleId = targetNode.data?.moduleId ?? '';
     if (!this.isOutputModule(targetModuleId)) {
       return null;
@@ -824,16 +957,20 @@ export class FlowBuilderService {
 
     const pin = this.toOptionalNumber(targetNode.data?.variables?.pinNumber);
     if (pin === undefined) {
-      warnings.push(
-        `Output node ${targetNode.id} is missing pinNumber and was skipped.`
+      this.appendNodeWarning(
+        targetNode,
+        `Output node ${targetNode.id} is missing pinNumber and was skipped.`,
+        'OUTPUT_NODE_MISSING_PIN'
       );
       return null;
     }
 
     const cmd = this.resolveOutputCommand(targetModuleId);
     if (cmd === undefined) {
-      warnings.push(
-        `Unsupported output module ${targetModuleId} on node ${targetNode.id}.`
+      this.appendNodeWarning(
+        targetNode,
+        `Unsupported output module ${targetModuleId} on node ${targetNode.id}.`,
+        'OUTPUT_MODULE_UNSUPPORTED'
       );
       return null;
     }
@@ -857,14 +994,64 @@ export class FlowBuilderService {
     });
   }
 
-  private buildFunctionStepFromNode(
-    node: Node,
-    warnings: string[]
-  ): RuntimeStep {
+  private validateFunctionNodes(nodes: Node[]): void {
+    for (const node of nodes) {
+      if (!this.isFunctionModule(node.data?.moduleId ?? '')) {
+        continue;
+      }
+
+      const code = String(node.data?.variables?.code ?? '').trim();
+      if (!code) {
+        continue;
+      }
+
+      const validationError = this.validateFunctionCode(code);
+      if (validationError) {
+        this.throwNodeError(
+          node,
+          `Invalid function code in node ${this.getNodeLabel(node)}: ${validationError}`,
+          'FUNCTION_NODE_INVALID_CODE'
+        );
+      }
+    }
+  }
+
+  private warnFloatingFunctionNodes(nodes: Node[], edges: RFEdge[]): void {
+    const connectedNodeIds = new Set<string>();
+
+    for (const edge of edges) {
+      if (edge.source) {
+        connectedNodeIds.add(edge.source);
+      }
+      if (edge.target) {
+        connectedNodeIds.add(edge.target);
+      }
+    }
+
+    for (const node of nodes) {
+      if (!this.isFunctionModule(node.data?.moduleId ?? '')) {
+        continue;
+      }
+
+      if (connectedNodeIds.has(node.id)) {
+        continue;
+      }
+
+      this.appendNodeWarning(
+        node,
+        `Function node ${this.getNodeLabel(node)} is floating and was skipped.`,
+        'FUNCTION_NODE_FLOATING'
+      );
+    }
+  }
+
+  private buildFunctionStepFromNode(node: Node): RuntimeStep {
     const code = String(node.data?.variables?.code ?? '').trim();
     if (!code) {
-      warnings.push(
-        `Function node ${node.data?.alias || node.data.name} has no code. It will behave like "return msg;".`
+      this.appendNodeWarning(
+        node,
+        `Function node ${this.getNodeLabel(node)} has no code. It will behave like "return msg;".`,
+        'FUNCTION_NODE_EMPTY_CODE'
       );
 
       return {
@@ -877,8 +1064,10 @@ export class FlowBuilderService {
 
     const validationError = this.validateFunctionCode(code);
     if (validationError) {
-      throw new BadRequestException(
-        `Invalid function code in node ${node.data?.alias || node.data.name}: ${validationError}`
+      this.throwNodeError(
+        node,
+        `Invalid function code in node ${this.getNodeLabel(node)}: ${validationError}`,
+        'FUNCTION_NODE_INVALID_CODE'
       );
     }
 
@@ -894,12 +1083,13 @@ export class FlowBuilderService {
     node: Node,
     nodeById: Map<string, Node>,
     outgoingEdgesByNode: Map<string, RFEdge[]>,
-    warnings: string[],
     visited: Set<string>
   ): RuntimeStep[][] {
     if (visited.has(node.id)) {
-      warnings.push(
-        `Cycle detected at node ${node.id}. This path was skipped.`
+      this.appendNodeWarning(
+        node,
+        `Cycle detected at node ${node.id}. This path was skipped.`,
+        'FLOW_CYCLE_DETECTED'
       );
       return [];
     }
@@ -917,37 +1107,36 @@ export class FlowBuilderService {
     for (const edge of outgoing) {
       const targetNode = nodeById.get(edge.target);
       if (!targetNode) {
-        warnings.push(
-          `Edge ${edge.id || `${edge.source}->${edge.target}`} references missing target node ${edge.target}.`
+        this.appendNodeWarning(
+          node,
+          `Edge ${edge.id || `${edge.source}->${edge.target}`} references missing target node ${edge.target}.`,
+          'EDGE_TARGET_NODE_MISSING'
         );
         continue;
       }
 
       const targetModuleId = targetNode.data?.moduleId ?? '';
-      const outputStep = this.buildOutputStepFromNode(targetNode, warnings);
+      const outputStep = this.buildOutputStepFromNode(targetNode);
       if (outputStep) {
         paths.push([outputStep]);
         continue;
       }
 
       if (this.isFunctionModule(targetModuleId)) {
-        const functionStep = this.buildFunctionStepFromNode(
-          targetNode,
-          warnings
-        );
+        const functionStep = this.buildFunctionStepFromNode(targetNode);
         const downstreamPaths = this.buildPathsFromNode(
           targetNode,
           nodeById,
           outgoingEdgesByNode,
-          warnings,
           nextVisited
         );
 
         if (!downstreamPaths.length) {
-          warnings.push(
-            `Function node ${targetNode.data?.alias || targetNode.data.name} has no valid downstream output.`
+          this.throwNodeError(
+            targetNode,
+            `Function node ${this.getNodeLabel(targetNode)} has no valid downstream output.`,
+            'FUNCTION_NODE_NO_VALID_OUTPUT'
           );
-          continue;
         }
 
         downstreamPaths.forEach((path) => {
@@ -956,8 +1145,10 @@ export class FlowBuilderService {
         continue;
       }
 
-      warnings.push(
-        `Node ${targetNode.data?.alias || targetNode.data.name} with module ${targetModuleId} is not supported in server-side logic paths.`
+      this.appendNodeWarning(
+        targetNode,
+        `Node ${this.getNodeLabel(targetNode)} with module ${targetModuleId} is not supported in server-side logic paths.`,
+        'RUNTIME_LOGIC_NODE_UNSUPPORTED'
       );
     }
 
@@ -979,14 +1170,12 @@ export class FlowBuilderService {
   private buildLogicPathForInputNode(
     inputNode: Node,
     nodeById: Map<string, Node>,
-    outgoingEdgesByNode: Map<string, RFEdge[]>,
-    warnings: string[]
+    outgoingEdgesByNode: Map<string, RFEdge[]>
   ): RuntimeStep[][] {
     const downstreamPaths = this.buildPathsFromNode(
       inputNode,
       nodeById,
       outgoingEdgesByNode,
-      warnings,
       new Set<string>()
     );
 
@@ -999,11 +1188,13 @@ export class FlowBuilderService {
     nodes: Node[],
     edges: RFEdge[]
   ): CommandExtraction {
+    this.validateFunctionNodes(nodes);
+    this.warnFloatingFunctionNodes(nodes, edges);
+
     if (!nodes.length || !edges.length) {
-      return { flows: [], warnings: [] };
+      return { flows: [], warnings: this.collectNodeWarnings(nodes) };
     }
 
-    const warnings: string[] = [];
     const flows: RuntimeStep[][] = [];
 
     const nodeById = this.buildNodeByIdMap(nodes);
@@ -1018,12 +1209,11 @@ export class FlowBuilderService {
       const paths = this.buildLogicPathForInputNode(
         inputNode,
         nodeById,
-        outgoingEdgesByNode,
-        warnings
+        outgoingEdgesByNode
       );
       paths.forEach((path) => flows.push(path));
     }
 
-    return { flows, warnings };
+    return { flows, warnings: this.collectNodeWarnings(nodes) };
   }
 }
