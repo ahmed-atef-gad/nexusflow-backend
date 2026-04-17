@@ -302,7 +302,10 @@ export class DevicesController {
     status: 200,
     description: 'Device linked to flow successfully',
   })
-  @ApiResponse({ status: 401, description: 'Unauthorized - User does not own this device' })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - User does not own this device',
+  })
   @ApiResponse({ status: 404, description: 'Device not found' })
   @Patch(':id/flow')
   async linkFlow(
@@ -318,7 +321,11 @@ export class DevicesController {
     }
 
     const effectiveUserId = isOwner ? device.ownerId.toString() : userId;
-    return this.devicesService.updateDeviceFlow(deviceId, flowId, effectiveUserId);
+    return this.devicesService.updateDeviceFlow(
+      deviceId,
+      flowId,
+      effectiveUserId
+    );
   }
 
   /**
@@ -334,7 +341,10 @@ export class DevicesController {
     status: 200,
     description: 'Returns device status and last seen',
   })
-  @ApiResponse({ status: 401, description: 'Unauthorized - User does not own this device' })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - User does not own this device',
+  })
   @ApiResponse({ status: 404, description: 'Device not found' })
   @Get(':id/status')
   async getStatus(
@@ -348,6 +358,45 @@ export class DevicesController {
     }
 
     return this.devicesService.getDeviceStatus(deviceId);
+  }
+
+  @ApiOperation({ summary: 'Get device by linked flow ID' })
+  @ApiParam({
+    name: 'flowId',
+    description: 'MongoDB ID of the flow linked to the device',
+    example: '507f1f77bcf86cd799439022',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Device found',
+    schema: {
+      example: {
+        _id: '507f1f77bcf86cd799439011',
+        macAddress: 'AA:BB:CC:DD:EE:FF',
+        name: 'Living Room Sensor',
+        ownerId: '507f1f77bcf86cd799439012',
+        activeFlowId: '507f1f77bcf86cd799439022',
+        status: 'active',
+        resetWifiTopic: 'esp/AA:BB:CC:DD:EE:FF/resetwifi',
+        deviceOnlineStatusTopic: 'client/AA:BB:CC:DD:EE:FF/online',
+        deviceMetricsTopic: 'client/AA:BB:CC:DD:EE:FF/metrics',
+        lastActiveAt: '2024-02-15T12:00:00Z',
+        createdAt: '2024-02-10T10:30:00Z',
+        updatedAt: '2024-02-10T10:30:00Z',
+      },
+    },
+  })
+  @ApiResponse({ status: 404, description: 'Device not found for this flow' })
+  @IsOwner({ resource: 'flow', paramKey: 'flowId' })
+  @Get('flow/:flowId/device')
+  async findByFlowId(@Param('flowId') flowId: string) {
+    const device = await this.devicesService.findByActiveFlowId(flowId);
+    return {
+      ...(device.toObject() as Record<string, unknown>),
+      resetWifiTopic: `esp/${device.macAddress}/resetwifi`,
+      deviceOnlineStatusTopic: `client/${device.macAddress}/online`,
+      deviceMetricsTopic: `client/${device.macAddress}/metrics`,
+    };
   }
 
   @ApiOperation({ summary: 'Get device by ID' })
