@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, Matches } from 'class-validator';
+import { IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 
 export class PaginationQueryDto {
   @ApiPropertyOptional({
@@ -19,4 +19,13 @@ export class PaginationQueryDto {
   @IsOptional()
   @Matches(/^\d+$/, { message: 'limit must be a positive integer string' })
   limit?: string;
+
+  @ApiPropertyOptional({
+    description: 'Case-insensitive search by name',
+    example: 'living room',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  search?: string;
 }
