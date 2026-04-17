@@ -74,6 +74,7 @@ export class DevicesController {
    *   "updatedAt": "2024-02-10T10:30:00Z"
    * }
    */
+  /*
   @ApiOperation({
     summary: 'Register a new ESP device by MAC Address',
     description:
@@ -137,6 +138,7 @@ export class DevicesController {
       body.mqtt_pass
     );
   }
+  */
 
   /**
    * Generate a long-lived authentication token for the device
@@ -162,6 +164,7 @@ export class DevicesController {
    * @note Token format: <tokenId>.<secret> where tokenId is a UUID and secret is a hex string
    * @note Token expires in 1 year
    */
+  /*
   @ApiOperation({
     summary: 'Generate a long-lived token for the device',
     description:
@@ -219,6 +222,7 @@ export class DevicesController {
 
     return this.devicesService.generateDeviceToken(deviceId);
   }
+  */
 
   /**
    * Revoke a device token
