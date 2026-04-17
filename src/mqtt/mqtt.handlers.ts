@@ -1128,6 +1128,17 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
         `MQTT message published. clientId=${clientId} topic=${topic}`
       );
 
+      // Handle internal flow update/change topics to clear logic cache
+      if (topic.includes('/flowupdated') || topic.includes('/flowchanged')) {
+        const topicMac = this.extractDevicesTopicMac(topic);
+        if (topicMac) {
+          this.logger.log(
+            `Flow update detected for device ${topicMac}, evicting logic cache.`
+          );
+          this.evictLogicCacheForDevice(topicMac);
+        }
+      }
+
       if (client?.isEsp && this.isInputTopic(topic)) {
         try {
           await this.executeGpioLogicForInputTopic(topic, packet, client);
