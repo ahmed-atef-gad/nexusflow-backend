@@ -97,6 +97,8 @@ type Task = {
   analogPin?: number;
   useDigital?: boolean;
   useAnalog?: boolean;
+  echoPin?: number;
+  triggerPin?: number;
   commands?: Array<{
     cmd: number;
     pin?: number;
@@ -363,52 +365,70 @@ export class FlowBuilderService {
         }
       }
 
-      if (module.moduleId.startsWith('DHT-Sensor')) {
+      if (
+        module.moduleId.startsWith('DHT-Sensor') ||
+        module.moduleId.startsWith('PIR-Sensor') ||
+        module.moduleId.startsWith('Ultrasonic-Sensor')
+      ) {
         const pinNumber = this.toOptionalNumber(module.variables?.pinNumber);
-        if (pinNumber !== undefined) {
-          // Add to DHT sensors task
-          if (!sensorsTask['DHT']) {
-            sensorsTask['DHT'] = [];
-          }
-          const taskName = this.generateTaskName(module.moduleId, pinNumber);
-          const type = module.moduleId === 'DHT-Sensor-11' ? 11 : 22;
-          sensorsTask['DHT'].push({
-            taskName,
-            intervalMs: this.resolveInterval(
-              module.variables?.intervalMs,
-              this.defaultSensorIntervalMs
-            ),
-            topic: this.buildInputTopic(node.id),
-            pin: pinNumber,
-            type,
-          });
-        } else {
+        const triggerPin = this.toOptionalNumber(module.variables?.triggerPin);
+        const echoPin = this.toOptionalNumber(module.variables?.echoPin);
+
+        if (
+          module.moduleId.startsWith('Ultrasonic-Sensor') &&
+          (triggerPin === undefined || echoPin === undefined)
+        ) {
+          throw new BadRequestException(
+            `Missing trigger/echo pin configuration for ${module?.alias || module.name}`
+          );
+        }
+
+        if (
+          !module.moduleId.startsWith('Ultrasonic-Sensor') &&
+          pinNumber === undefined
+        ) {
           throw new BadRequestException(
             `Missing pin configuration for  ${module?.alias || module.name}`
           );
         }
-      }
-      if (module.moduleId.startsWith('PIR-Sensor')) {
-        const pinNumber = this.toOptionalNumber(module.variables?.pinNumber);
-        if (pinNumber !== undefined) {
-          if (!sensorsTask['PIR']) {
-            sensorsTask['PIR'] = [];
-          }
-          const taskName = this.generateTaskName(module.moduleId, pinNumber);
-          sensorsTask['PIR'].push({
-            taskName,
-            intervalMs: this.resolveInterval(
-              module.variables?.intervalMs,
-              this.defaultPirIntervalMs
-            ),
-            topic: this.buildInputTopic(node.id),
-            pin: pinNumber,
-          });
-        } else {
-          throw new BadRequestException(
-            `Missing pin configuration for  ${module?.alias || module.name}`
-          );
+
+        const sensorType = module.moduleId.startsWith('Ultrasonic-Sensor')
+          ? 'ULTRA'
+          : module.moduleId.startsWith('DHT-Sensor')
+            ? 'DHT'
+            : 'PIR';
+
+        if (!sensorsTask[sensorType]) {
+          sensorsTask[sensorType] = [];
         }
+
+        const taskPin = module.moduleId.startsWith('Ultrasonic-Sensor')
+          ? triggerPin
+          : pinNumber;
+        const taskName = this.generateTaskName(module.moduleId, taskPin);
+
+        const taskData: Task = {
+          taskName,
+          intervalMs: this.resolveInterval(
+            module.variables?.intervalMs,
+            sensorType === 'PIR'
+              ? this.defaultPirIntervalMs
+              : this.defaultSensorIntervalMs
+          ),
+          topic: this.buildInputTopic(node.id),
+        };
+
+        if (sensorType === 'DHT') {
+          taskData.pin = pinNumber;
+          taskData.type = module.moduleId === 'DHT-Sensor-11' ? 11 : 22;
+        } else if (sensorType === 'PIR') {
+          taskData.pin = pinNumber;
+        } else if (sensorType === 'ULTRA') {
+          taskData.triggerPin = triggerPin;
+          taskData.echoPin = echoPin;
+        }
+
+        sensorsTask[sensorType].push(taskData);
       }
       if (
         module.moduleId.startsWith('MQ2-Sensor') ||
@@ -586,21 +606,44 @@ export class FlowBuilderService {
 
       if (
         module.moduleId.startsWith('DHT-Sensor') ||
-        module.moduleId.startsWith('PIR-Sensor')
+        module.moduleId.startsWith('PIR-Sensor') ||
+        module.moduleId.startsWith('Ultrasonic-Sensor')
       ) {
         const pinNumber = this.toOptionalNumber(module.variables?.pinNumber);
-        if (pinNumber === undefined) {
+        const triggerPin = this.toOptionalNumber(module.variables?.triggerPin);
+        const echoPin = this.toOptionalNumber(module.variables?.echoPin);
+
+        if (
+          module.moduleId.startsWith('Ultrasonic-Sensor') &&
+          (triggerPin === undefined || echoPin === undefined)
+        ) {
+          throw new BadRequestException(
+            `Missing trigger/echo pin configuration for ${module?.alias || module.name}`
+          );
+        }
+
+        if (
+          !module.moduleId.startsWith('Ultrasonic-Sensor') &&
+          pinNumber === undefined
+        ) {
           throw new BadRequestException(
             `Missing pin configuration for ${module?.alias || module.name}`
           );
         }
+
+        const taskPin = module.moduleId.startsWith('Ultrasonic-Sensor')
+          ? triggerPin
+          : pinNumber;
+
         uiElements.push({
           moduleId: module.moduleId,
           moduleName: module.name,
           alias: module.alias,
-          taskName: this.generateTaskName(module.moduleId, pinNumber),
+          taskName: this.generateTaskName(module.moduleId, taskPin),
           moduleType: 'input',
-          pin: pinNumber,
+          pin: taskPin,
+          triggerPin,
+          echoPin,
           topic: this.buildInputTopic(node.id),
         });
         return;
@@ -631,7 +674,8 @@ export class FlowBuilderService {
       moduleId.startsWith('PIR-Sensor') ||
       moduleId.startsWith('MQ2-Sensor') ||
       moduleId.startsWith('Rain-Sensor') ||
-      moduleId.startsWith('Soil-Sensor')
+      moduleId.startsWith('Soil-Sensor') ||
+      moduleId.startsWith('Ultrasonic-Sensor')
     );
   }
 
