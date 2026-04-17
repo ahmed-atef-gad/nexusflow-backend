@@ -99,7 +99,10 @@ export class FlowsService {
     return this.flowModel.find().exec();
   }
 
-  async findAllByUser(userId: string, query: PaginationQueryDto): Promise<{
+  async findAllByUser(
+    userId: string,
+    query: PaginationQueryDto
+  ): Promise<{
     data: Flow[];
     total: number;
     page: number;
@@ -114,7 +117,16 @@ export class FlowsService {
       Number.isFinite(parsedLimit) && parsedLimit > 0
         ? Math.min(parsedLimit, 100)
         : 10;
-    const filter = { userId: userId };
+    const filter: Record<string, unknown> = { userId: userId };
+
+    if (query.search?.trim()) {
+      const escaped = query.search
+        .trim()
+        .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const searchRegex = new RegExp(escaped, 'i');
+      filter.name = searchRegex;
+    }
+
     const skip = (page - 1) * limit;
 
     const [data, total] = await Promise.all([

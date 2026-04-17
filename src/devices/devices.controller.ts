@@ -434,7 +434,7 @@ export class DevicesController {
   @ApiOperation({
     summary: 'Get all devices for the authenticated user',
     description:
-      'Returns a list of all devices registered by the authenticated user, sorted by creation date (newest first).',
+      'Returns a paginated list of devices registered by the authenticated user, sorted by creation date (newest first). Supports case-insensitive name search.',
   })
   @ApiResponse({
     status: 200,
@@ -472,6 +472,12 @@ export class DevicesController {
     required: false,
     description: 'Items per page, max 100',
     example: '10',
+  })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    description: 'Case-insensitive search by device name',
+    example: 'living room',
   })
   @Get()
   async getAllDevices(

@@ -66,16 +66,26 @@ export class FlowTemplatesService {
       Number.isFinite(parsedLimit) && parsedLimit > 0
         ? Math.min(parsedLimit, 100)
         : 10;
+    const filter: Record<string, unknown> = {};
+
+    if (query.search?.trim()) {
+      const escaped = query.search
+        .trim()
+        .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const searchRegex = new RegExp(escaped, 'i');
+      filter.name = searchRegex;
+    }
+
     const skip = (page - 1) * limit;
 
     const [data, total] = await Promise.all([
       this.flowTemplateModel
-        .find()
+        .find(filter)
         .sort({ updatedAt: -1 })
         .skip(skip)
         .limit(limit)
         .exec(),
-      this.flowTemplateModel.countDocuments().exec(),
+      this.flowTemplateModel.countDocuments(filter).exec(),
     ]);
 
     return {

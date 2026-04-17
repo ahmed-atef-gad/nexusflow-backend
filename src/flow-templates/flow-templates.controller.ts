@@ -46,7 +46,9 @@ export class FlowTemplatesController {
   @Roles(Role.Admin)
   @ApiOperation({ summary: 'Create flow template (Admin)' })
   @ApiResponse({ status: 201, description: 'Flow template created' })
-  @ApiUnauthorizedResponse({ description: 'Unauthorized - Invalid or missing token' })
+  @ApiUnauthorizedResponse({
+    description: 'Unauthorized - Invalid or missing token',
+  })
   @ApiForbiddenResponse({ description: 'Forbidden - Admin role required' })
   create(
     @Body() dto: CreateFlowTemplateDto,
@@ -71,7 +73,15 @@ export class FlowTemplatesController {
     description: 'Items per page, max 100',
     example: '10',
   })
-  @ApiUnauthorizedResponse({ description: 'Unauthorized - Invalid or missing token' })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    description: 'Case-insensitive search by template name',
+    example: 'living room',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'Unauthorized - Invalid or missing token',
+  })
   findAll(@Query() query: PaginationQueryDto) {
     return this.flowTemplatesService.findAll(query);
   }
@@ -81,7 +91,9 @@ export class FlowTemplatesController {
   @ApiOkResponse({ description: 'Template fetched successfully' })
   @ApiBadRequestResponse({ description: 'Invalid id format' })
   @ApiNotFoundResponse({ description: 'Template not found' })
-  @ApiUnauthorizedResponse({ description: 'Unauthorized - Invalid or missing token' })
+  @ApiUnauthorizedResponse({
+    description: 'Unauthorized - Invalid or missing token',
+  })
   findOne(@Param('id') id: string) {
     return this.flowTemplatesService.findOne(id);
   }
@@ -93,7 +105,9 @@ export class FlowTemplatesController {
   @ApiOkResponse({ description: 'Template updated successfully' })
   @ApiBadRequestResponse({ description: 'Invalid id format' })
   @ApiNotFoundResponse({ description: 'Template not found' })
-  @ApiUnauthorizedResponse({ description: 'Unauthorized - Invalid or missing token' })
+  @ApiUnauthorizedResponse({
+    description: 'Unauthorized - Invalid or missing token',
+  })
   @ApiForbiddenResponse({ description: 'Forbidden - Admin role required' })
   update(@Param('id') id: string, @Body() dto: UpdateFlowTemplateDto) {
     return this.flowTemplatesService.update(id, dto);
@@ -106,7 +120,9 @@ export class FlowTemplatesController {
   @ApiOkResponse({ description: 'Template deleted successfully' })
   @ApiBadRequestResponse({ description: 'Invalid id format' })
   @ApiNotFoundResponse({ description: 'Template not found' })
-  @ApiUnauthorizedResponse({ description: 'Unauthorized - Invalid or missing token' })
+  @ApiUnauthorizedResponse({
+    description: 'Unauthorized - Invalid or missing token',
+  })
   @ApiForbiddenResponse({ description: 'Forbidden - Admin role required' })
   delete(@Param('id') id: string) {
     return this.flowTemplatesService.delete(id);
@@ -117,7 +133,9 @@ export class FlowTemplatesController {
   @ApiResponse({ status: 201, description: 'Flow forked successfully' })
   @ApiBadRequestResponse({ description: 'Invalid template id format' })
   @ApiNotFoundResponse({ description: 'Template not found' })
-  @ApiUnauthorizedResponse({ description: 'Unauthorized - Invalid or missing token' })
+  @ApiUnauthorizedResponse({
+    description: 'Unauthorized - Invalid or missing token',
+  })
   fork(
     @Param('id') id: string,
     @Body() dto: ForkFlowTemplateDto,

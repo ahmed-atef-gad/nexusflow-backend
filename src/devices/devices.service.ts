@@ -459,7 +459,10 @@ export class DevicesService {
       .exec();
   }
 
-  async findAllByUserId(userId: string, query: PaginationQueryDto): Promise<{
+  async findAllByUserId(
+    userId: string,
+    query: PaginationQueryDto
+  ): Promise<{
     data: DeviceDocument[];
     total: number;
     page: number;
@@ -479,7 +482,18 @@ export class DevicesService {
         ? Math.min(parsedLimit, 100)
         : 10;
 
-    const filter = { ownerId: new Types.ObjectId(userId) };
+    const filter: Record<string, unknown> = {
+      ownerId: new Types.ObjectId(userId),
+    };
+
+    if (query.search?.trim()) {
+      const escaped = query.search
+        .trim()
+        .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const searchRegex = new RegExp(escaped, 'i');
+      filter.name = searchRegex;
+    }
+
     const skip = (page - 1) * limit;
 
     const [data, total] = await Promise.all([

@@ -66,6 +66,12 @@ export class FlowsController {
     description: 'Items per page, max 100',
     example: '10',
   })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    description: 'Case-insensitive search by flow name',
+    example: 'living room',
+  })
   @Get()
   async findAll(
     @Request() req: AuthenticatedRequest,
