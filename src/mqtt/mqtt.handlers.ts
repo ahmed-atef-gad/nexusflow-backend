@@ -463,7 +463,7 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
         );
       }
 
-      const userDevices = await this.devicesService.findAllByUserId(userId);
+      const userDevices = await this.devicesService.findAllByUserIdRaw(userId);
       client.authorizedDeviceMacs = userDevices.map((device) =>
         this.normalizeMacAddress(device.macAddress)
       );

@@ -21,6 +21,7 @@ import { DevicesService } from 'src/devices/devices.service';
 import { UiService } from './ui.service';
 import { UiItem } from './schemas/uiItem.schema';
 import { Ui } from './schemas/ui.schema';
+import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
 
 @Injectable()
 export class FlowsService {
@@ -98,8 +99,41 @@ export class FlowsService {
     return this.flowModel.find().exec();
   }
 
-  async findAllByUser(userId: string): Promise<Flow[]> {
-    return this.flowModel.find({ userId: userId }).exec();
+  async findAllByUser(userId: string, query: PaginationQueryDto): Promise<{
+    data: Flow[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  }> {
+    const parsedPage = Number(query.page);
+    const parsedLimit = Number(query.limit);
+
+    const page = Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1;
+    const limit =
+      Number.isFinite(parsedLimit) && parsedLimit > 0
+        ? Math.min(parsedLimit, 100)
+        : 10;
+    const filter = { userId: userId };
+    const skip = (page - 1) * limit;
+
+    const [data, total] = await Promise.all([
+      this.flowModel
+        .find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .exec(),
+      this.flowModel.countDocuments(filter).exec(),
+    ]);
+
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: total > 0 ? Math.ceil(total / limit) : 1,
+    };
   }
 
   async findOne(id: string, userId: string): Promise<any> {

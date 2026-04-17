@@ -6,6 +6,7 @@ import { SetupPayload } from './types/flow.types';
 import { Flow, FlowDocument } from './schemas/flow.schema';
 import { DeviceDocument } from 'src/devices/schemas/device.schema';
 import type { SetupObject } from './flow-builder.service';
+import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
 
 @Injectable()
 export class SetupService {
@@ -19,8 +20,40 @@ export class SetupService {
     return created.save();
   }
 
-  async findAll(): Promise<Setup[]> {
-    return this.setupModel.find().exec();
+  async findAll(query: PaginationQueryDto): Promise<{
+    data: Setup[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  }> {
+    const parsedPage = Number(query.page);
+    const parsedLimit = Number(query.limit);
+
+    const page = Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1;
+    const limit =
+      Number.isFinite(parsedLimit) && parsedLimit > 0
+        ? Math.min(parsedLimit, 100)
+        : 10;
+    const skip = (page - 1) * limit;
+
+    const [data, total] = await Promise.all([
+      this.setupModel
+        .find()
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .exec(),
+      this.setupModel.countDocuments().exec(),
+    ]);
+
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: total > 0 ? Math.ceil(total / limit) : 1,
+    };
   }
 
   async findOne(id: string): Promise<Setup> {

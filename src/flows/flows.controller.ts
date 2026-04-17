@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Delete,
+  Query,
 } from '@nestjs/common';
 import { FlowsService } from './flows.service';
 import { Flow } from './schemas/flow.schema';
@@ -23,6 +24,7 @@ import {
 } from '@nestjs/swagger';
 import type { AuthenticatedRequest } from '../auth/utils/auth.util';
 import { getUserIdFromRequest } from '../auth/utils/auth.util';
+import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
 
 @ApiTags('flows')
 @ApiCookieAuth('jwt')
@@ -52,9 +54,18 @@ export class FlowsController {
   @ApiResponse({ status: 200, description: 'List of flows' })
   @ApiBadRequestResponse({ description: 'Bad request' })
   @Get()
-  async findAll(@Request() req: AuthenticatedRequest): Promise<Flow[]> {
+  async findAll(
+    @Request() req: AuthenticatedRequest,
+    @Query() query: PaginationQueryDto
+  ): Promise<{
+    data: Flow[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  }> {
     const userId = getUserIdFromRequest(req);
-    return this.flowsService.findAllByUser(userId);
+    return this.flowsService.findAllByUser(userId, query);
   }
 
   @ApiOperation({ summary: 'Get flow by id' })

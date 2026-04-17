@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -29,6 +30,7 @@ import { AuthGuard } from '../gaurds/auth/auth.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RolesGuard } from '../gaurds/auth/roles.guard';
 import { Role } from '../users/enums/role.enum';
+import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
 
 /**
  * ModulesController
@@ -109,8 +111,8 @@ export class ModulesController {
   @ApiInternalServerErrorResponse({ description: 'Server error while fetching modules' })
   @ApiUnauthorizedResponse({ description: 'Unauthorized - Invalid or missing token' })
   @ApiForbiddenResponse({ description: 'Forbidden - Admin role required' })
-  findAll() {
-    return this.modulesService.findAll();
+  findAll(@Query() query: PaginationQueryDto) {
+    return this.modulesService.findAll(query);
   }
 
   /**
