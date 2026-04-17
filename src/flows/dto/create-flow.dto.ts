@@ -92,6 +92,14 @@ export class NodeDataDto {
   @IsOptional()
   @IsObject()
   variables?: Record<string, string | number | boolean>;
+
+  @ApiProperty({ description: 'Node warnings', required: false, type: [Object] })
+  @IsOptional()
+  warnings?: unknown[];
+
+  @ApiProperty({ description: 'Node errors', required: false, type: [Object] })
+  @IsOptional()
+  errors?: unknown[];
 }
 
 export class CreateNodeDto {

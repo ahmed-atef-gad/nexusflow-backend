@@ -10,6 +10,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Flow, FlowDocument } from './schemas/flow.schema';
 import {
   CommandExtraction,
+  FlowNodeDiagnostic,
   FlowBuilderService,
   SetupObject,
   TopicsData,
@@ -24,7 +25,7 @@ import { Ui } from './schemas/ui.schema';
 import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
 
 export type FlowWithUiAndWarnings = Flow & {
-  warnings: string[];
+  nodeDiagnostics?: FlowNodeDiagnostic[];
   ui: Ui | null;
 };
 
@@ -54,6 +55,89 @@ export class FlowsService {
     return { flows: [], warnings: [] };
   }
 
+  private attachDiagnosticsToNodes(
+    nodes: Flow['nodes'] | undefined,
+    diagnostics: FlowNodeDiagnostic[]
+  ): Flow['nodes'] {
+    if (!Array.isArray(nodes) || !nodes.length) {
+      return [];
+    }
+
+    const grouped = new Map<string, FlowNodeDiagnostic[]>();
+    diagnostics.forEach((diagnostic) => {
+      const existing = grouped.get(diagnostic.nodeId) ?? [];
+      existing.push(diagnostic);
+      grouped.set(diagnostic.nodeId, existing);
+    });
+
+    return nodes.map((node) => {
+      const nodeDiagnostics = grouped.get(node.id) ?? [];
+      const nodeWarnings = nodeDiagnostics.filter(
+        (d) => d.severity === 'warning'
+      );
+      const nodeErrors = nodeDiagnostics.filter((d) => d.severity === 'error');
+
+      const currentData = (node.data ?? {}) as unknown as Record<
+        string,
+        unknown
+      >;
+      const nextData: Record<string, unknown> = {
+        ...currentData,
+      };
+
+      if (nodeWarnings.length > 0) {
+        nextData.warnings = nodeWarnings.map((warning) => ({
+          severity: warning.severity,
+          message: warning.message,
+          code: warning.code,
+        }));
+      } else {
+        delete nextData.warnings;
+      }
+
+      if (nodeErrors.length > 0) {
+        nextData.errors = nodeErrors.map((error) => ({
+          severity: error.severity,
+          message: error.message,
+          code: error.code,
+        }));
+      } else {
+        delete nextData.errors;
+      }
+
+      return {
+        ...node,
+        data: nextData as unknown as typeof node.data,
+      };
+    });
+  }
+
+  private resetNodeDiagnostics(
+    nodes: Flow['nodes'] | undefined
+  ): Flow['nodes'] {
+    if (!Array.isArray(nodes) || !nodes.length) {
+      return [];
+    }
+
+    return nodes.map((node) => {
+      const currentData = (node.data ?? {}) as unknown as Record<
+        string,
+        unknown
+      >;
+      const nextData: Record<string, unknown> = {
+        ...currentData,
+      };
+
+      delete nextData.warnings;
+      delete nextData.errors;
+
+      return {
+        ...node,
+        data: nextData as unknown as typeof node.data,
+      };
+    });
+  }
+
   async create(flow: Flow, userId: string): Promise<FlowWithUiAndWarnings> {
     const createdFlow = new this.flowModel({
       ...flow,
@@ -61,21 +145,30 @@ export class FlowsService {
     });
 
     const { nodes, edges } = flow;
+    const requestNodes = this.resetNodeDiagnostics(nodes);
 
     let setupData: SetupObject = { setup: [], tasks: [] };
     let logicData: CommandExtraction = { flows: [], warnings: [] };
     let uiData: UiItem[] = [];
     let ui: Ui | null = null;
 
-    this.flowBuilderService.validateFlowStructure(nodes, edges);
+    this.flowBuilderService.validateFlowStructure(requestNodes, edges);
 
-    setupData = this.flowBuilderService.buildSetupFromNodes(nodes);
+    setupData = this.flowBuilderService.buildSetupFromNodes(requestNodes);
 
     logicData = this.flowBuilderService.buildLogicCommandsFromGraph(
-      nodes,
+      requestNodes,
       edges
     );
-    uiData = this.flowBuilderService.buildUiFromNodes(nodes, edges);
+    const nodesWithDiagnostics = this.attachDiagnosticsToNodes(
+      requestNodes,
+      logicData.warnings
+    );
+    createdFlow.set('nodes', nodesWithDiagnostics);
+    uiData = this.flowBuilderService.buildUiFromNodes(
+      nodesWithDiagnostics,
+      edges
+    );
 
     const savedFlow = await createdFlow.save();
     const savedFlowId = savedFlow.id as string;
@@ -95,7 +188,8 @@ export class FlowsService {
 
     return {
       ...savedFlow.toObject(),
-      warnings: logicData.warnings,
+      nodes: nodesWithDiagnostics,
+      nodeDiagnostics: logicData.warnings,
       ui: ui,
     };
   }
@@ -212,9 +306,7 @@ export class FlowsService {
     }
 
     const flow = await this.flowModel
-      .findOneAndUpdate({ _id: id, userId: userId }, updatedFlow, {
-        new: true,
-      })
+      .findOne({ _id: id, userId: userId })
       .exec();
 
     if (!flow) {
@@ -238,20 +330,26 @@ export class FlowsService {
     let topicsData: TopicsData | undefined;
 
     if (updatedFlow.nodes && updatedFlow.edges) {
+      const requestNodes = this.resetNodeDiagnostics(updatedFlow.nodes);
+
       this.flowBuilderService.validateFlowStructure(
-        updatedFlow.nodes,
+        requestNodes,
         updatedFlow.edges
       );
 
-      setupData = this.flowBuilderService.buildSetupFromNodes(
-        updatedFlow.nodes
-      );
+      setupData = this.flowBuilderService.buildSetupFromNodes(requestNodes);
       logicData = this.flowBuilderService.buildLogicCommandsFromGraph(
-        updatedFlow.nodes,
+        requestNodes,
         updatedFlow.edges
       );
+
+      const nodesWithDiagnostics = this.attachDiagnosticsToNodes(
+        requestNodes,
+        logicData.warnings
+      );
+
       uiData = this.flowBuilderService.buildUiFromNodes(
-        updatedFlow.nodes,
+        nodesWithDiagnostics,
         updatedFlow.edges,
         device?.macAddress
       );
@@ -263,8 +361,17 @@ export class FlowsService {
       ui = await this.uiService.upsertByFlowId(id, uiData, topicsData);
       await this.logicService.upsertByFlowId(id, logicData);
 
+      flow.set({
+        ...updatedFlow,
+        nodes: nodesWithDiagnostics,
+      });
+      await flow.save();
+
       // this.mqttService.publish(`esp/setup`, setupData);
     } else {
+      flow.set(updatedFlow);
+      await flow.save();
+
       const s = await this.setupService.findByFlowId(id);
       const l = await this.logicService.findByFlowId(id);
       setupData = s?.elements;
@@ -285,7 +392,7 @@ export class FlowsService {
     return {
       ...flow.toObject(),
       ui: ui,
-      warnings: logicData?.warnings || [],
+      nodeDiagnostics: logicData?.warnings || [],
     };
   }
 
