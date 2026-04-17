@@ -95,6 +95,7 @@ type InputPayload = {
   percent?: number;
   temperature?: number;
   humidity?: number;
+  distance_cm?: number;
 };
 
 const INPUT_TOPIC_PATTERN = /^logic\/input\/([^/]+)$/;
@@ -694,6 +695,10 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       }
       if (typeof input.humidity === 'number') {
         return this.clampToByte(input.humidity);
+      }
+
+      if (typeof input.distance_cm === 'number') {
+        return this.clampToByte(input.distance_cm);
       }
 
       return null;

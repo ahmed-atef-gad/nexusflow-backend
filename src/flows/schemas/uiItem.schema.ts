@@ -72,6 +72,20 @@ export class UiItem {
 
   @ApiProperty({
     required: false,
+    description: 'Optional trigger pin number for ultrasonic sensors',
+  })
+  @Prop()
+  triggerPin?: number;
+
+  @ApiProperty({
+    required: false,
+    description: 'Optional echo pin number for ultrasonic sensors',
+  })
+  @Prop()
+  echoPin?: number;
+
+  @ApiProperty({
+    required: false,
     description: 'Indicates if this UI item uses a digital pin',
   })
   @Prop()
