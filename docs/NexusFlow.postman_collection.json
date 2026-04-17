@@ -359,7 +359,7 @@
                 "type": "text"
               }
             ],
-            "url": "{{baseUrl}}/users"
+            "url": "{{baseUrl}}/users?page={{page}}&limit={{limit}}&search={{search}}&role={{role}}&is_active={{is_active}}"
           },
           "response": []
         },
@@ -474,50 +474,6 @@
                   "  const json = pm.response.json();",
                   "  const value = json?.token?.accessToken || json?.accessToken;",
                   "  if (value) pm.collectionVariables.set('deviceToken', String(value));",
-                  "} catch (e) {}"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Register Device (Mobile)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Cookie",
-                "value": "jwt={{jwt}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "url": "{{baseUrl}}/devices/register",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"macAddress\": \"AA:BB:CC:DD:EE:FF\",\n  \"mqtt_pass\": \"DevicePass123!\",\n  \"name\": \"Living Room Sensor\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "response": [],
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "try {",
-                  "  const json = pm.response.json();",
-                  "  const value = json?._id || json?.id;",
-                  "  if (value) pm.collectionVariables.set('deviceId', String(value));",
                   "} catch (e) {}"
                 ]
               }
@@ -652,7 +608,7 @@
                 "type": "text"
               }
             ],
-            "url": "{{baseUrl}}/devices"
+            "url": "{{baseUrl}}/devices?page={{page}}&limit={{limit}}"
           },
           "response": []
         },
@@ -731,7 +687,7 @@
                 "type": "text"
               }
             ],
-            "url": "{{baseUrl}}/flows"
+            "url": "{{baseUrl}}/flows?page={{page}}&limit={{limit}}"
           },
           "response": []
         },
@@ -854,7 +810,7 @@
                 "type": "text"
               }
             ],
-            "url": "{{baseUrl}}/logics"
+            "url": "{{baseUrl}}/logics?page={{page}}&limit={{limit}}"
           },
           "response": []
         },
@@ -992,7 +948,7 @@
                 "type": "text"
               }
             ],
-            "url": "{{baseUrl}}/setups"
+            "url": "{{baseUrl}}/setups?page={{page}}&limit={{limit}}"
           },
           "response": []
         },
@@ -1165,7 +1121,7 @@
                 "type": "text"
               }
             ],
-            "url": "{{baseUrl}}/modules"
+            "url": "{{baseUrl}}/modules?page={{page}}&limit={{limit}}"
           },
           "response": []
         },
@@ -1288,7 +1244,7 @@
                 "type": "text"
               }
             ],
-            "url": "{{baseUrl}}/flow-templates"
+            "url": "{{baseUrl}}/flow-templates?page={{page}}&limit={{limit}}"
           },
           "response": []
         },
@@ -1595,6 +1551,26 @@
     {
       "key": "mqttMessage",
       "value": "Hello from NexusFlow backend"
+    },
+    {
+      "key": "page",
+      "value": "1"
+    },
+    {
+      "key": "limit",
+      "value": "10"
+    },
+    {
+      "key": "search",
+      "value": ""
+    },
+    {
+      "key": "role",
+      "value": ""
+    },
+    {
+      "key": "is_active",
+      "value": ""
     }
   ]
 }
