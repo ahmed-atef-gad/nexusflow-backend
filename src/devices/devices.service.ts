@@ -29,6 +29,7 @@ import {
   DeviceRegistrationCodeDocument,
 } from './schemas/device-registration-code.schema';
 import { UsersService } from 'src/users/users.service';
+import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
 
 @Injectable()
 export class DevicesService {
@@ -447,7 +448,7 @@ export class DevicesService {
   }
 
   // Get all devices for a specific user
-  async findAllByUserId(userId: string): Promise<DeviceDocument[]> {
+  async findAllByUserIdRaw(userId: string): Promise<DeviceDocument[]> {
     if (!Types.ObjectId.isValid(userId)) {
       throw new BadRequestException('Invalid User ID');
     }
@@ -456,6 +457,48 @@ export class DevicesService {
       .find({ ownerId: new Types.ObjectId(userId) })
       .sort({ createdAt: -1 })
       .exec();
+  }
+
+  async findAllByUserId(userId: string, query: PaginationQueryDto): Promise<{
+    data: DeviceDocument[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  }> {
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new BadRequestException('Invalid User ID');
+    }
+
+    const parsedPage = Number(query.page);
+    const parsedLimit = Number(query.limit);
+
+    const page = Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1;
+    const limit =
+      Number.isFinite(parsedLimit) && parsedLimit > 0
+        ? Math.min(parsedLimit, 100)
+        : 10;
+
+    const filter = { ownerId: new Types.ObjectId(userId) };
+    const skip = (page - 1) * limit;
+
+    const [data, total] = await Promise.all([
+      this.deviceModel
+        .find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .exec(),
+      this.deviceModel.countDocuments(filter).exec(),
+    ]);
+
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: total > 0 ? Math.ceil(total / limit) : 1,
+    };
   }
 
   // Delete a device and its associated tokens

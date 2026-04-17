@@ -1,4 +1,14 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  UseGuards,
+  Query,
+} from '@nestjs/common';
 import { LogicService } from './logic.service';
 import { LogicPayload } from './types/flow.types';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiCookieAuth, ApiBody } from '@nestjs/swagger';
@@ -7,6 +17,7 @@ import { Logic } from './schemas/logic.schema';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RolesGuard } from '../gaurds/auth/roles.guard';
 import { Role } from '../users/enums/role.enum';
+import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
 
 @ApiTags('Logics (Execution Program)')
 @ApiCookieAuth('jwt')
@@ -25,10 +36,10 @@ export class LogicController {
   }
 
   @ApiOperation({ summary: 'Get all logic documents' })
-  @ApiResponse({ status: 200, type: [Logic] })
+  @ApiResponse({ status: 200 })
   @Get()
-  findAll() {
-    return this.logicService.findAll();
+  findAll(@Query() query: PaginationQueryDto) {
+    return this.logicService.findAll(query);
   }
 
   @ApiOperation({ summary: 'Get logic by ID' })

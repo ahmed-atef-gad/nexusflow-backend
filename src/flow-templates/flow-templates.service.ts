@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { isValidObjectId, Model } from 'mongoose';
+import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
 import { FlowsService } from 'src/flows/flows.service';
 import { Flow } from 'src/flows/schemas/flow.schema';
 import { CreateFlowTemplateDto } from './dto/create-flow-template.dto';
@@ -50,8 +51,40 @@ export class FlowTemplatesService {
     return createdTemplate.save();
   }
 
-  async findAll() {
-    return this.flowTemplateModel.find().sort({ updatedAt: -1 }).exec();
+  async findAll(query: PaginationQueryDto): Promise<{
+    data: FlowTemplateDocument[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  }> {
+    const parsedPage = Number(query.page);
+    const parsedLimit = Number(query.limit);
+
+    const page = Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1;
+    const limit =
+      Number.isFinite(parsedLimit) && parsedLimit > 0
+        ? Math.min(parsedLimit, 100)
+        : 10;
+    const skip = (page - 1) * limit;
+
+    const [data, total] = await Promise.all([
+      this.flowTemplateModel
+        .find()
+        .sort({ updatedAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .exec(),
+      this.flowTemplateModel.countDocuments().exec(),
+    ]);
+
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: total > 0 ? Math.ceil(total / limit) : 1,
+    };
   }
 
   async findOne(id: string) {

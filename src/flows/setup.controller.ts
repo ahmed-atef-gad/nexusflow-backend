@@ -8,6 +8,7 @@ import {
   Delete,
   UseGuards,
   Req,
+  Query,
 } from '@nestjs/common';
 import { SetupService } from './setup.service';
 import { SetupPayload } from './types/flow.types';
@@ -27,6 +28,7 @@ import { DeviceAuthGuard } from '../gaurds/device-auth.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RolesGuard } from '../gaurds/auth/roles.guard';
 import { Role } from '../users/enums/role.enum';
+import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
 
 /**
  * SetupController
@@ -65,10 +67,10 @@ export class SetupController {
   @Roles(Role.Admin)
   @ApiCookieAuth('jwt')
   @ApiOperation({ summary: 'Get all setups' })
-  @ApiResponse({ status: 200, type: [Setup] })
+  @ApiResponse({ status: 200 })
   @Get()
-  findAll() {
-    return this.setupService.findAll();
+  findAll(@Query() query: PaginationQueryDto) {
+    return this.setupService.findAll(query);
   }
 
   /**

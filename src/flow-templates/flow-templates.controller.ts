@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Request,
   UseGuards,
 } from '@nestjs/common';
@@ -26,6 +27,7 @@ import type { AuthenticatedRequest } from 'src/auth/utils/auth.util';
 import { AuthGuard } from 'src/gaurds/auth/auth.guard';
 import { RolesGuard } from 'src/gaurds/auth/roles.guard';
 import { Role } from 'src/users/enums/role.enum';
+import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
 import { CreateFlowTemplateDto } from './dto/create-flow-template.dto';
 import { ForkFlowTemplateDto } from './dto/fork-flow-template.dto';
 import { UpdateFlowTemplateDto } from './dto/update-flow-template.dto';
@@ -57,8 +59,8 @@ export class FlowTemplatesController {
   @ApiOperation({ summary: 'List flow templates' })
   @ApiOkResponse({ description: 'Templates fetched successfully' })
   @ApiUnauthorizedResponse({ description: 'Unauthorized - Invalid or missing token' })
-  findAll() {
-    return this.flowTemplatesService.findAll();
+  findAll(@Query() query: PaginationQueryDto) {
+    return this.flowTemplatesService.findAll(query);
   }
 
   @Get(':id')
@@ -111,6 +113,4 @@ export class FlowTemplatesController {
     const userId = getUserIdFromRequest(req);
     return this.flowTemplatesService.forkToFlow(id, userId, dto?.name);
   }
-  
 }
-

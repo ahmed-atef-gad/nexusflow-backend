@@ -10,6 +10,7 @@ import {
   Get,
   NotFoundException,
   UnauthorizedException,
+  Query,
 } from '@nestjs/common';
 import { DevicesService } from './devices.service';
 import { AuthGuard } from '../gaurds/auth/auth.guard';
@@ -27,6 +28,7 @@ import { IsOwner } from '../auth/decorators/owner.decorator';
 import type { AuthenticatedRequest } from '../auth/utils/auth.util';
 import { getUserIdFromRequest } from '../auth/utils/auth.util';
 import { Role } from '../users/enums/role.enum';
+import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
 
 /**
  * DevicesController
@@ -430,15 +432,24 @@ export class DevicesController {
     description: 'Unauthorized - Invalid or missing user token',
   })
   @Get()
-  async getAllDevices(@Req() req: AuthenticatedRequest) {
+  async getAllDevices(
+    @Req() req: AuthenticatedRequest,
+    @Query() query: PaginationQueryDto
+  ) {
     const userId = getUserIdFromRequest(req);
-    const devices = await this.devicesService.findAllByUserId(userId);
-    return devices.map((device) => ({
-      ...(device.toObject() as Record<string, unknown>),
-      resetWifiTopic: `esp/${device.macAddress}/resetwifi`,
-      deviceOnlineStatusTopic: `client/${device.macAddress}/online`,
-      deviceMetricsTopic: `client/${device.macAddress}/metrics`,
-    }));
+    const paginatedDevices = await this.devicesService.findAllByUserId(
+      userId,
+      query
+    );
+    return {
+      ...paginatedDevices,
+      data: paginatedDevices.data.map((device) => ({
+        ...(device.toObject() as Record<string, unknown>),
+        resetWifiTopic: `esp/${device.macAddress}/resetwifi`,
+        deviceOnlineStatusTopic: `client/${device.macAddress}/online`,
+        deviceMetricsTopic: `client/${device.macAddress}/metrics`,
+      })),
+    };
   }
 
   /**
