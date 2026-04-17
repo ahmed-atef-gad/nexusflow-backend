@@ -1123,12 +1123,15 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     const topic = packet?.topic ?? '';
     const clientId = client?.id?.toString?.() ?? '';
 
-    if (topic && clientId) {
-      this.logger.debug(
-        `MQTT message published. clientId=${clientId} topic=${topic}`
-      );
+    if (topic) {
+      if (clientId) {
+        this.logger.debug(
+          `MQTT message published. clientId=${clientId || 'broker'} topic=${topic}`
+        );
+      }
 
-      // Handle internal flow update/change topics to clear logic cache
+      // Broker-originated publishes may not include a client id.
+      // Handle flow update/change topics regardless of publisher to keep cache coherent.
       if (topic.includes('/flowupdated') || topic.includes('/flowchanged')) {
         const topicMac = this.extractDevicesTopicMac(topic);
         if (topicMac) {
@@ -1139,7 +1142,7 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
         }
       }
 
-      if (client?.isEsp && this.isInputTopic(topic)) {
+      if (clientId && client?.isEsp && this.isInputTopic(topic)) {
         try {
           await this.executeGpioLogicForInputTopic(topic, packet, client);
         } catch (error) {
