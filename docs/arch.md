@@ -1,110 +1,174 @@
+# NexusFlow Backend - System Architecture
 
-# NexusFlow Backend — System Architecture
+## High-Level Architecture
+
 ```mermaid
 graph TD
-    Web[Web / Mobile Client]
-    IoT[IoT Devices / Microcontrollers]
-    SMTP[SMTP Mail Server]
+    Web[Web/Mobile Client]
+    IoT[ESP32/IoT Devices]
+    SMTP[SMTP Provider]
+    DB[(MongoDB)]
 
-    subgraph NexusFlowBackend ["NexusFlow NestJS Application"]
+    subgraph API[NexusFlow NestJS Application]
         direction TB
-        
-        REST[HTTP / REST API]
-        MQTT_B[Pigeon MQTT Broker / Handlers]
-        AuthGuard[Auth & RBAC Guards]
-        DeviceGuard[Device Auth Guard]
 
-        subgraph CoreModules ["Core Modules"]
-            UsersMod[Users & Verification]
-            DeviceMod[Device Management]
-            FlowMod[Flow Engine & Templates]
-            FirmwareMod[Firmware OTA]
+        REST[HTTP API + Swagger]
+        Broker[Embedded MQTT Broker<br/>TCP 8883 + WS 8884]
+        Guards[AuthGuard + RolesGuard + OwnerGuard + DeviceAuthGuard]
+
+        subgraph Modules[Feature Modules]
+            Auth[Auth]
+            Users[Users]
+            Verification[Verification]
+            Devices[Devices]
+            Flows[Flows: flow/setup/logic/ui]
+            Templates[Flow Templates]
+            Catalog[Modules Catalog]
+            Firmware[Firmware OTA]
+            Mqtt[Mqtt Service/Handlers]
         end
     end
 
-    DB[(MongoDB)]
+    Web -->|HTTPS + jwt cookie| REST
+    IoT -->|HTTPS + device token| REST
+    IoT -->|MQTT/MQTTS| Broker
+    Web -->|MQTT over WS/WSS| Broker
 
-    Web -->|HTTPS| REST
-    IoT -->|MQTT / MQTTS| MQTT_B
-    IoT -->|HTTPS| REST
+    REST --> Guards
+    Guards --> Modules
 
-    REST --> AuthGuard
-    REST --> DeviceGuard
-    
-    AuthGuard --> CoreModules
-    DeviceGuard --> CoreModules
-    
-    MQTT_B <-->|sync| FlowMod
-    MQTT_B <-->|sync| DeviceMod
-    
-    UsersMod -->|Send OTP| SMTP
-    
-    CoreModules <-->|query/store| DB
+    Verification -->|OTP email| SMTP
+    Modules <-->|read/write| DB
+
+    Broker --> Mqtt
+    Mqtt --> Devices
+    Mqtt --> Flows
 ```
-# User Registration & Email Verification
+
+## Runtime Composition
+
+- Bootstrap: `src/main.ts`
+- Root module wiring: `src/app.module.ts`
+- Global config: `ConfigModule.forRoot({ isGlobal: true })`
+- Persistence: `MongooseModule.forRootAsync(...)` with `MONGO_URI`
+- HTTP concerns:
+  - CORS is required and validated from `CORS_ORIGINS`
+  - global `ValidationPipe`
+  - cookie parser
+  - Swagger at `/api`
+- Embedded MQTT broker:
+  - configured in `src/mqtt/mqtt.module.ts`
+  - TCP on `8883`
+  - WS on `MQTT_WS_PORT` (default `8884`) and `MQTT_WS_PATH` (default `/mqtt-ws`)
+  - optional TLS/WSS cert material from env
+
+## Security Model
+
+- User auth: HttpOnly cookie `jwt` (`src/gaurds/auth/auth.guard.ts`)
+- Device auth: Bearer token `tokenId.secret` (`src/gaurds/device-auth.guard.ts`)
+- Role checks: `RolesGuard` with owner as super-role
+- Ownership checks: `OwnerGuard` for flow/device/deviceToken resources
+- Important behavior:
+  - `POST /auth/register` logs user in immediately (sets cookie + returns MQTT creds)
+  - unverified users are blocked from most endpoints by `AuthGuard` with HTTP `428`
+  - allowed while unverified: `/auth/*`, `/verification/*`, `/users/profile`
+
+## Main Domain Flows
+
+### 1) Registration + Email Verification
+
 ```mermaid
 sequenceDiagram
-    participant Client as Web/Mobile App
-    participant Auth as Auth Controller
-    participant Verify as Verification Service
-    participant SMTP as SMTP Server
+    participant Client as Web/Mobile
+    participant Auth as /auth/register
+    participant Verify as VerificationService
+    participant Mail as SMTP
     participant DB as MongoDB
 
     Client->>Auth: POST /auth/register
-    Auth->>DB: Check if user exists
-    Auth->>Verify: Generate OTP
-    Verify->>DB: Save OTP (hash & expiry)
-    Verify->>SMTP: Send OTP Email
-    SMTP-->>Client: User receives email
-    Auth-->>Client: Return 201 (Registration pending verification)
-    Client->>Verify: POST /verification/verify-otp
-    Verify->>DB: Validate OTP
-    Verify->>DB: Mark user email as verified
-    Verify-->>Client: Success + JWT Token
+    Auth->>DB: Create user (email normalized, password hashed)
+    Auth->>Verify: generateOtpForEmail
+    Verify->>DB: Save OTP hash + expiry
+    Verify->>Mail: Send verification OTP
+    Auth-->>Client: Set jwt cookie + MQTT credentials
+
+    Client->>Auth: Call protected endpoint
+    Auth-->>Client: 428 if email not verified
+
+    Client->>Verify: POST /verification/verify
+    Verify->>DB: Validate OTP, mark email_verified=true
+    Verify-->>Client: Email verified
 ```
-# Device Provisioning & Registration
+
+### 2) Device Provisioning
+
 ```mermaid
 sequenceDiagram
-    participant User as Web Client
-    participant API as Device Controller
+    participant User as Authenticated User
+    participant API as Devices API
+    participant Device as ESP32
     participant DB as MongoDB
-    participant IoT as Physical Device
 
-    %% Step 1: User generates a code
-    User->>API: Request new device registration code
-    API->>DB: Store temporary 6-digit code
-    API-->>User: Return code (e.g., "123456")
+    User->>API: GET /devices/registration-code
+    API->>DB: Create short-lived code (8-char hex, ~10 min)
+    API-->>User: code + expiry
 
-    %% Step 2: User inputs code to the physical device (via BLE/WiFi AP)
-    User->>IoT: Input code "123456" into device
-
-    %% Step 3: Device claims itself
-    IoT->>API: POST /devices/register (with code)
-    API->>DB: Validate code & find User owner
-    API->>DB: Create Device Record & Device Token
-    API-->>IoT: Return Device Token (Long-lived)
-
-    %% Step 4: Normal operations
-    IoT->>API: Connect to MQTT / REST using Device Token
+    User->>Device: Enter code on device
+    Device->>API: POST /devices/verify-registration-code
+    API->>DB: Validate code + owner email_verified
+    API->>DB: Create/update device + generate long-lived device token
+    API-->>Device: device data + tokenId.secret
 ```
-# Flow Execution (Node/Edge Logic via MQTT)
+
+### 3) Flow Build and Runtime Execution
+
 ```mermaid
 sequenceDiagram
-    participant IoT as Physical Device
-    participant MQTT as Pigeon MQTT Broker
-    participant FlowLogic as Flow Logic Service
+    participant UI as Flow Editor
+    participant Flows as /flows
+    participant Builder as FlowBuilderService
     participant DB as MongoDB
+    participant Broker as MQTT Broker
+    participant Handler as MqttHandlers
+    participant ESP as Device
 
-    IoT->>MQTT: Publish: Sensor Data (e.g., Temp=30C)
-    MQTT->>FlowLogic: Handle Incoming MQTT Event
-    FlowLogic->>DB: Fetch associated Flow for this Device
-    
-    alt Flow Condition Met (Temp > 25C)
-        FlowLogic->>FlowLogic: Traverse Nodes & Edges
-        FlowLogic->>DB: Log Device Audit Event
-        FlowLogic->>MQTT: Publish Command (e.g., "Turn on AC")
-        MQTT-->>IoT: Receive Command
-    else Condition Not Met
-        FlowLogic->>FlowLogic: End Execution
-    end
+    UI->>Flows: Create/Update flow graph (nodes + edges)
+    Flows->>Builder: Build setup + logic + ui documents
+    Builder->>DB: Persist setup/logic/ui by flowId
+
+    ESP->>Broker: Publish telemetry to logic/input/<nodeId>
+    Broker->>Handler: on publish
+    Handler->>DB: Resolve linked flow logic
+    Handler->>Handler: Optional function-node VM execution
+    Handler->>Broker: Publish GPIO command to esp/<MAC>/cmd
+    Broker-->>ESP: Execute command
 ```
+
+## Feature Modules (Current)
+
+- `auth`: register/login/logout, forgot/reset password, JWT issuing
+- `users`: profile, MQTT OTP, admin user management, default owner seed
+- `verification`: OTP generation/verification + password reset OTP via SMTP
+- `devices`: registration code flow, device CRUD, token lifecycle, flow linking, status
+- `flows`: flow CRUD + derived setup/logic/ui generation
+- `flow-templates`: admin template management + user forking
+- `modules`: admin catalog for hardware/module metadata
+- `firmware`: admin upload/delete, device update check, device binary download (rate-limited)
+- `mqtt`: broker integration, authz/authn hooks, active-client visibility, runtime flow execution
+
+## Data Stores (MongoDB)
+
+Main collections represented by Mongoose schemas:
+
+- users, email verification OTPs
+- devices, device tokens, device audits, registration codes
+- flows, setups, logics, UIs
+- flow templates
+- module catalog
+- firmware metadata
+
+## Notes
+
+- MQTT is part of this backend deployment (not an external broker in this repo).
+- MQTT auth supports both user clients and ESP clients with different auth paths.
+- Function nodes are statically validated and executed in a restricted VM context.
