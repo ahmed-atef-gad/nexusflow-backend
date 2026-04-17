@@ -4,37 +4,38 @@ import { Schema as MongooseSchema } from 'mongoose';
 
 @Schema({ _id: false })
 export class NodeData {
-  @ApiProperty() @Prop() id: string;
-  @ApiProperty() @Prop() name: string;
-  @ApiProperty() @Prop() moduleId: string;
+  @ApiProperty() @Prop() id!: string;
+  @ApiProperty() @Prop() name!: string;
+  @ApiProperty() @Prop() moduleId!: string;
   @ApiProperty({ required: false }) @Prop() alias?: string;
   @ApiProperty({ required: false }) @Prop() pinMode?: string;
   @ApiProperty({ required: false }) @Prop() type?: string;
   @ApiProperty({ required: false }) @Prop() ports?: string;
-  @ApiProperty() @Prop({ type: MongooseSchema.Types.Mixed }) icon: any;
+  @ApiProperty() @Prop({ type: MongooseSchema.Types.Mixed }) icon!: any;
   @ApiProperty({ required: false }) @Prop() color?: string;
   @ApiProperty({ required: false }) @Prop() category?: string;
+  @ApiProperty({ required: false }) @Prop() notes?: string;
   @ApiProperty({ required: false })
   @Prop({ type: MongooseSchema.Types.Mixed })
-  options: any;
+  options?: any;
   @ApiProperty({ required: false })
   @Prop({ type: MongooseSchema.Types.Mixed, default: {} })
-  variables: Record<string, string | number | boolean>;
+  variables!: Record<string, string | number | boolean>;
 }
 const NodeDataSchema = SchemaFactory.createForClass(NodeData);
 
 @Schema({ _id: false })
 export class Node {
-  @ApiProperty() @Prop() id: string;
-  @ApiProperty() @Prop() type: string;
-  @ApiProperty() @Prop({ type: MongooseSchema.Types.Mixed }) position: {
+  @ApiProperty() @Prop() id!: string;
+  @ApiProperty() @Prop() type!: string;
+  @ApiProperty() @Prop({ type: MongooseSchema.Types.Mixed }) position!: {
     x: number;
     y: number;
   };
   @ApiProperty({ type: NodeData })
   @Prop({ type: NodeDataSchema })
-  data: NodeData;
-  @ApiProperty() @Prop({ type: MongooseSchema.Types.Mixed }) measured: {
+  data!: NodeData;
+  @ApiProperty() @Prop({ type: MongooseSchema.Types.Mixed }) measured!: {
     width: number;
     height: number;
   };

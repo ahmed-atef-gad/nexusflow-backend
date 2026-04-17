@@ -210,6 +210,87 @@ export class FlowBuilderService {
       throw new BadRequestException('Flow edges are required to create a flow');
     }
 
+    // Validate nodes have required properties
+    nodes.forEach((node, index) => {
+      if (!node.id) {
+        throw new BadRequestException(
+          `Node at index ${index} is missing required field: id`
+        );
+      }
+      if (!node.type) {
+        throw new BadRequestException(
+          `Node "${node.id}" is missing required field: type`
+        );
+      }
+      if (!node.position) {
+        throw new BadRequestException(
+          `Node "${node.id}" is missing required field: position. Nodes must have position with x and y coordinates.`
+        );
+      }
+      if (
+        typeof node.position.x !== 'number' ||
+        typeof node.position.y !== 'number'
+      ) {
+        throw new BadRequestException(
+          `Node "${node.id}" has invalid position. Both x and y must be numbers.`
+        );
+      }
+      if (!node.data) {
+        throw new BadRequestException(
+          `Node "${node.id}" is missing required field: data`
+        );
+      }
+      if (!node.data.name || !node.data.moduleId) {
+        throw new BadRequestException(
+          `Node "${node.id}" data is missing required fields. Must include: name, moduleId`
+        );
+      }
+      if (!node.measured) {
+        throw new BadRequestException(
+          `Node "${node.id}" is missing required field: measured. Nodes must have measured with width and height.`
+        );
+      }
+      if (
+        typeof node.measured.width !== 'number' ||
+        typeof node.measured.height !== 'number'
+      ) {
+        throw new BadRequestException(
+          `Node "${node.id}" has invalid measured dimensions. Both width and height must be numbers.`
+        );
+      }
+    });
+
+    // Validate edges
+    edges.forEach((edge, index) => {
+      if (!edge.id) {
+        throw new BadRequestException(
+          `Edge at index ${index} is missing required field: id`
+        );
+      }
+      if (!edge.source) {
+        throw new BadRequestException(
+          `Edge "${edge.id}" is missing required field: source`
+        );
+      }
+      if (!edge.target) {
+        throw new BadRequestException(
+          `Edge "${edge.id}" is missing required field: target`
+        );
+      }
+      const sourceNode = nodes.find((n) => n.id === edge.source);
+      if (!sourceNode) {
+        throw new BadRequestException(
+          `Edge "${edge.id}" references non-existent source node: "${edge.source}"`
+        );
+      }
+      const targetNode = nodes.find((n) => n.id === edge.target);
+      if (!targetNode) {
+        throw new BadRequestException(
+          `Edge "${edge.id}" references non-existent target node: "${edge.target}"`
+        );
+      }
+    });
+
     const targetNodeConnectionCount: Record<string, number> = {};
     edges.forEach((edge) => {
       if (!targetNodeConnectionCount[edge.target]) {

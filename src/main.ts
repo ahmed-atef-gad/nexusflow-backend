@@ -50,7 +50,13 @@ async function bootstrap() {
     origin: allowedOrigins,
     credentials: true,
   });
-  app.useGlobalPipes(new ValidationPipe());
+  app.useGlobalPipes(
+    new ValidationPipe({
+      transform: true,
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    })
+  );
 
   app.use(cookieParser());
   // Swagger Setup

@@ -23,6 +23,11 @@ import { UiItem } from './schemas/uiItem.schema';
 import { Ui } from './schemas/ui.schema';
 import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
 
+export type FlowWithUiAndWarnings = Flow & {
+  warnings: string[];
+  ui: Ui | null;
+};
+
 @Injectable()
 export class FlowsService {
   constructor(
@@ -49,7 +54,7 @@ export class FlowsService {
     return { flows: [], warnings: [] };
   }
 
-  async create(flow: Flow, userId: string): Promise<any> {
+  async create(flow: Flow, userId: string): Promise<FlowWithUiAndWarnings> {
     const createdFlow = new this.flowModel({
       ...flow,
       userId: userId,
@@ -148,7 +153,7 @@ export class FlowsService {
     };
   }
 
-  async findOne(id: string, userId: string): Promise<any> {
+  async findOne(id: string, userId: string): Promise<Flow> {
     if (!isValidObjectId(id)) {
       throw new BadRequestException('Invalid id format');
     }
@@ -159,16 +164,7 @@ export class FlowsService {
       throw new NotFoundException(`Flow with ID ${id} not found`);
     }
 
-    const setupDoc = await this.setupService.findByFlowId(id);
-    const logicDoc = await this.logicService.findByFlowId(id);
-
-    return {
-      ...flow.toObject(),
-      setup: setupDoc ? setupDoc.elements : { setup: [], tasks: [] },
-      logic: logicDoc
-        ? this.toCommandExtraction(logicDoc.program as unknown)
-        : this.toCommandExtraction(undefined),
-    };
+    return flow.toObject() as Flow;
   }
 
   async findFlowById(id: string): Promise<any> {
@@ -206,7 +202,11 @@ export class FlowsService {
     return uiData;
   }
 
-  async update(id: string, userId: string, updatedFlow: Flow): Promise<any> {
+  async update(
+    id: string,
+    userId: string,
+    updatedFlow: Flow
+  ): Promise<FlowWithUiAndWarnings> {
     if (!isValidObjectId(id)) {
       throw new BadRequestException('Invalid id format');
     }
