@@ -28,6 +28,7 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
   ApiBody,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { Roles } from './../auth/decorators/roles.decorator';
 import { RolesGuard } from '../gaurds/auth/roles.guard';
@@ -248,6 +249,36 @@ export class UsersController {
         totalPages: 1,
       },
     },
+  })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    description: 'Page number, starts from 1',
+    example: '1',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    description: 'Items per page, max 100',
+    example: '10',
+  })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    description: 'Case-insensitive search against username and email',
+    example: 'john',
+  })
+  @ApiQuery({
+    name: 'role',
+    required: false,
+    description: 'Filter users by role',
+    enum: Role,
+  })
+  @ApiQuery({
+    name: 'is_active',
+    required: false,
+    description: 'Filter by active status',
+    enum: ['true', 'false'],
   })
   @ApiUnauthorizedResponse({
     description: 'Unauthorized - Invalid or missing token',

@@ -17,6 +17,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiQuery,
   ApiResponse,
   ApiTags,
   ApiUnauthorizedResponse,
@@ -58,6 +59,18 @@ export class FlowTemplatesController {
   @Get()
   @ApiOperation({ summary: 'List flow templates' })
   @ApiOkResponse({ description: 'Templates fetched successfully' })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    description: 'Page number, starts from 1',
+    example: '1',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    description: 'Items per page, max 100',
+    example: '10',
+  })
   @ApiUnauthorizedResponse({ description: 'Unauthorized - Invalid or missing token' })
   findAll(@Query() query: PaginationQueryDto) {
     return this.flowTemplatesService.findAll(query);

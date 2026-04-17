@@ -21,6 +21,7 @@ import {
   ApiBody,
   ApiSecurity,
   ApiHeader,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { AuthGuard } from '../gaurds/auth/auth.guard';
 import { Setup } from './schemas/setup.schema';
@@ -68,6 +69,18 @@ export class SetupController {
   @ApiCookieAuth('jwt')
   @ApiOperation({ summary: 'Get all setups' })
   @ApiResponse({ status: 200 })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    description: 'Page number, starts from 1',
+    example: '1',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    description: 'Items per page, max 100',
+    example: '10',
+  })
   @Get()
   findAll(@Query() query: PaginationQueryDto) {
     return this.setupService.findAll(query);
@@ -136,6 +149,11 @@ export class SetupController {
   @ApiCookieAuth('jwt')
   @ApiOperation({ summary: 'Delete setup by ID' })
   @ApiParam({ name: 'id' })
+  @ApiResponse({
+    status: 200,
+    description: 'Setup deleted successfully',
+    schema: { example: { acknowledged: true, deletedCount: 1 } },
+  })
   @Delete(':id')
   delete(@Param('id') id: string) {
     return this.setupService.delete(id);

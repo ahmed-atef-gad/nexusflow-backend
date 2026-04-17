@@ -23,6 +23,7 @@ import {
   ApiBody,
   ApiResponse,
   ApiParam,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { IsOwner } from '../auth/decorators/owner.decorator';
 import type { AuthenticatedRequest } from '../auth/utils/auth.util';
@@ -164,7 +165,6 @@ export class DevicesController {
    * @note Token format: <tokenId>.<secret> where tokenId is a UUID and secret is a hex string
    * @note Token expires in 1 year
    */
-  /*
   @ApiOperation({
     summary: 'Generate a long-lived token for the device',
     description:
@@ -222,7 +222,6 @@ export class DevicesController {
 
     return this.devicesService.generateDeviceToken(deviceId);
   }
-  */
 
   /**
    * Revoke a device token
@@ -281,10 +280,30 @@ export class DevicesController {
   }
 
   @ApiOperation({ summary: 'Link device to a Flow' })
+  @ApiParam({
+    name: 'id',
+    description: 'MongoDB ID of the device',
+    example: '507f1f77bcf86cd799439011',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['flowId'],
+      properties: {
+        flowId: {
+          type: 'string',
+          description: 'MongoDB ID of the flow to link',
+          example: '507f1f77bcf86cd799439022',
+        },
+      },
+    },
+  })
   @ApiResponse({
     status: 200,
     description: 'Device linked to flow successfully',
   })
+  @ApiResponse({ status: 401, description: 'Unauthorized - User does not own this device' })
+  @ApiResponse({ status: 404, description: 'Device not found' })
   @Patch(':id/flow')
   async linkFlow(
     @Req() req: AuthenticatedRequest,
@@ -306,10 +325,17 @@ export class DevicesController {
    * Check device connection status (Online/Offline)
    */
   @ApiOperation({ summary: 'Get device status' })
+  @ApiParam({
+    name: 'id',
+    description: 'MongoDB ID of the device',
+    example: '507f1f77bcf86cd799439011',
+  })
   @ApiResponse({
     status: 200,
     description: 'Returns device status and last seen',
   })
+  @ApiResponse({ status: 401, description: 'Unauthorized - User does not own this device' })
+  @ApiResponse({ status: 404, description: 'Device not found' })
   @Get(':id/status')
   async getStatus(
     @Req() req: AuthenticatedRequest,
@@ -434,6 +460,18 @@ export class DevicesController {
   @ApiResponse({
     status: 401,
     description: 'Unauthorized - Invalid or missing user token',
+  })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    description: 'Page number, starts from 1',
+    example: '1',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    description: 'Items per page, max 100',
+    example: '10',
   })
   @Get()
   async getAllDevices(
