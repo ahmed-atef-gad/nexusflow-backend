@@ -19,6 +19,7 @@ const MODE_MAP: Record<string, number> = {
   ANALOG: 1,
   PWM: 3,
   DAC: 3,
+  SERVO: 0,
 };
 
 const CMD_MAP: Record<string, number> = {
@@ -32,6 +33,9 @@ const CMD_MAP: Record<string, number> = {
   PWM_READ: 0x22,
   DAC_WRITE: 0x24,
   DAC_READ: 0x25,
+  SET_UP_SERVO: 0x40,
+  READ_SERVO_ANGLE: 0x41,
+  WRITE_SERVO_ANGLE: 0x42,
   DHT_READ: 0x30,
   FC28_READ: 0x31,
   RAIN_READ: 0x33,
@@ -61,7 +65,7 @@ const GPIO_IO_PIN_SET = new Set<number>(GPIO_IO_PINS);
 const ANALOG_PIN_SET = new Set<number>(ANALOG_PINS);
 const DAC_PIN_SET = new Set<number>(DAC_PINS);
 
-type OutputModuleType = 'pwm' | 'digital' | 'dac' | 'other';
+type OutputModuleType = 'pwm' | 'digital' | 'dac' | 'servo' | 'other';
 type RuntimeStepType = 'input' | 'function' | 'output';
 
 export const INPUT_GPIO_TASK_NAME = 'GpioTask';
@@ -603,15 +607,25 @@ export class FlowBuilderService {
 
           const setupItem: SetupItem = {
             cmd:
-              pinNumber == 25 || pinNumber == 26
-                ? CMD_MAP['SET_DAC']
-                : CMD_MAP['SET_PIN_MODE'],
+              module.moduleId === 'ESP32-gpio-output-servo'
+                ? CMD_MAP['SET_UP_SERVO']
+                : pinNumber == 25 || pinNumber == 26
+                  ? CMD_MAP['SET_DAC']
+                  : CMD_MAP['SET_PIN_MODE'],
             pin: pinNumber,
             mode: pinMode,
           };
           // For outputs, set an initial value of 0
           if (module.moduleId === 'ESP32-gpio-output') {
             setupItem.value = 0;
+          } else if (module.moduleId === 'ESP32-gpio-output-servo') {
+            const initialAngle = this.toOptionalNumber(
+              module.variables?.initialAngle
+            );
+            setupItem.value = Math.min(
+              180,
+              Math.max(0, Math.trunc(initialAngle ?? 0))
+            );
           }
           // Deduplicate by pin (last definition wins)
           setupPins[pinNumber] = setupItem;
@@ -690,6 +704,9 @@ export class FlowBuilderService {
                 break;
               case 'ESP32-gpio-output-dac':
                 cmd = CMD_MAP['DAC_READ'];
+                break;
+              case 'ESP32-gpio-output-servo':
+                cmd = CMD_MAP['READ_SERVO_ANGLE'];
                 break;
               default:
                 this.throwNodeError(
@@ -1120,6 +1137,8 @@ export class FlowBuilderService {
       return 'pwm';
     } else if (moduleId.startsWith('ESP32-gpio-output-dac')) {
       return 'dac';
+    } else if (moduleId.startsWith('ESP32-gpio-output-servo')) {
+      return 'servo';
     } else if (moduleId.startsWith('ESP32-gpio-output')) {
       return 'digital';
     } else {
@@ -1140,6 +1159,8 @@ export class FlowBuilderService {
         return CMD_MAP['ANALOG_WRITE'];
       case 'ESP32-gpio-output-dac':
         return CMD_MAP['DAC_WRITE'];
+      case 'ESP32-gpio-output-servo':
+        return CMD_MAP['WRITE_SERVO_ANGLE'];
       default:
         return undefined;
     }

@@ -19,7 +19,7 @@ import {
   validateFunctionNodeCode,
 } from '../flows/function-node-security.util';
 
-type OutputModuleType = 'pwm' | 'digital' | 'dac' | 'other';
+type OutputModuleType = 'pwm' | 'digital' | 'dac' | 'servo' | 'other';
 
 type RuntimeCommand = {
   id?: string;
@@ -732,7 +732,8 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       command.stepType === 'output' &&
       (command.targetModuleType === 'digital' ||
         command.targetModuleType === 'pwm' ||
-        command.targetModuleType === 'dac')
+        command.targetModuleType === 'dac' ||
+        command.targetModuleType === 'servo')
     );
   }
 
@@ -847,6 +848,13 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       String,
       Date,
       JSON,
+      mapValue: (
+        value: number,
+        inMin: number,
+        inMax: number,
+        outMin: number,
+        outMax: number
+      ) => this.mapValue(value, inMin, inMax, outMin, outMax),
     };
 
     return vm.runInNewContext(script, sandbox, {
@@ -943,6 +951,50 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       }
     }
     return null;
+  }
+
+  private mapValue(
+    value: number,
+    inMin: number,
+    inMax: number,
+    outMin: number,
+    outMax: number
+  ): number {
+    if (!Number.isFinite(value)) return outMin;
+    if (!Number.isFinite(inMin) || !Number.isFinite(inMax)) return outMin;
+    if (!Number.isFinite(outMin) || !Number.isFinite(outMax)) return outMin;
+    if (inMax === inMin) return outMin;
+
+    return ((value - inMin) * (outMax - outMin)) / (inMax - inMin) + outMin;
+  }
+
+  private coerceServoOutputValue(
+    message: RuntimeMessage,
+    usesFunctionSteps: boolean
+  ): number | null {
+    const payload = message.payload;
+    let numericValue: number | null = null;
+
+    if (typeof payload === 'number' && Number.isFinite(payload)) {
+      numericValue = payload;
+    } else if (typeof payload === 'boolean') {
+      numericValue = payload ? 180 : 0;
+    } else if (typeof payload === 'string') {
+      const parsed = Number(payload);
+      if (Number.isFinite(parsed)) {
+        numericValue = parsed;
+      }
+    }
+
+    if (numericValue === null) {
+      return null;
+    }
+
+    const angle = usesFunctionSteps
+      ? numericValue
+      : this.mapValue(numericValue, 0, 255, 0, 180);
+
+    return Math.round(Math.min(180, Math.max(0, angle)));
   }
 
   private async executeGpioLogicForInputTopic(
@@ -1082,7 +1134,10 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
           continue;
         }
 
-        const outputValue = this.coerceRuntimeOutputValue(currentMessage);
+        const outputValue =
+          step.targetModuleType === 'servo'
+            ? this.coerceServoOutputValue(currentMessage, usesFunctionSteps)
+            : this.coerceRuntimeOutputValue(currentMessage);
         if (outputValue === null) {
           this.logger.warn(
             `Output step ${step.id ?? 'unknown'} skipped because payload is not a numeric, boolean, or numeric string value.`

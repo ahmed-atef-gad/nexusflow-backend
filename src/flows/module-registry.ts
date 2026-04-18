@@ -4,7 +4,14 @@ export type ModuleDefinition = {
   id: string;
   name: string;
   ports?: ModulePorts;
-  pinMode?: 'INPUT' | 'OUTPUT' | 'INPUT_PULLUP' | 'ANALOG' | 'PWM' | 'DAC';
+  pinMode?:
+    | 'INPUT'
+    | 'OUTPUT'
+    | 'INPUT_PULLUP'
+    | 'ANALOG'
+    | 'PWM'
+    | 'DAC'
+    | 'SERVO';
   type?: string;
 };
 
@@ -49,6 +56,12 @@ export const MODULE_DEFINITIONS: ModuleDefinition[] = [
     name: 'DAC Output',
     ports: 'target',
     pinMode: 'DAC',
+  },
+  {
+    id: 'ESP32-gpio-output-servo',
+    name: 'Servo Output',
+    ports: 'target',
+    pinMode: 'SERVO',
   },
   {
     id: 'ESP32-gpio-output-led',

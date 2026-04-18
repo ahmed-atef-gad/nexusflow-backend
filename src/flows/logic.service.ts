@@ -163,6 +163,7 @@ export class LogicService {
         step.targetModuleType === 'digital' ||
         step.targetModuleType === 'pwm' ||
         step.targetModuleType === 'dac' ||
+        step.targetModuleType === 'servo' ||
         step.targetModuleType === 'other'
           ? step.targetModuleType
           : undefined,
