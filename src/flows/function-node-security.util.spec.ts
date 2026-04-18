@@ -36,4 +36,11 @@ describe('validateFunctionNodeCode', () => {
     const error = validateFunctionNodeCode('');
     expect(error).toBeNull();
   });
+
+  it('allows mapValue helper usage', () => {
+    const error = validateFunctionNodeCode(
+      'msg.payload = mapValue(Number(msg.payload?.raw ?? 0), 0, 4095, 0, 180); return msg;'
+    );
+    expect(error).toBeNull();
+  });
 });

@@ -11,6 +11,7 @@ export const DEFAULT_FUNCTION_NODE_MAX_AST_NODES = 300;
 
 const ALLOWED_GLOBALS = new Set([
   'msg',
+  'mapValue',
   'Number',
   'Math',
   'parseInt',

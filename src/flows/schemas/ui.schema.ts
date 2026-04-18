@@ -39,6 +39,21 @@ export class Ui {
 
   @ApiProperty({
     description:
+      'Wildcard MQTT topic pattern for function node runtime errors (per node)',
+    required: false,
+  })
+  @Prop({ type: String, required: false })
+  functionErrorTopicPattern?: string;
+
+  @ApiProperty({
+    description: 'MQTT topic for runtime logic debug events',
+    required: false,
+  })
+  @Prop({ type: String, required: false })
+  logicDebugTopic?: string;
+
+  @ApiProperty({
+    description:
       'The Default gpio input task name for GPIO modules in this flow',
   })
   @Prop({ type: String, default: INPUT_GPIO_TASK_NAME })
