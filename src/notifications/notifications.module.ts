@@ -5,6 +5,7 @@ import { UsersModule } from 'src/users/users.module';
 import { AlertEvent, AlertEventSchema } from './schemas/alert-event.schema';
 import { AlertPolicy, AlertPolicySchema } from './schemas/alert-policy.schema';
 import { AlertRule, AlertRuleSchema } from './schemas/alert-rule.schema';
+import { NotificationsInternalController } from './notifications-internal.controller';
 import { NotificationsController } from './notifications.controller';
 import { NotificationsService } from './notifications.service';
 import {
@@ -28,7 +29,7 @@ import {
       { name: AlertRule.name, schema: AlertRuleSchema },
     ]),
   ],
-  controllers: [NotificationsController],
+  controllers: [NotificationsController, NotificationsInternalController],
   providers: [NotificationsService],
   exports: [MongooseModule, NotificationsService],
 })

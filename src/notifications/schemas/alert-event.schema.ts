@@ -31,6 +31,9 @@ export class AlertEvent {
 
   @Prop({ required: true, index: true })
   occurredAt: Date;
+
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export const AlertEventSchema = SchemaFactory.createForClass(AlertEvent);

@@ -2,7 +2,7 @@ import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { App, cert, getApp, getApps, initializeApp } from 'firebase-admin/app';
+import { App, cert, getApps, initializeApp } from 'firebase-admin/app';
 import {
   BatchResponse,
   getMessaging,
@@ -10,6 +10,8 @@ import {
   MulticastMessage,
 } from 'firebase-admin/messaging';
 import { RegisterNotificationDeviceDto } from './dto/register-notification-device.dto';
+import { TriggerAlertDto } from './dto/trigger-alert.dto';
+import { AlertEvent, AlertEventDocument } from './schemas/alert-event.schema';
 import {
   NotificationDeviceToken,
   NotificationDeviceTokenDocument,
@@ -23,6 +25,29 @@ type SendProjectAlertInput = {
   body: string;
   data?: Record<string, string | number | boolean>;
   severity?: AlertSeverity;
+};
+
+type TriggerAlertResult = {
+  event: {
+    id: string;
+    projectId: string;
+    sensorType: string;
+    severity: AlertSeverity;
+    title: string;
+    body: string;
+    value?: number;
+    threshold?: number;
+    ruleId?: string;
+    occurredAt: Date;
+    createdAt?: Date;
+  };
+  delivery: {
+    requestedTokens: number;
+    successCount: number;
+    failureCount: number;
+    invalidatedTokens: number;
+    error?: string;
+  };
 };
 
 @Injectable()
@@ -39,6 +64,8 @@ export class NotificationsService {
   constructor(
     @InjectModel(NotificationDeviceToken.name)
     private readonly notificationDeviceTokenModel: Model<NotificationDeviceTokenDocument>,
+    @InjectModel(AlertEvent.name)
+    private readonly alertEventModel: Model<AlertEventDocument>,
     private readonly configService: ConfigService,
   ) {}
 
@@ -95,6 +122,74 @@ export class NotificationsService {
       lastSeenAt: document.lastSeenAt,
       updatedAt: document.updatedAt,
       createdAt: document.createdAt,
+    };
+  }
+
+  async triggerAlert(input: TriggerAlertDto): Promise<TriggerAlertResult> {
+    const occurredAt = input.occurredAt ? new Date(input.occurredAt) : new Date();
+    const title = input.title?.trim() || this.buildDefaultAlertTitle(input);
+    const body = input.body?.trim() || this.buildDefaultAlertBody(input);
+
+    const createdEvent = await this.alertEventModel.create({
+      projectId: input.projectId,
+      sensorType: input.sensorType,
+      severity: input.severity,
+      title,
+      body,
+      value: input.value,
+      threshold: input.threshold,
+      ruleId: input.ruleId,
+      occurredAt,
+    });
+
+    let delivery: TriggerAlertResult['delivery'];
+    try {
+      delivery = await this.sendAlertToProject({
+        projectId: input.projectId,
+        title,
+        body,
+        severity: input.severity,
+        data: {
+          ...input.data,
+          type: 'ALERT_TRIGGERED',
+          sensorType: input.sensorType,
+          ruleId: input.ruleId ?? '',
+          value: input.value ?? '',
+          threshold: input.threshold ?? '',
+          timestamp: occurredAt.toISOString(),
+        },
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Unknown push delivery error';
+      this.logger.error(
+        `Alert event ${createdEvent.id} saved but push delivery failed: ${message}`,
+      );
+
+      delivery = {
+        requestedTokens: 0,
+        successCount: 0,
+        failureCount: 0,
+        invalidatedTokens: 0,
+        error: message,
+      };
+    }
+
+    return {
+      event: {
+        id: createdEvent.id,
+        projectId: createdEvent.projectId,
+        sensorType: createdEvent.sensorType,
+        severity: createdEvent.severity,
+        title: createdEvent.title,
+        body: createdEvent.body,
+        value: createdEvent.value,
+        threshold: createdEvent.threshold,
+        ruleId: createdEvent.ruleId,
+        occurredAt: createdEvent.occurredAt,
+        createdAt: createdEvent.createdAt,
+      },
+      delivery,
     };
   }
 
@@ -266,5 +361,24 @@ export class NotificationsService {
     this.logger.warn(
       `Marked ${tokens.length} FCM tokens inactive due to Firebase error: ${errorCode}`,
     );
+  }
+
+  private buildDefaultAlertTitle(input: TriggerAlertDto): string {
+    const sensor = input.sensorType.toUpperCase();
+    if (input.severity === 'critical') {
+      return `${sensor} Critical Alert`;
+    }
+    if (input.severity === 'warning') {
+      return `${sensor} Warning`;
+    }
+    return `${sensor} Notification`;
+  }
+
+  private buildDefaultAlertBody(input: TriggerAlertDto): string {
+    const valuePart =
+      input.value !== undefined ? `value ${input.value}` : 'a new reading';
+    const thresholdPart =
+      input.threshold !== undefined ? ` (threshold ${input.threshold})` : '';
+    return `${input.sensorType} reported ${valuePart}${thresholdPart}.`;
   }
 }
