@@ -75,7 +75,6 @@ export class FlowsService {
       const nodeWarnings = nodeDiagnostics.filter(
         (d) => d.severity === 'warning'
       );
-      const nodeErrors = nodeDiagnostics.filter((d) => d.severity === 'error');
 
       const currentData = (node.data ?? {}) as unknown as Record<
         string,
@@ -95,15 +94,7 @@ export class FlowsService {
         delete nextData.warnings;
       }
 
-      if (nodeErrors.length > 0) {
-        nextData.errors = nodeErrors.map((error) => ({
-          severity: error.severity,
-          message: error.message,
-          code: error.code,
-        }));
-      } else {
-        delete nextData.errors;
-      }
+      // Note: Errors are thrown immediately, not persisted to node data
 
       return {
         ...node,
@@ -129,7 +120,6 @@ export class FlowsService {
       };
 
       delete nextData.warnings;
-      delete nextData.errors;
 
       return {
         ...node,

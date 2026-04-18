@@ -396,23 +396,6 @@ export class FlowBuilderService {
 
   private throwNodeError(node: Node, message: string, code?: string): never {
     const diagnostic = this.createNodeDiagnostic(node, 'error', message, code);
-    const existingErrors: NodeStoredDiagnostic[] = Array.isArray(
-      node.data?.errors
-    )
-      ? (node.data.errors as NodeStoredDiagnostic[])
-      : [];
-    node.data = {
-      ...node.data,
-      errors: [
-        ...existingErrors,
-        {
-          severity: diagnostic.severity,
-          message: diagnostic.message,
-          code: diagnostic.code,
-        },
-      ],
-    };
-
     throw new BadRequestException({
       message,
       code,

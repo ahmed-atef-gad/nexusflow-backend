@@ -25,10 +25,6 @@ export class NodeData {
   @ApiProperty({ required: false, type: [Object] })
   @Prop({ type: [MongooseSchema.Types.Mixed], required: false })
   warnings?: any[];
-
-  @ApiProperty({ required: false, type: [Object] })
-  @Prop({ type: [MongooseSchema.Types.Mixed], required: false })
-  errors?: any[];
 }
 const NodeDataSchema = SchemaFactory.createForClass(NodeData);
 
