@@ -30,6 +30,6 @@ import {
   ],
   controllers: [NotificationsController],
   providers: [NotificationsService],
-  exports: [MongooseModule],
+  exports: [MongooseModule, NotificationsService],
 })
 export class NotificationsModule {}
