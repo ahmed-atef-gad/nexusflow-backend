@@ -9,6 +9,7 @@ import {
   DEFAULT_FUNCTION_NODE_MAX_CODE_LENGTH,
   validateFunctionNodeCode,
 } from './function-node-security.util';
+import { MODULE_DEFINITION_BY_ID, ModuleDefinition } from './module-registry';
 
 const MODE_MAP: Record<string, number> = {
   INPUT: 1,
@@ -38,6 +39,27 @@ const CMD_MAP: Record<string, number> = {
 };
 
 const INPUT_TOPIC_PREFIX = 'logic/input';
+
+const VALID_PINS = [
+  0, 1, 2, 3, 4, 5, 12, 13, 14, 15, 16, 17, 18, 19, 21, 22, 23, 25, 26, 27, 32,
+  33, 34, 35, 36, 39,
+];
+const RESERVED_PINS = [0, 1, 2, 3, 6, 7, 8, 9, 10, 11, 12, 15, 16];
+const INPUT_ONLY_PINS = [34, 35, 36, 39];
+const ANALOG_PINS = [32, 33, 34, 35, 36, 39];
+const DAC_PINS = [25, 26];
+
+const GPIO_INPUT_PINS = VALID_PINS.filter(
+  (pin) => !RESERVED_PINS.includes(pin)
+);
+const GPIO_IO_PINS = VALID_PINS.filter(
+  (pin) => !RESERVED_PINS.includes(pin) && !INPUT_ONLY_PINS.includes(pin)
+);
+
+const GPIO_INPUT_PIN_SET = new Set<number>(GPIO_INPUT_PINS);
+const GPIO_IO_PIN_SET = new Set<number>(GPIO_IO_PINS);
+const ANALOG_PIN_SET = new Set<number>(ANALOG_PINS);
+const DAC_PIN_SET = new Set<number>(DAC_PINS);
 
 type OutputModuleType = 'pwm' | 'digital' | 'dac' | 'other';
 type RuntimeStepType = 'input' | 'function' | 'output';
@@ -230,6 +252,102 @@ export class FlowBuilderService {
     };
   }
 
+  private ensureIntegerPin(
+    node: Node,
+    value: unknown,
+    fieldName: string,
+    code: string
+  ): number | undefined {
+    const pin = this.toOptionalNumber(value);
+    if (pin === undefined) return undefined;
+    if (!Number.isInteger(pin)) {
+      this.throwNodeError(
+        node,
+        `Invalid ${fieldName} for ${this.getNodeLabel(node)}. Pin values must be integers.`,
+        code
+      );
+    }
+    return pin;
+  }
+
+  private assertAllowedPin(
+    node: Node,
+    pin: number,
+    allowedPins: Set<number>,
+    fieldName: string,
+    code: string
+  ): void {
+    if (!allowedPins.has(pin)) {
+      this.throwNodeError(
+        node,
+        `Invalid ${fieldName} ${pin} for ${this.getNodeLabel(node)}.`,
+        code
+      );
+    }
+  }
+
+  private getValidatedModuleDefinition(node: Node): ModuleDefinition {
+    const moduleId = String(node.data?.moduleId ?? '').trim();
+    const moduleDefinition = MODULE_DEFINITION_BY_ID.get(moduleId);
+
+    if (!moduleDefinition) {
+      this.throwNodeError(
+        node,
+        `Unsupported moduleId "${moduleId}" for ${this.getNodeLabel(node)}.`,
+        'NODE_MODULE_UNSUPPORTED'
+      );
+    }
+
+    return moduleDefinition;
+  }
+
+  private validateAndNormalizeModuleData(
+    node: Node,
+    moduleDefinition: ModuleDefinition
+  ): void {
+    const incomingPinMode = node.data?.pinMode;
+    if (
+      incomingPinMode !== undefined &&
+      incomingPinMode !== moduleDefinition.pinMode
+    ) {
+      this.throwNodeError(
+        node,
+        `Invalid pinMode for ${this.getNodeLabel(node)}.`,
+        'NODE_MODULE_SCHEMA_INVALID'
+      );
+    }
+
+    const incomingPorts = node.data?.ports;
+    if (
+      incomingPorts !== undefined &&
+      incomingPorts !== moduleDefinition.ports
+    ) {
+      this.throwNodeError(
+        node,
+        `Invalid ports for ${this.getNodeLabel(node)}.`,
+        'NODE_MODULE_SCHEMA_INVALID'
+      );
+    }
+
+    const incomingType = node.data?.type;
+    if (incomingType !== undefined && incomingType !== moduleDefinition.type) {
+      this.throwNodeError(
+        node,
+        `Invalid type for ${this.getNodeLabel(node)}.`,
+        'NODE_MODULE_SCHEMA_INVALID'
+      );
+    }
+
+    node.data = {
+      ...node.data,
+      moduleId: moduleDefinition.id,
+      name: moduleDefinition.name,
+      pinMode: moduleDefinition.pinMode,
+      ports: moduleDefinition.ports,
+      type: moduleDefinition.type,
+    };
+  }
+
   private appendNodeWarning(
     node: Node,
     message: string,
@@ -364,6 +482,9 @@ export class FlowBuilderService {
           `Node "${node.id}" has invalid measured dimensions. Both width and height must be numbers.`
         );
       }
+
+      const moduleDefinition = this.getValidatedModuleDefinition(node);
+      this.validateAndNormalizeModuleData(node, moduleDefinition);
     });
 
     // Validate edges
@@ -439,12 +560,18 @@ export class FlowBuilderService {
     const sensorsTask: Record<string, Task[]> = {};
     nodes.forEach((node) => {
       const module = node.data;
+      const moduleDefinition = this.getValidatedModuleDefinition(node);
       if (
         module.moduleId.startsWith('ESP32-gpio-input') ||
         module.moduleId.startsWith('ESP32-gpio-output')
       ) {
-        const pinNumber = this.toOptionalNumber(module.variables?.pinNumber);
-        const pinModeStr = module?.pinMode;
+        const pinNumber = this.ensureIntegerPin(
+          node,
+          module.variables?.pinNumber,
+          'pinNumber',
+          'NODE_PIN_NOT_INTEGER'
+        );
+        const pinModeStr = moduleDefinition.pinMode;
         if (pinNumber !== undefined && pinModeStr) {
           const pinMode = MODE_MAP[pinModeStr];
           if (pinMode === undefined) {
@@ -454,6 +581,41 @@ export class FlowBuilderService {
               'NODE_PIN_CONFIGURATION_INVALID'
             );
           }
+
+          if (module.moduleId.startsWith('ESP32-gpio-input-analog')) {
+            this.assertAllowedPin(
+              node,
+              pinNumber,
+              ANALOG_PIN_SET,
+              'analog pin',
+              'NODE_ANALOG_PIN_INVALID'
+            );
+          } else if (module.moduleId.startsWith('ESP32-gpio-input')) {
+            this.assertAllowedPin(
+              node,
+              pinNumber,
+              GPIO_INPUT_PIN_SET,
+              'input pin',
+              'NODE_INPUT_PIN_INVALID'
+            );
+          } else if (module.moduleId.startsWith('ESP32-gpio-output-dac')) {
+            this.assertAllowedPin(
+              node,
+              pinNumber,
+              DAC_PIN_SET,
+              'dac pin',
+              'NODE_DAC_PIN_INVALID'
+            );
+          } else if (module.moduleId.startsWith('ESP32-gpio-output')) {
+            this.assertAllowedPin(
+              node,
+              pinNumber,
+              GPIO_IO_PIN_SET,
+              'output pin',
+              'NODE_OUTPUT_PIN_INVALID'
+            );
+          }
+
           // Build setup item
 
           const setupItem: SetupItem = {
@@ -573,9 +735,24 @@ export class FlowBuilderService {
         module.moduleId.startsWith('PIR-Sensor') ||
         module.moduleId.startsWith('Ultrasonic-Sensor')
       ) {
-        const pinNumber = this.toOptionalNumber(module.variables?.pinNumber);
-        const triggerPin = this.toOptionalNumber(module.variables?.triggerPin);
-        const echoPin = this.toOptionalNumber(module.variables?.echoPin);
+        const pinNumber = this.ensureIntegerPin(
+          node,
+          module.variables?.pinNumber,
+          'pinNumber',
+          'NODE_PIN_NOT_INTEGER'
+        );
+        const triggerPin = this.ensureIntegerPin(
+          node,
+          module.variables?.triggerPin,
+          'triggerPin',
+          'NODE_TRIGGER_PIN_NOT_INTEGER'
+        );
+        const echoPin = this.ensureIntegerPin(
+          node,
+          module.variables?.echoPin,
+          'echoPin',
+          'NODE_ECHO_PIN_NOT_INTEGER'
+        );
 
         if (
           module.moduleId.startsWith('Ultrasonic-Sensor') &&
@@ -596,6 +773,31 @@ export class FlowBuilderService {
             node,
             `Missing pin configuration for  ${module?.alias || module.name}`,
             'NODE_PIN_CONFIGURATION_MISSING'
+          );
+        }
+
+        if (module.moduleId.startsWith('Ultrasonic-Sensor')) {
+          this.assertAllowedPin(
+            node,
+            triggerPin!,
+            GPIO_IO_PIN_SET,
+            'trigger pin',
+            'ULTRASONIC_TRIGGER_PIN_INVALID'
+          );
+          this.assertAllowedPin(
+            node,
+            echoPin!,
+            GPIO_INPUT_PIN_SET,
+            'echo pin',
+            'ULTRASONIC_ECHO_PIN_INVALID'
+          );
+        } else {
+          this.assertAllowedPin(
+            node,
+            pinNumber!,
+            GPIO_INPUT_PIN_SET,
+            'input pin',
+            'NODE_INPUT_PIN_INVALID'
           );
         }
 
@@ -642,14 +844,44 @@ export class FlowBuilderService {
         module.moduleId.startsWith('Rain-Sensor') ||
         module.moduleId.startsWith('Soil-Sensor')
       ) {
-        const analogPin = this.toOptionalNumber(module.variables?.analogPin);
-        const digitalPin = this.toOptionalNumber(module.variables?.digitalPin);
+        const analogPin = this.ensureIntegerPin(
+          node,
+          module.variables?.analogPin,
+          'analogPin',
+          'NODE_ANALOG_PIN_NOT_INTEGER'
+        );
+        const digitalPin = this.ensureIntegerPin(
+          node,
+          module.variables?.digitalPin,
+          'digitalPin',
+          'NODE_DIGITAL_PIN_NOT_INTEGER'
+        );
         const isDigital = this.toBoolean(module.variables?.isDigital);
         const isAnalog = this.toBoolean(module.variables?.isAnalog);
         if (
           (isDigital && digitalPin !== undefined) ||
           (isAnalog && analogPin !== undefined)
         ) {
+          if (isDigital && digitalPin !== undefined) {
+            this.assertAllowedPin(
+              node,
+              digitalPin,
+              GPIO_INPUT_PIN_SET,
+              'digital pin',
+              'NODE_DIGITAL_PIN_INVALID'
+            );
+          }
+
+          if (isAnalog && analogPin !== undefined) {
+            this.assertAllowedPin(
+              node,
+              analogPin,
+              ANALOG_PIN_SET,
+              'analog pin',
+              'NODE_ANALOG_PIN_INVALID'
+            );
+          }
+
           const sensorType = module.moduleId.split('-')[0]; // e.g., "MQ2", "Rain", "Soil"
           // Add to MQ2 sensors task
           if (!sensorsTask[sensorType]) {
