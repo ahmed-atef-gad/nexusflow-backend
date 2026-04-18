@@ -53,6 +53,8 @@ export class UiController {
         commandTopic: 'esp/AA:BB:CC:DD:EE:FF/cmd',
         resetWifiTopic: 'esp/AA:BB:CC:DD:EE:FF/resetwifi',
         instantExecutionTopic: 'esp/AA:BB:CC:DD:EE:FF/instant',
+        functionErrorTopicPattern: '/devices/AA:BB:CC:DD:EE:FF/logic/error/+',
+        logicDebugTopic: '/devices/AA:BB:CC:DD:EE:FF/logic/debug',
         deviceId: '507f1f77bcf86cd799439012',
         deviceOnlineStatusTopic: 'client/AA:BB:CC:DD:EE:FF/online',
         gpioInputTaskName: 'gpio',
@@ -88,18 +90,34 @@ export class UiController {
   async findByFlowId(@Param('flowId') flowId: string) {
     const ui = await this.uiService.findByFlowId(flowId);
     let deviceId: string | null = null;
+    let normalizedMac: string | null = null;
     let deviceOnlineStatusTopic: string | null = null;
     try {
       const device = await this.devicesService.findByActiveFlowId(flowId);
       deviceId = device._id?.toString() ?? null;
       if (device.macAddress) {
-        const normalizedMac = device.macAddress.toUpperCase();
+        normalizedMac = device.macAddress.toUpperCase();
         deviceOnlineStatusTopic = `client/${normalizedMac}/online`;
       }
     } catch (error) {
       if (!(error instanceof NotFoundException)) throw error;
     }
     if (!ui) return null;
-    return { ...ui.toObject(), deviceId, deviceOnlineStatusTopic };
+    const uiObject = ui.toObject() as Ui & {
+      functionErrorTopicPattern?: string;
+      logicDebugTopic?: string;
+    };
+
+    return {
+      ...uiObject,
+      functionErrorTopicPattern:
+        uiObject.functionErrorTopicPattern ??
+        (normalizedMac ? `/devices/${normalizedMac}/logic/error/+` : undefined),
+      logicDebugTopic:
+        uiObject.logicDebugTopic ??
+        (normalizedMac ? `/devices/${normalizedMac}/logic/debug` : undefined),
+      deviceId,
+      deviceOnlineStatusTopic,
+    };
   }
 }

@@ -115,6 +115,20 @@ type CachedLogicFlows = {
   expiresAt: number;
 };
 
+type RuntimeDebugSeverity = 'info' | 'warn' | 'error';
+
+type RuntimeDebugEvent = {
+  code: string;
+  message: string;
+  severity: RuntimeDebugSeverity;
+  flowId: string;
+  nodeId?: string;
+  stepType?: RuntimeCommand['stepType'];
+  moduleId?: string;
+  topic?: string;
+  details?: Record<string, unknown>;
+};
+
 @Injectable()
 export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(MqttHandlers.name);
@@ -653,6 +667,62 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     return Math.round((normalized * 255) / 100);
   }
 
+  private buildRuntimeDebugTopic(deviceMac: string): string {
+    return `/devices/${this.normalizeMacAddress(deviceMac)}/logic/debug`;
+  }
+
+  private buildFunctionErrorTopic(deviceMac: string, nodeId: string): string {
+    return `/devices/${this.normalizeMacAddress(deviceMac)}/logic/error/${nodeId}`;
+  }
+
+  private summarizePayload(payload: unknown): Record<string, unknown> {
+    if (payload === null || payload === undefined) {
+      return { kind: 'nullish' };
+    }
+
+    if (typeof payload === 'number') {
+      return { kind: 'number', value: payload };
+    }
+
+    if (typeof payload === 'boolean') {
+      return { kind: 'boolean', value: payload };
+    }
+
+    if (typeof payload === 'string') {
+      return {
+        kind: 'string',
+        value: payload.length <= 120 ? payload : `${payload.slice(0, 117)}...`,
+      };
+    }
+
+    if (Array.isArray(payload)) {
+      return { kind: 'array', length: payload.length };
+    }
+
+    if (typeof payload === 'object') {
+      const keys = Object.keys(payload as Record<string, unknown>);
+      return { kind: 'object', keys: keys.slice(0, 20) };
+    }
+
+    return { kind: typeof payload };
+  }
+
+  private async publishRuntimeDebugEvent(
+    deviceMac: string,
+    event: RuntimeDebugEvent
+  ): Promise<void> {
+    try {
+      await this.mqttService.publish(this.buildRuntimeDebugTopic(deviceMac), {
+        ...event,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Failed to publish runtime debug event for device ${deviceMac}: ${(error as Error).message}`
+      );
+    }
+  }
+
   private extractNumericInputValue(packet: MqttPacketContext): number | null {
     const payload = packet?.payload;
     if (!Buffer.isBuffer(payload)) {
@@ -769,6 +839,46 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     };
   }
 
+  private byteToAnalogRaw(value: number): number {
+    const clamped = this.clampToByte(value);
+    return Math.round((clamped * 4095) / 255);
+  }
+
+  private buildFunctionInitialPayload(
+    rawPayload: InputPayload | null,
+    normalizedInput: number | null
+  ): unknown {
+    if (rawPayload && typeof rawPayload === 'object') {
+      const normalizedPayload: InputPayload = { ...rawPayload };
+
+      if (
+        normalizedInput !== null &&
+        typeof normalizedPayload.result !== 'number'
+      ) {
+        normalizedPayload.result = normalizedInput;
+      }
+
+      if (typeof normalizedPayload.raw !== 'number') {
+        if (typeof normalizedPayload.analog === 'number') {
+          normalizedPayload.raw = normalizedPayload.analog;
+        } else if (normalizedInput !== null) {
+          normalizedPayload.raw = this.byteToAnalogRaw(normalizedInput);
+        }
+      }
+
+      return normalizedPayload;
+    }
+
+    if (normalizedInput !== null) {
+      return {
+        result: normalizedInput,
+        raw: this.byteToAnalogRaw(normalizedInput),
+      } as InputPayload;
+    }
+
+    return rawPayload;
+  }
+
   private pathUsesFunctionSteps(flow: unknown[]): boolean {
     return flow.some(
       (step) =>
@@ -814,7 +924,18 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
 
   private validateFunctionCodeAtRuntime(code: string): string | null {
     if (this.functionValidationCache.has(code)) {
-      return this.functionValidationCache.get(code) ?? null;
+      const cached = this.functionValidationCache.get(code) ?? null;
+
+      // Guard against stale cache entries from older deployments where
+      // mapValue was not yet part of the allowed globals.
+      if (
+        cached === "'mapValue' is not defined" &&
+        /\bmapValue\s*\(/.test(code)
+      ) {
+        this.functionValidationCache.delete(code);
+      } else {
+        return cached;
+      }
     }
 
     const validationError = validateFunctionNodeCode(code, {
@@ -1066,6 +1187,14 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
         this.logger.warn(
           `Skipping runtime path due to excessive length (${flow.length} steps).`
         );
+        await this.publishRuntimeDebugEvent(deviceMac, {
+          code: 'PATH_TOO_LONG',
+          message: `Runtime path skipped because it exceeds ${MAX_RUNTIME_STEPS_PER_PATH} steps.`,
+          severity: 'warn',
+          flowId,
+          topic,
+          details: { steps: flow.length, limit: MAX_RUNTIME_STEPS_PER_PATH },
+        });
         continue;
       }
 
@@ -1077,6 +1206,17 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
         this.logger.warn(
           `Skipping runtime path due to excessive function node depth (${functionStepsInPath}).`
         );
+        await this.publishRuntimeDebugEvent(deviceMac, {
+          code: 'FUNCTION_DEPTH_EXCEEDED',
+          message: `Runtime path skipped because it exceeds ${MAX_RUNTIME_FUNCTION_STEPS_PER_PATH} function steps.`,
+          severity: 'warn',
+          flowId,
+          topic,
+          details: {
+            functionSteps: functionStepsInPath,
+            limit: MAX_RUNTIME_FUNCTION_STEPS_PER_PATH,
+          },
+        });
         continue;
       }
 
@@ -1092,7 +1232,9 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
 
       const usesFunctionSteps = this.pathUsesFunctionSteps(flow);
       const initialPayload =
-        usesFunctionSteps && rawPayload !== null ? rawPayload : inputValue;
+        usesFunctionSteps
+          ? this.buildFunctionInitialPayload(rawPayload, inputValue)
+          : inputValue;
 
       let currentMessage = this.createRuntimeMessage({
         inputNodeId,
@@ -1112,6 +1254,17 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
           try {
             const nextMessage = this.executeFunctionStep(step, currentMessage);
             if (nextMessage === null) {
+              await this.publishRuntimeDebugEvent(deviceMac, {
+                code: 'FUNCTION_RETURNED_NULL',
+                message:
+                  'Function node returned null/undefined, so this runtime path was stopped.',
+                severity: 'info',
+                flowId,
+                nodeId: step.id,
+                stepType: step.stepType,
+                moduleId: step.moduleId,
+                topic,
+              });
               pathStopped = true;
               break;
             }
@@ -1120,6 +1273,31 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
             this.logger.warn(
               `Function node ${step.id ?? 'unknown'} failed: ${(error as Error).message}`
             );
+
+            const functionNodeId = String(step.id ?? 'unknown');
+            await this.mqttService.publish(
+              this.buildFunctionErrorTopic(deviceMac, functionNodeId),
+              {
+                code: 'FUNCTION_EXECUTION_FAILED',
+                message: (error as Error).message,
+                flowId,
+                nodeId: functionNodeId,
+                moduleId: step.moduleId,
+                inputTopic: topic,
+                timestamp: new Date().toISOString(),
+              }
+            );
+
+            await this.publishRuntimeDebugEvent(deviceMac, {
+              code: 'FUNCTION_EXECUTION_FAILED',
+              message: (error as Error).message,
+              severity: 'error',
+              flowId,
+              nodeId: step.id,
+              stepType: step.stepType,
+              moduleId: step.moduleId,
+              topic,
+            });
             pathStopped = true;
             break;
           }
@@ -1142,6 +1320,21 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
           this.logger.warn(
             `Output step ${step.id ?? 'unknown'} skipped because payload is not a numeric, boolean, or numeric string value.`
           );
+          await this.publishRuntimeDebugEvent(deviceMac, {
+            code: 'OUTPUT_VALUE_INVALID',
+            message:
+              'Output step skipped because payload is not numeric/boolean or a numeric string.',
+            severity: 'warn',
+            flowId,
+            nodeId: step.id,
+            stepType: step.stepType,
+            moduleId: step.moduleId,
+            topic,
+            details: {
+              outputType: step.targetModuleType,
+              payload: this.summarizePayload(currentMessage.payload),
+            },
+          });
           continue;
         }
 
@@ -1169,6 +1362,14 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       this.logger.debug(
         `No matching logic step for input nodeId=${inputNodeId} in flowId=${flowId}`
       );
+      await this.publishRuntimeDebugEvent(deviceMac, {
+        code: 'NO_MATCHING_PATH',
+        message: 'No runtime path matched this input node.',
+        severity: 'warn',
+        flowId,
+        nodeId: inputNodeId,
+        topic,
+      });
     }
 
     this.logger.debug(

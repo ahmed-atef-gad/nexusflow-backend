@@ -159,6 +159,11 @@ export class CreateEdgeDto {
   @IsOptional()
   @IsBoolean()
   animated?: boolean;
+
+  @ApiProperty({ description: 'Is selected', required: false })
+  @IsOptional()
+  @IsBoolean()
+  selected?: boolean;
 }
 
 export class ViewportDto {

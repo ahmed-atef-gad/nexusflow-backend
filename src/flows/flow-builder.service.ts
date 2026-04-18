@@ -159,6 +159,8 @@ export type TopicsData = {
   commandTopic?: string;
   resetWifiTopic?: string;
   instantExecutionTopic?: string;
+  functionErrorTopicPattern?: string;
+  logicDebugTopic?: string;
 };
 
 @Injectable()
@@ -945,6 +947,12 @@ export class FlowBuilderService {
       instantExecutionTopic: resolvedMac
         ? `esp/${resolvedMac}/instant`
         : 'esp/instant',
+      functionErrorTopicPattern: resolvedMac
+        ? `/devices/${resolvedMac}/logic/error/+`
+        : undefined,
+      logicDebugTopic: resolvedMac
+        ? `/devices/${resolvedMac}/logic/debug`
+        : undefined,
     };
   }
 
