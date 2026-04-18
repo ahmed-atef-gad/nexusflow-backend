@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AuthModule } from 'src/auth/auth.module';
+import { UsersModule } from 'src/users/users.module';
 import { AlertEvent, AlertEventSchema } from './schemas/alert-event.schema';
 import { AlertPolicy, AlertPolicySchema } from './schemas/alert-policy.schema';
 import { AlertRule, AlertRuleSchema } from './schemas/alert-rule.schema';
@@ -18,6 +19,7 @@ import {
 @Module({
   imports: [
     AuthModule,
+    UsersModule,
     MongooseModule.forFeature([
       { name: NotificationDeviceToken.name, schema: NotificationDeviceTokenSchema },
       { name: AlertEvent.name, schema: AlertEventSchema },
