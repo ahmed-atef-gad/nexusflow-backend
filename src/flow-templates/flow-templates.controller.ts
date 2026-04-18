@@ -35,14 +35,13 @@ import { UpdateFlowTemplateDto } from './dto/update-flow-template.dto';
 import { FlowTemplatesService } from './flow-templates.service';
 
 @ApiTags('Flow Templates')
-@ApiCookieAuth('jwt')
-@UseGuards(AuthGuard)
 @Controller('flow-templates')
 export class FlowTemplatesController {
   constructor(private readonly flowTemplatesService: FlowTemplatesService) {}
 
   @Post()
-  @UseGuards(RolesGuard)
+  @UseGuards(AuthGuard, RolesGuard)
+  @ApiCookieAuth('jwt')
   @Roles(Role.Admin)
   @ApiOperation({ summary: 'Create flow template (Admin)' })
   @ApiResponse({ status: 201, description: 'Flow template created' })
@@ -79,9 +78,6 @@ export class FlowTemplatesController {
     description: 'Case-insensitive search by template name',
     example: 'living room',
   })
-  @ApiUnauthorizedResponse({
-    description: 'Unauthorized - Invalid or missing token',
-  })
   findAll(@Query() query: PaginationQueryDto) {
     return this.flowTemplatesService.findAll(query);
   }
@@ -91,15 +87,13 @@ export class FlowTemplatesController {
   @ApiOkResponse({ description: 'Template fetched successfully' })
   @ApiBadRequestResponse({ description: 'Invalid id format' })
   @ApiNotFoundResponse({ description: 'Template not found' })
-  @ApiUnauthorizedResponse({
-    description: 'Unauthorized - Invalid or missing token',
-  })
   findOne(@Param('id') id: string) {
     return this.flowTemplatesService.findOne(id);
   }
 
   @Patch(':id')
-  @UseGuards(RolesGuard)
+  @UseGuards(AuthGuard, RolesGuard)
+  @ApiCookieAuth('jwt')
   @Roles(Role.Admin)
   @ApiOperation({ summary: 'Update flow template (Admin)' })
   @ApiOkResponse({ description: 'Template updated successfully' })
@@ -114,7 +108,8 @@ export class FlowTemplatesController {
   }
 
   @Delete(':id')
-  @UseGuards(RolesGuard)
+  @UseGuards(AuthGuard, RolesGuard)
+  @ApiCookieAuth('jwt')
   @Roles(Role.Admin)
   @ApiOperation({ summary: 'Delete flow template (Admin)' })
   @ApiOkResponse({ description: 'Template deleted successfully' })
@@ -129,6 +124,8 @@ export class FlowTemplatesController {
   }
 
   @Post(':id/fork')
+  @UseGuards(AuthGuard)
+  @ApiCookieAuth('jwt')
   @ApiOperation({ summary: 'Fork a template into user flows' })
   @ApiResponse({ status: 201, description: 'Flow forked successfully' })
   @ApiBadRequestResponse({ description: 'Invalid template id format' })
