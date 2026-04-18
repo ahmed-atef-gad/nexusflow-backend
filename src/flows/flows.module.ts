@@ -50,6 +50,6 @@ import { OwnerGuard } from '../gaurds/auth/owner.guard';
     RolesGuard,
     OwnerGuard,
   ],
-  exports: [FlowsService],
+  exports: [FlowsService, FlowBuilderService],
 })
 export class FlowsModule {}
