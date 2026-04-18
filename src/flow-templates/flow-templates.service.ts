@@ -6,8 +6,10 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { isValidObjectId, Model } from 'mongoose';
 import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
+import { FlowBuilderService } from 'src/flows/flow-builder.service';
 import { FlowsService } from 'src/flows/flows.service';
 import { Flow } from 'src/flows/schemas/flow.schema';
+import { Node } from 'src/flows/schemas/node.schema';
 import { CreateFlowTemplateDto } from './dto/create-flow-template.dto';
 import { UpdateFlowTemplateDto } from './dto/update-flow-template.dto';
 import {
@@ -20,6 +22,7 @@ export class FlowTemplatesService {
   constructor(
     @InjectModel(FlowTemplate.name)
     private readonly flowTemplateModel: Model<FlowTemplateDocument>,
+    private readonly flowBuilderService: FlowBuilderService,
     private readonly flowsService: FlowsService
   ) {}
 
@@ -39,12 +42,52 @@ export class FlowTemplatesService {
     );
   }
 
+  private resetNodeDiagnostics(nodes: Node[] | undefined): Node[] {
+    if (!Array.isArray(nodes) || !nodes.length) {
+      return [];
+    }
+
+    return nodes.map((node) => {
+      const currentData = (node.data ?? {}) as unknown as Record<
+        string,
+        unknown
+      >;
+      const nextData: Record<string, unknown> = {
+        ...currentData,
+      };
+
+      delete nextData.warnings;
+      delete nextData.errors;
+
+      return {
+        ...node,
+        data: nextData as unknown as typeof node.data,
+      };
+    });
+  }
+
+  private validateTemplateGraph(nodes: Node[], edges: Flow['edges']): Node[] {
+    const requestNodes = this.resetNodeDiagnostics(nodes);
+
+    this.flowBuilderService.validateFlowStructure(requestNodes, edges);
+    this.flowBuilderService.buildSetupFromNodes(requestNodes);
+    this.flowBuilderService.buildLogicCommandsFromGraph(requestNodes, edges);
+
+    return requestNodes;
+  }
+
   async create(dto: CreateFlowTemplateDto, adminId: string) {
+    const validatedNodes = this.validateTemplateGraph(
+      dto.nodes as unknown as Node[],
+      dto.edges as unknown as Flow['edges']
+    );
+
     const createdTemplate = new this.flowTemplateModel({
       ...dto,
       name: dto.name.trim(),
       description: dto.description?.trim() ?? '',
       tags: this.sanitizeTags(dto.tags),
+      nodes: validatedNodes,
       createdBy: adminId,
     });
 
@@ -113,6 +156,12 @@ export class FlowTemplatesService {
 
     const updatePayload: UpdateFlowTemplateDto = { ...dto };
 
+    if ((dto.nodes && !dto.edges) || (!dto.nodes && dto.edges)) {
+      throw new BadRequestException(
+        'nodes and edges must be provided together'
+      );
+    }
+
     if (dto.name !== undefined) {
       updatePayload.name = dto.name.trim();
     }
@@ -123,6 +172,13 @@ export class FlowTemplatesService {
 
     if (dto.tags !== undefined) {
       updatePayload.tags = this.sanitizeTags(dto.tags);
+    }
+
+    if (dto.nodes && dto.edges) {
+      updatePayload.nodes = this.validateTemplateGraph(
+        dto.nodes as unknown as Node[],
+        dto.edges as unknown as Flow['edges']
+      ) as unknown as UpdateFlowTemplateDto['nodes'];
     }
 
     const updatedTemplate = await this.flowTemplateModel

@@ -1,19 +1,19 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ArrayMinSize, IsArray, IsOptional, IsString } from 'class-validator';
-import { Edge } from 'src/flows/schemas/edge.schema';
-import { Node } from 'src/flows/schemas/node.schema';
-import { Viewport } from 'src/flows/schemas/viewport.schema';
+import { IsArray, IsOptional, IsString, MaxLength } from 'class-validator';
+import { CreateFlowDto } from 'src/flows/dto/create-flow.dto';
 
-export class CreateFlowTemplateDto {
+export class CreateFlowTemplateDto extends CreateFlowDto {
   @ApiProperty({ example: 'Smart Home Lighting Starter' })
   @IsString()
-  name: string;
+  @MaxLength(120)
+  declare name: string;
 
   @ApiPropertyOptional({
     example: 'Template flow for motion-triggered home lighting.',
   })
   @IsOptional()
   @IsString()
+  @MaxLength(1000)
   description?: string;
 
   @ApiPropertyOptional({
@@ -23,18 +23,6 @@ export class CreateFlowTemplateDto {
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
+  @MaxLength(40, { each: true })
   tags?: string[];
-
-  @ApiProperty({ type: [Node], description: 'Flow nodes to store in the template' })
-  @IsArray()
-  @ArrayMinSize(1)
-  nodes: Node[];
-
-  @ApiProperty({ type: [Edge], description: 'Flow edges to store in the template' })
-  @IsArray()
-  edges: Edge[];
-
-  @ApiPropertyOptional({ type: Viewport })
-  @IsOptional()
-  viewport?: Viewport;
 }
