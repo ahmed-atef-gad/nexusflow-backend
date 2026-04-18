@@ -37,6 +37,9 @@ export class NotificationDeviceToken {
 
   @Prop()
   locale?: string;
+
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export const NotificationDeviceTokenSchema = SchemaFactory.createForClass(
