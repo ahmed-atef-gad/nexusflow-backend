@@ -128,6 +128,48 @@ export class FlowsService {
     });
   }
 
+  private attachFunctionTopicsToNodes(
+    nodes: Flow['nodes'] | undefined,
+    deviceMac?: string | null
+  ): Flow['nodes'] {
+    if (!Array.isArray(nodes) || !nodes.length) {
+      return [];
+    }
+
+    const normalizedMac = deviceMac?.trim().toUpperCase();
+
+    return nodes.map((node) => {
+      const currentData = (node.data ?? {}) as unknown as Record<
+        string,
+        unknown
+      >;
+
+      if (currentData.moduleId !== 'logic-function') {
+        return {
+          ...node,
+          data: currentData as unknown as typeof node.data,
+        };
+      }
+
+      const nextData: Record<string, unknown> = {
+        ...currentData,
+      };
+
+      if (normalizedMac) {
+        nextData.errorTopic = `/devices/${normalizedMac}/logic/error/${node.id}`;
+        nextData.debugTopic = `/devices/${normalizedMac}/logic/debug/${node.id}`;
+      } else {
+        delete nextData.errorTopic;
+        delete nextData.debugTopic;
+      }
+
+      return {
+        ...node,
+        data: nextData as unknown as typeof node.data,
+      };
+    });
+  }
+
   async create(flow: Flow, userId: string): Promise<FlowWithUiAndWarnings> {
     const createdFlow = new this.flowModel({
       ...flow,
@@ -248,7 +290,22 @@ export class FlowsService {
       throw new NotFoundException(`Flow with ID ${id} not found`);
     }
 
-    return flow.toObject() as Flow;
+    let deviceMac: string | null = null;
+    try {
+      const device = await this.devicesService.findByActiveFlowId(id);
+      deviceMac = typeof device?.macAddress === 'string' ? device.macAddress : null;
+    } catch (error) {
+      if (!(error instanceof NotFoundException)) {
+        throw error;
+      }
+      deviceMac = null;
+    }
+
+    const flowObject = flow.toObject() as Flow;
+    return {
+      ...flowObject,
+      nodes: this.attachFunctionTopicsToNodes(flowObject.nodes, deviceMac),
+    } as Flow;
   }
 
   async findFlowById(id: string): Promise<any> {
