@@ -15,6 +15,8 @@ export class NodeData {
   @ApiProperty({ required: false }) @Prop() color?: string;
   @ApiProperty({ required: false }) @Prop() category?: string;
   @ApiProperty({ required: false }) @Prop() notes?: string;
+  @ApiProperty({ required: false }) @Prop() errorTopic?: string;
+  @ApiProperty({ required: false }) @Prop() debugTopic?: string;
   @ApiProperty({ required: false })
   @Prop({ type: MongooseSchema.Types.Mixed })
   options?: any;

@@ -84,6 +84,16 @@ export class NodeDataDto {
   @IsString()
   notes?: string;
 
+  @ApiProperty({ description: 'Function error topic', required: false })
+  @IsOptional()
+  @IsString()
+  errorTopic?: string;
+
+  @ApiProperty({ description: 'Function debug topic', required: false })
+  @IsOptional()
+  @IsString()
+  debugTopic?: string;
+
   @ApiProperty({ description: 'Node options', required: false })
   @IsOptional()
   options?: any;
@@ -93,7 +103,11 @@ export class NodeDataDto {
   @IsObject()
   variables?: Record<string, string | number | boolean>;
 
-  @ApiProperty({ description: 'Node warnings', required: false, type: [Object] })
+  @ApiProperty({
+    description: 'Node warnings',
+    required: false,
+    type: [Object],
+  })
   @IsOptional()
   warnings?: unknown[];
 
