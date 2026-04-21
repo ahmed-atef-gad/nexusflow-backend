@@ -1,7 +1,12 @@
-import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { FilterQuery, Model, Types } from 'mongoose';
 import { App, cert, getApps, initializeApp } from 'firebase-admin/app';
 import {
   BatchResponse,
@@ -12,6 +17,12 @@ import {
 import { RegisterNotificationDeviceDto } from './dto/register-notification-device.dto';
 import { TriggerAlertDto } from './dto/trigger-alert.dto';
 import { AlertEvent, AlertEventDocument } from './schemas/alert-event.schema';
+import { AlertHistoryQueryDto } from './dto/alert-history-query.dto';
+import {
+  NotificationPreference,
+  NotificationPreferenceDocument,
+} from './schemas/notification-preference.schema';
+import { AlertRule, AlertRuleDocument } from './schemas/alert-rule.schema';
 import {
   NotificationDeviceToken,
   NotificationDeviceTokenDocument,
@@ -50,6 +61,25 @@ type TriggerAlertResult = {
   };
 };
 
+type AlertHistoryCursor = {
+  occurredAt: string;
+  id: string;
+};
+
+type AlertHistoryItem = {
+  id: string;
+  projectId: string;
+  sensorType: string;
+  severity: AlertSeverity;
+  title: string;
+  body: string;
+  value?: number;
+  threshold?: number;
+  ruleId?: string;
+  occurredAt: Date;
+  createdAt?: Date;
+};
+
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
@@ -66,6 +96,10 @@ export class NotificationsService {
     private readonly notificationDeviceTokenModel: Model<NotificationDeviceTokenDocument>,
     @InjectModel(AlertEvent.name)
     private readonly alertEventModel: Model<AlertEventDocument>,
+    @InjectModel(NotificationPreference.name)
+    private readonly notificationPreferenceModel: Model<NotificationPreferenceDocument>,
+    @InjectModel(AlertRule.name)
+    private readonly alertRuleModel: Model<AlertRuleDocument>,
     private readonly configService: ConfigService,
   ) {}
 
@@ -190,6 +224,60 @@ export class NotificationsService {
         createdAt: createdEvent.createdAt,
       },
       delivery,
+    };
+  }
+
+  async getAlertHistory(
+    userId: string,
+    projectId: string,
+    query: AlertHistoryQueryDto,
+  ): Promise<{ items: AlertHistoryItem[]; nextCursor: string | null }> {
+    await this.assertUserCanAccessProject(userId, projectId);
+
+    const parsedLimit = Number(query.limit);
+    const limit =
+      Number.isFinite(parsedLimit) && parsedLimit > 0
+        ? Math.min(parsedLimit, 100)
+        : 50;
+
+    const cursor = this.decodeHistoryCursor(query.cursor);
+    const filter = this.buildHistoryFilter(projectId, cursor);
+
+    const events = await this.alertEventModel
+      .find(filter)
+      .sort({ occurredAt: -1, _id: -1 })
+      .limit(limit + 1)
+      .lean()
+      .exec();
+
+    const hasMore = events.length > limit;
+    const selected = hasMore ? events.slice(0, limit) : events;
+
+    const items = selected.map((event) => ({
+      id: String(event._id),
+      projectId: event.projectId,
+      sensorType: event.sensorType,
+      severity: event.severity,
+      title: event.title,
+      body: event.body,
+      value: event.value,
+      threshold: event.threshold,
+      ruleId: event.ruleId,
+      occurredAt: event.occurredAt,
+      createdAt: event.createdAt,
+    }));
+
+    const nextCursor =
+      hasMore && selected.length
+        ? this.encodeHistoryCursor({
+            occurredAt: selected[selected.length - 1].occurredAt.toISOString(),
+            id: String(selected[selected.length - 1]._id),
+          })
+        : null;
+
+    return {
+      items,
+      nextCursor,
     };
   }
 
@@ -361,6 +449,86 @@ export class NotificationsService {
     this.logger.warn(
       `Marked ${tokens.length} FCM tokens inactive due to Firebase error: ${errorCode}`,
     );
+  }
+
+  private async assertUserCanAccessProject(
+    userId: string,
+    projectId: string,
+  ): Promise<void> {
+    const [hasDeviceToken, hasPreference, hasRule] = await Promise.all([
+      this.notificationDeviceTokenModel.exists({ userId, projectId }),
+      this.notificationPreferenceModel.exists({ userId, projectId }),
+      this.alertRuleModel.exists({ userId, projectId }),
+    ]);
+
+    if (!hasDeviceToken && !hasPreference && !hasRule) {
+      throw new ForbiddenException(
+        'You are not allowed to access this project alert history.',
+      );
+    }
+  }
+
+  private buildHistoryFilter(
+    projectId: string,
+    cursor: AlertHistoryCursor | null,
+  ): FilterQuery<AlertEventDocument> {
+    if (!cursor) {
+      return { projectId };
+    }
+
+    const occurredAt = new Date(cursor.occurredAt);
+    const cursorId = this.parseObjectId(cursor.id);
+    if (!cursorId || Number.isNaN(occurredAt.getTime())) {
+      return { projectId };
+    }
+
+    return {
+      projectId,
+      $or: [
+        { occurredAt: { $lt: occurredAt } },
+        { occurredAt, _id: { $lt: cursorId } },
+      ],
+    };
+  }
+
+  private parseObjectId(value: string): Types.ObjectId | null {
+    if (!Types.ObjectId.isValid(value)) {
+      return null;
+    }
+    return new Types.ObjectId(value);
+  }
+
+  private decodeHistoryCursor(cursor?: string): AlertHistoryCursor | null {
+    if (!cursor) {
+      return null;
+    }
+
+    try {
+      const decoded = Buffer.from(cursor, 'base64').toString('utf8');
+      const parsed: unknown = JSON.parse(decoded);
+      if (!parsed || typeof parsed !== 'object') {
+        return null;
+      }
+
+      const candidate = parsed as Partial<AlertHistoryCursor>;
+      if (
+        typeof candidate.id !== 'string' ||
+        typeof candidate.occurredAt !== 'string'
+      ) {
+        return null;
+      }
+
+      return {
+        id: candidate.id,
+        occurredAt: candidate.occurredAt,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private encodeHistoryCursor(cursor: AlertHistoryCursor): string {
+    return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64');
   }
 
   private buildDefaultAlertTitle(input: TriggerAlertDto): string {

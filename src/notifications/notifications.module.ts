@@ -7,6 +7,7 @@ import { AlertPolicy, AlertPolicySchema } from './schemas/alert-policy.schema';
 import { AlertRule, AlertRuleSchema } from './schemas/alert-rule.schema';
 import { NotificationsInternalController } from './notifications-internal.controller';
 import { NotificationsController } from './notifications.controller';
+import { ProjectAlertHistoryController } from './project-alert-history.controller';
 import { NotificationsService } from './notifications.service';
 import {
   NotificationDeviceToken,
@@ -29,7 +30,11 @@ import {
       { name: AlertRule.name, schema: AlertRuleSchema },
     ]),
   ],
-  controllers: [NotificationsController, NotificationsInternalController],
+  controllers: [
+    NotificationsController,
+    NotificationsInternalController,
+    ProjectAlertHistoryController,
+  ],
   providers: [NotificationsService],
   exports: [MongooseModule, NotificationsService],
 })
