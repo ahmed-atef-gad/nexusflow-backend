@@ -22,6 +22,7 @@ import {
 import { getUserIdFromRequest, type AuthenticatedRequest } from 'src/auth/utils/auth.util';
 import { AuthGuard } from 'src/gaurds/auth/auth.guard';
 import { CreateAlertRuleDto } from './dto/create-alert-rule.dto';
+import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
 import { UpdateAlertRuleDto } from './dto/update-alert-rule.dto';
 import { UpsertAlertPoliciesDto } from './dto/upsert-alert-policies.dto';
 import { NotificationsService } from './notifications.service';
@@ -32,6 +33,49 @@ import { NotificationsService } from './notifications.service';
 @Controller('v1/projects/:projectId')
 export class ProjectAlertConfigController {
   constructor(private readonly notificationsService: NotificationsService) {}
+
+  @ApiOperation({
+    summary: 'Get notification preferences for a project',
+  })
+  @ApiParam({ name: 'projectId', description: 'Project identifier' })
+  @ApiResponse({ status: 200, description: 'Project notification preferences' })
+  @ApiUnauthorizedResponse({
+    description: 'Unauthorized - Invalid or missing user token',
+  })
+  @Get('notification-preferences')
+  async getNotificationPreferences(
+    @Req() req: AuthenticatedRequest,
+    @Param('projectId') projectId: string,
+  ) {
+    const userId = getUserIdFromRequest(req);
+    return this.notificationsService.getNotificationPreferences(userId, projectId);
+  }
+
+  @ApiOperation({
+    summary: 'Update notification preferences for a project',
+  })
+  @ApiParam({ name: 'projectId', description: 'Project identifier' })
+  @ApiBody({ type: UpdateNotificationPreferencesDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Notification preferences updated successfully',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'Unauthorized - Invalid or missing user token',
+  })
+  @Put('notification-preferences')
+  async updateNotificationPreferences(
+    @Req() req: AuthenticatedRequest,
+    @Param('projectId') projectId: string,
+    @Body() body: UpdateNotificationPreferencesDto,
+  ) {
+    const userId = getUserIdFromRequest(req);
+    return this.notificationsService.updateNotificationPreferences(
+      userId,
+      projectId,
+      body,
+    );
+  }
 
   @ApiOperation({
     summary: 'Get alert policies for a project',

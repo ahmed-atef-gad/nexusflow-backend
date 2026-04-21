@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   InternalServerErrorException,
@@ -28,8 +29,13 @@ import {
   AlertRuleDocument,
 } from './schemas/alert-rule.schema';
 import { Flow, FlowDocument } from 'src/flows/schemas/flow.schema';
+import {
+  NotificationPreference,
+  NotificationPreferenceDocument,
+} from './schemas/notification-preference.schema';
 import { UpsertAlertPoliciesDto } from './dto/upsert-alert-policies.dto';
 import { CreateAlertRuleDto } from './dto/create-alert-rule.dto';
+import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
 import { UpdateAlertRuleDto } from './dto/update-alert-rule.dto';
 import {
   NotificationDeviceToken,
@@ -119,6 +125,8 @@ export class NotificationsService {
     private readonly notificationDeviceTokenModel: Model<NotificationDeviceTokenDocument>,
     @InjectModel(AlertEvent.name)
     private readonly alertEventModel: Model<AlertEventDocument>,
+    @InjectModel(NotificationPreference.name)
+    private readonly notificationPreferenceModel: Model<NotificationPreferenceDocument>,
     @InjectModel(AlertPolicy.name)
     private readonly alertPolicyModel: Model<AlertPolicyDocument>,
     @InjectModel(AlertRule.name)
@@ -309,6 +317,181 @@ export class NotificationsService {
       items,
       nextCursor,
     };
+  }
+
+  async getNotificationPreferences(userId: string, projectId: string): Promise<{
+    items: Array<{
+      sensorType: string;
+      enabled: boolean;
+      threshold?: number;
+      required: boolean;
+      thresholdRequired: boolean;
+      defaultEnabled: boolean;
+      defaultSeverity: AlertSeverity;
+    }>;
+  }> {
+    await this.assertUserCanAccessProject(userId, projectId);
+
+    const [policies, existingPreferences] = await Promise.all([
+      this.alertPolicyModel
+        .find({ projectId, isActive: true })
+        .sort({ sensorType: 1 })
+        .lean()
+        .exec(),
+      this.notificationPreferenceModel.findOne({ projectId, userId }).lean().exec(),
+    ]);
+
+    const preferenceMap = new Map<
+      string,
+      { enabled: boolean; threshold?: number }
+    >();
+    for (const preference of existingPreferences?.sensors ?? []) {
+      const sensorType = this.normalizeSensorType(preference.sensorType);
+      if (!sensorType) {
+        continue;
+      }
+      preferenceMap.set(sensorType, {
+        enabled: preference.enabled,
+        threshold: preference.threshold,
+      });
+    }
+
+    return {
+      items: policies.map((policy) => {
+        const sensorType = this.normalizeSensorType(policy.sensorType);
+        const preference = preferenceMap.get(sensorType);
+        const enabled = policy.required
+          ? true
+          : preference?.enabled ?? policy.defaultEnabled;
+
+        return {
+          sensorType,
+          enabled,
+          threshold: preference?.threshold,
+          required: policy.required,
+          thresholdRequired: policy.thresholdRequired,
+          defaultEnabled: policy.defaultEnabled,
+          defaultSeverity: policy.defaultSeverity,
+        };
+      }),
+    };
+  }
+
+  async updateNotificationPreferences(
+    userId: string,
+    projectId: string,
+    dto: UpdateNotificationPreferencesDto,
+  ): Promise<{
+    items: Array<{
+      sensorType: string;
+      enabled: boolean;
+      threshold?: number;
+      required: boolean;
+      thresholdRequired: boolean;
+      defaultEnabled: boolean;
+      defaultSeverity: AlertSeverity;
+    }>;
+  }> {
+    await this.assertUserCanAccessProject(userId, projectId);
+
+    const [policies, existingPreferences] = await Promise.all([
+      this.alertPolicyModel
+        .find({ projectId, isActive: true })
+        .sort({ sensorType: 1 })
+        .lean()
+        .exec(),
+      this.notificationPreferenceModel.findOne({ projectId, userId }).lean().exec(),
+    ]);
+
+    if (!policies.length) {
+      throw new BadRequestException(
+        'No alert policies configured for this project.',
+      );
+    }
+
+    const policyMap = new Map(
+      policies.map((policy) => [this.normalizeSensorType(policy.sensorType), policy]),
+    );
+    const existingPreferenceMap = new Map<
+      string,
+      { enabled: boolean; threshold?: number }
+    >();
+    for (const preference of existingPreferences?.sensors ?? []) {
+      const sensorType = this.normalizeSensorType(preference.sensorType);
+      if (!sensorType) {
+        continue;
+      }
+      existingPreferenceMap.set(sensorType, {
+        enabled: preference.enabled,
+        threshold: preference.threshold,
+      });
+    }
+
+    const normalizedInput = new Map<
+      string,
+      { enabled: boolean; threshold?: number }
+    >();
+    for (const sensorPreference of dto.sensors ?? []) {
+      const sensorType = this.normalizeSensorType(sensorPreference.sensorType);
+      if (!sensorType) {
+        continue;
+      }
+
+      const policy = policyMap.get(sensorType);
+      if (!policy) {
+        throw new BadRequestException(
+          `Unknown sensorType "${sensorPreference.sensorType}" for this project.`,
+        );
+      }
+
+      if (
+        policy.thresholdRequired &&
+        sensorPreference.threshold === undefined &&
+        existingPreferenceMap.get(sensorType)?.threshold === undefined
+      ) {
+        throw new BadRequestException(
+          `threshold is required for sensorType "${sensorType}".`,
+        );
+      }
+
+      normalizedInput.set(sensorType, {
+        enabled: policy.required ? true : sensorPreference.enabled,
+        threshold:
+          sensorPreference.threshold !== undefined
+            ? sensorPreference.threshold
+            : existingPreferenceMap.get(sensorType)?.threshold,
+      });
+    }
+
+    for (const policy of policies) {
+      const sensorType = this.normalizeSensorType(policy.sensorType);
+      if (normalizedInput.has(sensorType)) {
+        continue;
+      }
+
+      if (policy.required) {
+        normalizedInput.set(sensorType, {
+          enabled: true,
+          threshold: existingPreferenceMap.get(sensorType)?.threshold,
+        });
+      }
+    }
+
+    const mergedSensors = Array.from(normalizedInput.entries())
+      .map(([sensorType, value]) => ({
+        sensorType,
+        enabled: value.enabled,
+        threshold: value.threshold,
+      }))
+      .sort((left, right) => left.sensorType.localeCompare(right.sensorType));
+
+    await this.notificationPreferenceModel.findOneAndUpdate(
+      { projectId, userId },
+      { $set: { sensors: mergedSensors } },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    );
+
+    return this.getNotificationPreferences(userId, projectId);
   }
 
   async getAlertPolicies(userId: string, projectId: string): Promise<{
