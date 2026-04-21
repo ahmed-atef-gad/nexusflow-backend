@@ -12,6 +12,7 @@ import { MqttService } from './mqtt.service';
 import { InjectModel } from '@nestjs/mongoose';
 import { Logic, LogicDocument } from '../flows/schemas/logic.schema';
 import { Model } from 'mongoose';
+import { NotificationsService } from 'src/notifications/notifications.service';
 import * as vm from 'node:vm';
 import {
   DEFAULT_FUNCTION_NODE_MAX_AST_NODES,
@@ -86,6 +87,8 @@ type MqttPacketContext = {
 };
 
 type InputPayload = {
+  sensorType?: string;
+  type?: string;
   result?: number | boolean;
   value?: number;
   digital?: number | boolean;
@@ -134,6 +137,7 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     private readonly devicesService: DevicesService,
     private readonly usersService: UsersService,
     private readonly mqttService: MqttService,
+    private readonly notificationsService: NotificationsService,
     @InjectModel(Logic.name)
     private readonly logicModel: Model<LogicDocument>,
     private readonly configService: ConfigService
@@ -727,6 +731,138 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  private extractAlertSensorType(
+    rawPayload: InputPayload | null,
+    inputNodeId: string
+  ): string {
+    if (typeof rawPayload?.sensorType === 'string' && rawPayload.sensorType.trim()) {
+      return rawPayload.sensorType.trim();
+    }
+
+    if (typeof rawPayload?.type === 'string' && rawPayload.type.trim()) {
+      return rawPayload.type.trim();
+    }
+
+    return inputNodeId;
+  }
+
+  private extractAlertNumericValue(
+    rawPayload: InputPayload | null,
+    normalizedInput: number | null
+  ): number | null {
+    if (!rawPayload) {
+      return normalizedInput;
+    }
+
+    if (typeof rawPayload.value === 'number' && Number.isFinite(rawPayload.value)) {
+      return rawPayload.value;
+    }
+    if (
+      typeof rawPayload.result === 'number' &&
+      Number.isFinite(rawPayload.result)
+    ) {
+      return rawPayload.result;
+    }
+    if (typeof rawPayload.raw === 'number' && Number.isFinite(rawPayload.raw)) {
+      return rawPayload.raw;
+    }
+    if (
+      typeof rawPayload.analog === 'number' &&
+      Number.isFinite(rawPayload.analog)
+    ) {
+      return rawPayload.analog;
+    }
+    if (
+      typeof rawPayload.percent === 'number' &&
+      Number.isFinite(rawPayload.percent)
+    ) {
+      return rawPayload.percent;
+    }
+    if (
+      typeof rawPayload.temperature === 'number' &&
+      Number.isFinite(rawPayload.temperature)
+    ) {
+      return rawPayload.temperature;
+    }
+    if (
+      typeof rawPayload.humidity === 'number' &&
+      Number.isFinite(rawPayload.humidity)
+    ) {
+      return rawPayload.humidity;
+    }
+    if (
+      typeof rawPayload.distance_cm === 'number' &&
+      Number.isFinite(rawPayload.distance_cm)
+    ) {
+      return rawPayload.distance_cm;
+    }
+    if (
+      typeof rawPayload.digital === 'number' &&
+      Number.isFinite(rawPayload.digital)
+    ) {
+      return rawPayload.digital ? 1 : 0;
+    }
+    if (
+      typeof rawPayload.motion === 'number' &&
+      Number.isFinite(rawPayload.motion)
+    ) {
+      return rawPayload.motion ? 1 : 0;
+    }
+    if (typeof rawPayload.digital === 'boolean') {
+      return rawPayload.digital ? 1 : 0;
+    }
+    if (typeof rawPayload.motion === 'boolean') {
+      return rawPayload.motion ? 1 : 0;
+    }
+    if (typeof rawPayload.result === 'boolean') {
+      return rawPayload.result ? 1 : 0;
+    }
+
+    return normalizedInput;
+  }
+
+  private async evaluateAlertRulesForInput(params: {
+    flowId: string;
+    inputNodeId: string;
+    topic: string;
+    rawPayload: InputPayload | null;
+    normalizedInput: number | null;
+    deviceMac: string;
+    clientId: string;
+  }): Promise<void> {
+    const sensorType = this.extractAlertSensorType(
+      params.rawPayload,
+      params.inputNodeId
+    );
+    const readingValue = this.extractAlertNumericValue(
+      params.rawPayload,
+      params.normalizedInput
+    );
+
+    if (readingValue === null || !Number.isFinite(readingValue)) {
+      return;
+    }
+
+    const outcome = await this.notificationsService.processSensorReading({
+      // Current runtime has no separate project entity; we scope alerts by active flow id.
+      projectId: params.flowId,
+      sensorType,
+      value: readingValue,
+      metadata: {
+        topic: params.topic,
+        inputNodeId: params.inputNodeId,
+        deviceMac: params.deviceMac,
+        clientId: params.clientId,
+      },
+    });
+
+    if (outcome.triggeredRules > 0) {
+      this.logger.log(
+        `Triggered ${outcome.triggeredRules} alert rule(s) for flowId=${params.flowId} sensorType=${sensorType} value=${readingValue}`
+      );
+    }
+  }
+
   private isGpioRuntimeCommand(command: RuntimeCommand): boolean {
     return (
       command.stepType === 'output' &&
@@ -987,6 +1123,22 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
         `Skip GPIO logic: no linked flow for device ${deviceMac}`
       );
       return;
+    }
+
+    try {
+      await this.evaluateAlertRulesForInput({
+        flowId,
+        inputNodeId,
+        topic,
+        rawPayload,
+        normalizedInput: inputValue,
+        deviceMac: this.normalizeMacAddress(deviceMac),
+        clientId: client?.id?.toString?.() ?? 'unknown',
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to evaluate alert rules for topic=${topic}: ${(error as Error).message}`
+      );
     }
 
     const flows = await this.getLogicFlowsForFlowId(flowId, deviceMac);

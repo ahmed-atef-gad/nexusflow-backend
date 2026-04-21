@@ -38,6 +38,19 @@ type SendProjectAlertInput = {
   severity?: AlertSeverity;
 };
 
+type ProcessSensorReadingInput = {
+  projectId: string;
+  sensorType: string;
+  value: number;
+  occurredAt?: Date;
+  metadata?: Record<string, string | number | boolean>;
+};
+
+type AlertRuleActionPayload = {
+  title?: string;
+  body?: string;
+};
+
 type TriggerAlertResult = {
   event: {
     id: string;
@@ -90,6 +103,8 @@ export class NotificationsService {
     'messaging/invalid-registration-token',
     'UNREGISTERED',
   ]);
+  private readonly ruleCooldownMs: number;
+  private readonly recentRuleTriggers = new Map<string, number>();
 
   constructor(
     @InjectModel(NotificationDeviceToken.name)
@@ -101,7 +116,12 @@ export class NotificationsService {
     @InjectModel(AlertRule.name)
     private readonly alertRuleModel: Model<AlertRuleDocument>,
     private readonly configService: ConfigService,
-  ) {}
+  ) {
+    this.ruleCooldownMs = this.readPositiveConfigNumber(
+      'ALERT_RULE_COOLDOWN_MS',
+      60000,
+    );
+  }
 
   async registerDeviceToken(
     userId: string,
@@ -279,6 +299,67 @@ export class NotificationsService {
       items,
       nextCursor,
     };
+  }
+
+  async processSensorReading(input: ProcessSensorReadingInput): Promise<{
+    evaluatedRules: number;
+    triggeredRules: number;
+  }> {
+    const normalizedSensorType = this.normalizeSensorType(input.sensorType);
+    if (!normalizedSensorType || !Number.isFinite(input.value)) {
+      return { evaluatedRules: 0, triggeredRules: 0 };
+    }
+
+    const rules = await this.alertRuleModel
+      .find({ projectId: input.projectId, enabled: true })
+      .lean()
+      .exec();
+
+    let evaluatedRules = 0;
+    let triggeredRules = 0;
+    const occurredAt = input.occurredAt ?? new Date();
+
+    for (const rule of rules) {
+      if (
+        this.normalizeSensorType(rule.sensorType) !== normalizedSensorType ||
+        typeof rule.threshold !== 'number' ||
+        !Number.isFinite(rule.threshold)
+      ) {
+        continue;
+      }
+
+      evaluatedRules++;
+      if (!this.matchesOperator(input.value, rule.operator, rule.threshold)) {
+        continue;
+      }
+
+      const cooldownKey = `${input.projectId}:${String(rule._id)}`;
+      if (!this.shouldTriggerRule(cooldownKey)) {
+        continue;
+      }
+
+      const pushAction = this.extractPushAction(rule.actions);
+      const pushPayload = this.extractPushPayload(pushAction?.payload);
+
+      await this.triggerAlert({
+        projectId: input.projectId,
+        sensorType: rule.sensorType,
+        severity: rule.severity,
+        title: pushPayload.title,
+        body: pushPayload.body,
+        value: input.value,
+        threshold: rule.threshold,
+        ruleId: String(rule._id),
+        occurredAt: occurredAt.toISOString(),
+        data: {
+          ...input.metadata,
+          source: 'mqtt',
+        },
+      });
+      triggeredRules++;
+    }
+
+    return { evaluatedRules, triggeredRules };
   }
 
   async sendAlertToProject(input: SendProjectAlertInput): Promise<{
@@ -548,5 +629,94 @@ export class NotificationsService {
     const thresholdPart =
       input.threshold !== undefined ? ` (threshold ${input.threshold})` : '';
     return `${input.sensorType} reported ${valuePart}${thresholdPart}.`;
+  }
+
+  private normalizeSensorType(value: string): string {
+    return (value ?? '').trim().toUpperCase();
+  }
+
+  private matchesOperator(value: number, operator: string, threshold: number): boolean {
+    switch (operator) {
+      case '>':
+        return value > threshold;
+      case '<':
+        return value < threshold;
+      case '>=':
+        return value >= threshold;
+      case '<=':
+        return value <= threshold;
+      case '==':
+        return value === threshold;
+      case '!=':
+        return value !== threshold;
+      default:
+        return false;
+    }
+  }
+
+  private shouldTriggerRule(cooldownKey: string): boolean {
+    const now = Date.now();
+    const previous = this.recentRuleTriggers.get(cooldownKey);
+    if (previous && now - previous < this.ruleCooldownMs) {
+      return false;
+    }
+
+    this.recentRuleTriggers.set(cooldownKey, now);
+    if (this.recentRuleTriggers.size > 5000) {
+      this.pruneRecentRuleTriggers(now);
+    }
+
+    return true;
+  }
+
+  private pruneRecentRuleTriggers(now: number): void {
+    const expiry = now - this.ruleCooldownMs;
+    for (const [key, value] of this.recentRuleTriggers.entries()) {
+      if (value <= expiry) {
+        this.recentRuleTriggers.delete(key);
+      }
+    }
+  }
+
+  private extractPushAction(
+    actions: unknown,
+  ): { type: 'send_push'; payload?: unknown } | null {
+    if (!Array.isArray(actions)) {
+      return null;
+    }
+
+    const action = actions.find(
+      (candidate) =>
+        candidate &&
+        typeof candidate === 'object' &&
+        (candidate as { type?: string }).type === 'send_push',
+    );
+
+    if (!action || typeof action !== 'object') {
+      return null;
+    }
+
+    return action as { type: 'send_push'; payload?: unknown };
+  }
+
+  private extractPushPayload(payload: unknown): AlertRuleActionPayload {
+    if (!payload || typeof payload !== 'object') {
+      return {};
+    }
+
+    const candidate = payload as Partial<AlertRuleActionPayload>;
+    return {
+      title: typeof candidate.title === 'string' ? candidate.title : undefined,
+      body: typeof candidate.body === 'string' ? candidate.body : undefined,
+    };
+  }
+
+  private readPositiveConfigNumber(name: string, fallback: number): number {
+    const raw = this.configService.get<string | number>(name);
+    if (raw === undefined || raw === null || raw === '') return fallback;
+
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+    return Math.trunc(parsed);
   }
 }
