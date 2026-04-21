@@ -108,6 +108,7 @@ mindmap
         src/mqtt/mqtt.module.ts
           Global module
           Embedded broker via PigeonModule
+          Imports NotificationsModule for runtime alerts
         src/mqtt/mqtt.controller.ts
           test publish endpoint
           admin active-clients endpoints
@@ -115,6 +116,36 @@ mindmap
         src/mqtt/mqtt.handlers.ts
           broker auth/authz hooks
           server-side flow runtime execution
+          evaluates alert rules on incoming sensor readings
+
+      Notifications
+        src/notifications/notifications.module.ts
+          controllers
+            notifications.controller.ts
+            notifications-internal.controller.ts
+            project-alert-config.controller.ts
+            project-alert-history.controller.ts
+          service
+            notifications.service.ts
+              FCM initialization and send
+              dead token cleanup on UNREGISTERED
+              alert history pagination
+              policy and preference enforcement
+              rule evaluation and cooldown
+          schemas
+            notification-device-token.schema.ts
+            alert-event.schema.ts
+            notification-preference.schema.ts
+            alert-policy.schema.ts
+            alert-rule.schema.ts
+          dto
+            register-notification-device.dto.ts
+            trigger-alert.dto.ts
+            alert-history-query.dto.ts
+            update-notification-preferences.dto.ts
+            upsert-alert-policies.dto.ts
+            create-alert-rule.dto.ts
+            update-alert-rule.dto.ts
 
       Pigeon MQTT Infra
         src/pigeon-mqtt
@@ -133,10 +164,13 @@ mindmap
         JWT cookie auth
         Role + ownership authorization
         device token authentication
+        Internal alerts key via INTERNAL_ALERTS_API_KEY
 
     Docs and Tooling
       docs/arch.md
       docs/repo-mind-map.md
+      docs/mind-map.md
+      docs/notifications-system.md
       docs/NexusFlow.postman_collection.json
       Testing
         unit specs under src/**/*.spec.ts
@@ -155,4 +189,5 @@ mindmap
 3. `src/auth` + `src/users` + `src/verification` -> identity and access model
 4. `src/devices` + `src/mqtt` + `src/pigeon-mqtt` -> device connectivity and broker behavior
 5. `src/flows` + `src/flow-templates` + `src/modules` -> domain logic and flow orchestration
-6. `src/firmware` -> OTA firmware lifecycle
+6. `src/notifications` -> push pipeline, rules, preferences, and history
+7. `src/firmware` -> OTA firmware lifecycle

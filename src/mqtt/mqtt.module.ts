@@ -11,6 +11,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { Logic, LogicSchema } from '../flows/schemas/logic.schema';
 import { AuthModule } from '../auth/auth.module';
 import { RolesGuard } from '../gaurds/auth/roles.guard';
+import { NotificationsModule } from 'src/notifications/notifications.module';
 
 @Global()
 @Module({
@@ -18,6 +19,7 @@ import { RolesGuard } from '../gaurds/auth/roles.guard';
     DevicesModule,
     UsersModule,
     AuthModule,
+    NotificationsModule,
     MongooseModule.forFeature([{ name: Logic.name, schema: LogicSchema }]),
     PigeonModule.forRootAsync({
       inject: [ConfigService],

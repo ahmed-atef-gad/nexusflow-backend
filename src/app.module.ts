@@ -12,6 +12,7 @@ import { MqttModule } from './mqtt/mqtt.module';
 import { DevicesModule } from './devices/devices.module';
 import { VerificationModule } from './verification/verification.module';
 import { FirmwareModule } from './firmware/firmware.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { FirmwareModule } from './firmware/firmware.module';
     DevicesModule,
     VerificationModule,
     FirmwareModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
