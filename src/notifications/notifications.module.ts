@@ -5,8 +5,10 @@ import { UsersModule } from 'src/users/users.module';
 import { AlertEvent, AlertEventSchema } from './schemas/alert-event.schema';
 import { AlertPolicy, AlertPolicySchema } from './schemas/alert-policy.schema';
 import { AlertRule, AlertRuleSchema } from './schemas/alert-rule.schema';
+import { Flow, FlowSchema } from 'src/flows/schemas/flow.schema';
 import { NotificationsInternalController } from './notifications-internal.controller';
 import { NotificationsController } from './notifications.controller';
+import { ProjectAlertConfigController } from './project-alert-config.controller';
 import { ProjectAlertHistoryController } from './project-alert-history.controller';
 import { NotificationsService } from './notifications.service';
 import {
@@ -28,11 +30,13 @@ import {
       { name: NotificationPreference.name, schema: NotificationPreferenceSchema },
       { name: AlertPolicy.name, schema: AlertPolicySchema },
       { name: AlertRule.name, schema: AlertRuleSchema },
+      { name: Flow.name, schema: FlowSchema },
     ]),
   ],
   controllers: [
     NotificationsController,
     NotificationsInternalController,
+    ProjectAlertConfigController,
     ProjectAlertHistoryController,
   ],
   providers: [NotificationsService],

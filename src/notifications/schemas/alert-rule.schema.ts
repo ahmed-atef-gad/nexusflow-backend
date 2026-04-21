@@ -45,6 +45,9 @@ export class AlertRule {
 
   @Prop({ type: [AlertRuleActionSchema], default: [] })
   actions: AlertRuleAction[];
+
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export const AlertRuleSchema = SchemaFactory.createForClass(AlertRule);

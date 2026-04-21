@@ -3,6 +3,7 @@ import {
   Injectable,
   InternalServerErrorException,
   Logger,
+  NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
@@ -19,10 +20,17 @@ import { TriggerAlertDto } from './dto/trigger-alert.dto';
 import { AlertEvent, AlertEventDocument } from './schemas/alert-event.schema';
 import { AlertHistoryQueryDto } from './dto/alert-history-query.dto';
 import {
-  NotificationPreference,
-  NotificationPreferenceDocument,
-} from './schemas/notification-preference.schema';
-import { AlertRule, AlertRuleDocument } from './schemas/alert-rule.schema';
+  AlertPolicy,
+  AlertPolicyDocument,
+} from './schemas/alert-policy.schema';
+import {
+  AlertRule,
+  AlertRuleDocument,
+} from './schemas/alert-rule.schema';
+import { Flow, FlowDocument } from 'src/flows/schemas/flow.schema';
+import { UpsertAlertPoliciesDto } from './dto/upsert-alert-policies.dto';
+import { CreateAlertRuleDto } from './dto/create-alert-rule.dto';
+import { UpdateAlertRuleDto } from './dto/update-alert-rule.dto';
 import {
   NotificationDeviceToken,
   NotificationDeviceTokenDocument,
@@ -111,10 +119,12 @@ export class NotificationsService {
     private readonly notificationDeviceTokenModel: Model<NotificationDeviceTokenDocument>,
     @InjectModel(AlertEvent.name)
     private readonly alertEventModel: Model<AlertEventDocument>,
-    @InjectModel(NotificationPreference.name)
-    private readonly notificationPreferenceModel: Model<NotificationPreferenceDocument>,
+    @InjectModel(AlertPolicy.name)
+    private readonly alertPolicyModel: Model<AlertPolicyDocument>,
     @InjectModel(AlertRule.name)
     private readonly alertRuleModel: Model<AlertRuleDocument>,
+    @InjectModel(Flow.name)
+    private readonly flowModel: Model<FlowDocument>,
     private readonly configService: ConfigService,
   ) {
     this.ruleCooldownMs = this.readPositiveConfigNumber(
@@ -298,6 +308,261 @@ export class NotificationsService {
     return {
       items,
       nextCursor,
+    };
+  }
+
+  async getAlertPolicies(userId: string, projectId: string): Promise<{
+    items: Array<{
+      id: string;
+      projectId: string;
+      sensorType: string;
+      required: boolean;
+      thresholdRequired: boolean;
+      defaultEnabled: boolean;
+      defaultSeverity: AlertSeverity;
+      isActive: boolean;
+    }>;
+  }> {
+    await this.assertUserCanAccessProject(userId, projectId);
+
+    const policies = await this.alertPolicyModel
+      .find({ projectId, isActive: true })
+      .sort({ sensorType: 1 })
+      .lean()
+      .exec();
+
+    return {
+      items: policies.map((policy) => ({
+        id: String(policy._id),
+        projectId: policy.projectId,
+        sensorType: policy.sensorType,
+        required: policy.required,
+        thresholdRequired: policy.thresholdRequired,
+        defaultEnabled: policy.defaultEnabled,
+        defaultSeverity: policy.defaultSeverity,
+        isActive: policy.isActive,
+      })),
+    };
+  }
+
+  async upsertAlertPolicies(
+    userId: string,
+    projectId: string,
+    dto: UpsertAlertPoliciesDto,
+  ): Promise<{ updatedCount: number; items: Array<{ id: string; sensorType: string }> }> {
+    await this.assertUserCanAccessProject(userId, projectId);
+
+    const normalizedPolicies = this.deduplicatePolicies(dto.policies ?? []);
+    if (!normalizedPolicies.length) {
+      return { updatedCount: 0, items: [] };
+    }
+
+    const operations = normalizedPolicies.map((policy) => ({
+      updateOne: {
+        filter: { projectId, sensorType: policy.sensorType },
+        update: {
+          $set: {
+            required: policy.required,
+            thresholdRequired: policy.thresholdRequired,
+            defaultEnabled: policy.defaultEnabled,
+            defaultSeverity: policy.defaultSeverity,
+            isActive: true,
+          },
+        },
+        upsert: true,
+      },
+    }));
+
+    await this.alertPolicyModel.bulkWrite(operations, { ordered: false });
+
+    const items = await this.alertPolicyModel
+      .find({
+        projectId,
+        sensorType: { $in: normalizedPolicies.map((entry) => entry.sensorType) },
+      })
+      .select({ sensorType: 1 })
+      .lean()
+      .exec();
+
+    return {
+      updatedCount: items.length,
+      items: items.map((item) => ({
+        id: String(item._id),
+        sensorType: item.sensorType,
+      })),
+    };
+  }
+
+  async getAlertRules(userId: string, projectId: string): Promise<{
+    items: Array<{
+      id: string;
+      projectId: string;
+      userId: string;
+      sensorType: string;
+      operator: '>' | '<' | '>=' | '<=' | '==' | '!=';
+      threshold: number;
+      enabled: boolean;
+      severity: AlertSeverity;
+      actions: unknown[];
+      createdAt?: Date;
+      updatedAt?: Date;
+    }>;
+  }> {
+    await this.assertUserCanAccessProject(userId, projectId);
+
+    const rules = await this.alertRuleModel
+      .find({ projectId, userId })
+      .sort({ updatedAt: -1, createdAt: -1 })
+      .lean()
+      .exec();
+
+    return {
+      items: rules.map((rule) => ({
+        id: String(rule._id),
+        projectId: rule.projectId,
+        userId: rule.userId,
+        sensorType: rule.sensorType,
+        operator: rule.operator,
+        threshold: rule.threshold,
+        enabled: rule.enabled,
+        severity: rule.severity,
+        actions: Array.isArray(rule.actions) ? rule.actions : [],
+        createdAt: rule.createdAt,
+        updatedAt: rule.updatedAt,
+      })),
+    };
+  }
+
+  async createAlertRule(
+    userId: string,
+    projectId: string,
+    dto: CreateAlertRuleDto,
+  ): Promise<{
+    id: string;
+    projectId: string;
+    userId: string;
+    sensorType: string;
+    operator: '>' | '<' | '>=' | '<=' | '==' | '!=';
+    threshold: number;
+    enabled: boolean;
+    severity: AlertSeverity;
+    actions: unknown[];
+    createdAt?: Date;
+    updatedAt?: Date;
+  }> {
+    await this.assertUserCanAccessProject(userId, projectId);
+
+    const createdRule = await this.alertRuleModel.create({
+      projectId,
+      userId,
+      sensorType: dto.sensorType.trim(),
+      operator: dto.operator,
+      threshold: dto.threshold,
+      enabled: dto.enabled ?? true,
+      severity: dto.severity,
+      actions: this.normalizeRuleActions(dto.actions),
+    });
+
+    return {
+      id: createdRule.id,
+      projectId: createdRule.projectId,
+      userId: createdRule.userId,
+      sensorType: createdRule.sensorType,
+      operator: createdRule.operator,
+      threshold: createdRule.threshold,
+      enabled: createdRule.enabled,
+      severity: createdRule.severity,
+      actions: Array.isArray(createdRule.actions) ? createdRule.actions : [],
+      createdAt: createdRule.createdAt,
+      updatedAt: createdRule.updatedAt,
+    };
+  }
+
+  async updateAlertRule(
+    userId: string,
+    projectId: string,
+    ruleId: string,
+    dto: UpdateAlertRuleDto,
+  ): Promise<{
+    id: string;
+    projectId: string;
+    userId: string;
+    sensorType: string;
+    operator: '>' | '<' | '>=' | '<=' | '==' | '!=';
+    threshold: number;
+    enabled: boolean;
+    severity: AlertSeverity;
+    actions: unknown[];
+    createdAt?: Date;
+    updatedAt?: Date;
+  }> {
+    await this.assertUserCanAccessProject(userId, projectId);
+
+    const updatePayload: Record<string, unknown> = {};
+    if (dto.sensorType !== undefined) {
+      updatePayload.sensorType = dto.sensorType.trim();
+    }
+    if (dto.operator !== undefined) {
+      updatePayload.operator = dto.operator;
+    }
+    if (dto.threshold !== undefined) {
+      updatePayload.threshold = dto.threshold;
+    }
+    if (dto.severity !== undefined) {
+      updatePayload.severity = dto.severity;
+    }
+    if (dto.enabled !== undefined) {
+      updatePayload.enabled = dto.enabled;
+    }
+    if (dto.actions !== undefined) {
+      updatePayload.actions = this.normalizeRuleActions(dto.actions);
+    }
+
+    const updatedRule = await this.alertRuleModel
+      .findOneAndUpdate(
+        { _id: ruleId, projectId, userId },
+        { $set: updatePayload },
+        { new: true },
+      )
+      .exec();
+
+    if (!updatedRule) {
+      throw new NotFoundException('Alert rule not found');
+    }
+
+    return {
+      id: updatedRule.id,
+      projectId: updatedRule.projectId,
+      userId: updatedRule.userId,
+      sensorType: updatedRule.sensorType,
+      operator: updatedRule.operator,
+      threshold: updatedRule.threshold,
+      enabled: updatedRule.enabled,
+      severity: updatedRule.severity,
+      actions: Array.isArray(updatedRule.actions) ? updatedRule.actions : [],
+      createdAt: updatedRule.createdAt,
+      updatedAt: updatedRule.updatedAt,
+    };
+  }
+
+  async deleteAlertRule(
+    userId: string,
+    projectId: string,
+    ruleId: string,
+  ): Promise<{ acknowledged: boolean; deletedRuleId: string }> {
+    await this.assertUserCanAccessProject(userId, projectId);
+
+    const result = await this.alertRuleModel
+      .findOneAndDelete({ _id: ruleId, projectId, userId })
+      .exec();
+
+    if (!result) {
+      throw new NotFoundException('Alert rule not found');
+    }
+
+    return {
+      acknowledged: true,
+      deletedRuleId: ruleId,
     };
   }
 
@@ -536,15 +801,21 @@ export class NotificationsService {
     userId: string,
     projectId: string,
   ): Promise<void> {
-    const [hasDeviceToken, hasPreference, hasRule] = await Promise.all([
-      this.notificationDeviceTokenModel.exists({ userId, projectId }),
-      this.notificationPreferenceModel.exists({ userId, projectId }),
-      this.alertRuleModel.exists({ userId, projectId }),
-    ]);
-
-    if (!hasDeviceToken && !hasPreference && !hasRule) {
+    if (!Types.ObjectId.isValid(projectId)) {
       throw new ForbiddenException(
-        'You are not allowed to access this project alert history.',
+        'You are not allowed to access this project alerts.',
+      );
+    }
+
+    const ownedFlow = await this.flowModel
+      .findOne({ _id: projectId, userId })
+      .select({ _id: 1 })
+      .lean()
+      .exec();
+
+    if (!ownedFlow) {
+      throw new ForbiddenException(
+        'You are not allowed to access this project alerts.',
       );
     }
   }
@@ -610,6 +881,40 @@ export class NotificationsService {
 
   private encodeHistoryCursor(cursor: AlertHistoryCursor): string {
     return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64');
+  }
+
+  private deduplicatePolicies(
+    policies: UpsertAlertPoliciesDto['policies'],
+  ): UpsertAlertPoliciesDto['policies'] {
+    const deduped = new Map<string, UpsertAlertPoliciesDto['policies'][number]>();
+    for (const policy of policies) {
+      if (!policy?.sensorType) {
+        continue;
+      }
+      deduped.set(policy.sensorType.trim().toUpperCase(), {
+        ...policy,
+        sensorType: policy.sensorType.trim().toUpperCase(),
+      });
+    }
+    return Array.from(deduped.values());
+  }
+
+  private normalizeRuleActions(
+    actions?: CreateAlertRuleDto['actions'],
+  ): AlertRuleDocument['actions'] {
+    if (!Array.isArray(actions)) {
+      return [];
+    }
+
+    return actions.map((action) => ({
+      type: action.type,
+      topic: action.topic,
+      templateId: action.templateId,
+      payload:
+        action.payload && typeof action.payload === 'object'
+          ? action.payload
+          : undefined,
+    }));
   }
 
   private buildDefaultAlertTitle(input: TriggerAlertDto): string {
