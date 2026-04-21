@@ -13,6 +13,7 @@ This service is not just a CRUD API. In the current architecture it is responsib
 - Firmware upload, version tracking, update checks, and binary download
 - Embedded MQTT broker startup plus backend-side MQTT event handling
 - Admin-facing visibility into active MQTT connections
+- Notification policy/rule evaluation, alert history persistence, and FCM push dispatch
 
 ## Tech Stack
 
@@ -253,6 +254,28 @@ The MQTT module currently configures:
 - MQTT over WebSocket on `8884` by default
 - optional TLS/WSS material via environment variables
 
+### `notifications`
+
+Files: [`src/notifications`](src/notifications)
+
+Responsibilities:
+
+- Mobile FCM device-token registration and token lifecycle management
+- Alert policy management (`alert_policies`)
+- User notification preference management (`notification_preferences`)
+- Alert rule CRUD and runtime rule evaluation (`alert_rules`)
+- Alert history persistence with cursor pagination (`alert_events`)
+- Firebase push dispatch and dead-token cleanup on `UNREGISTERED`
+- Internal alert trigger endpoint for backend services
+
+Key files:
+
+- [`src/notifications/notifications.service.ts`](src/notifications/notifications.service.ts)
+- [`src/notifications/notifications.controller.ts`](src/notifications/notifications.controller.ts)
+- [`src/notifications/project-alert-config.controller.ts`](src/notifications/project-alert-config.controller.ts)
+- [`src/notifications/project-alert-history.controller.ts`](src/notifications/project-alert-history.controller.ts)
+- [`src/notifications/notifications-internal.controller.ts`](src/notifications/notifications-internal.controller.ts)
+
 ## Request / Data Flow
 
 Typical user-side path:
@@ -265,6 +288,8 @@ Typical user-side path:
 6. Device publishes telemetry over MQTT
 7. Backend may execute server-side function/runtime logic for linked flows
 8. Frontend subscribes to real-time updates through MQTT over WebSocket
+9. Backend evaluates configured alert rules and persists alert history
+10. Backend dispatches push notifications through FCM for matched alerts
 
 Typical device-side onboarding path:
 
@@ -350,6 +375,16 @@ MQTT_LOGIC_CACHE_MAX_ENTRIES=1000
 MQTT_LOGIC_CACHE_SWEEP_INTERVAL_MS=30000
 ```
 
+### Notifications / FCM
+
+```env
+FIREBASE_PROJECT_ID=
+FIREBASE_CLIENT_EMAIL=
+FIREBASE_PRIVATE_KEY=
+INTERNAL_ALERTS_API_KEY=
+ALERT_RULE_COOLDOWN_MS=60000
+```
+
 Notes:
 
 - `MONGO_URI` is mandatory. The app throws if it is missing.
@@ -424,6 +459,12 @@ This README is not a full API reference. Swagger at `/api` is the source of trut
 - `/firmware/admin/*`: admin firmware management
 - `/firmware/device/*`: device firmware update endpoints
 - `/mqtt/*`: MQTT test/admin visibility endpoints
+- `/v1/notifications/devices/register`: register or refresh mobile FCM token
+- `/v1/projects/:projectId/notification-preferences`: user notification settings
+- `/v1/projects/:projectId/alert-policies`: policy defaults per sensor type
+- `/v1/projects/:projectId/alert-rules`: alert rule CRUD
+- `/v1/projects/:projectId/alert-history`: missed/previous alerts
+- `/v1/internal/alerts/trigger`: internal alert ingestion endpoint
 
 ## MQTT Role In The System
 
@@ -492,8 +533,10 @@ Current test coverage in the repo includes:
 - [`src/devices/device-registration.controller.ts`](src/devices/device-registration.controller.ts): firmware onboarding flow
 - [`src/firmware/firmware.controller.ts`](src/firmware/firmware.controller.ts): firmware lifecycle endpoints
 - [`src/mqtt/mqtt.module.ts`](src/mqtt/mqtt.module.ts): broker configuration
+- [`src/notifications/notifications.service.ts`](src/notifications/notifications.service.ts): notification pipeline logic
 - [`src/verification/smtp-mail.service.ts`](src/verification/smtp-mail.service.ts): SMTP integration
 - [`docs/repo-mind-map.md`](docs/repo-mind-map.md): repository-level overview
+- [`docs/notifications-system.md`](docs/notifications-system.md): notifications deep-dive and mobile contract
 - [`docs/NexusFlow.postman_collection.json`](docs/NexusFlow.postman_collection.json): Postman collection
 
 ## Integration Notes
