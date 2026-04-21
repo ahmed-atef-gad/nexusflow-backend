@@ -1485,6 +1485,290 @@
           "response": []
         }
       ]
+    },
+    {
+      "name": "Notifications",
+      "item": [
+        {
+          "name": "Register Device Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/notifications/devices/register",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"projectId\": \"{{projectId}}\",\n  \"deviceId\": \"mobile-device-001\",\n  \"platform\": \"android\",\n  \"fcmToken\": \"replace-with-real-fcm-token\",\n  \"appVersion\": \"1.0.0\",\n  \"locale\": \"en-US\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Notification Preferences",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/projects/{{projectId}}/notification-preferences"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Notification Preferences",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/projects/{{projectId}}/notification-preferences",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sensors\": [\n    {\n      \"sensorType\": \"MQ\",\n      \"enabled\": true,\n      \"threshold\": 300\n    },\n    {\n      \"sensorType\": \"HUMIDITY\",\n      \"enabled\": true,\n      \"threshold\": 72\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Alert Policies",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/projects/{{projectId}}/alert-policies"
+          },
+          "response": []
+        },
+        {
+          "name": "Upsert Alert Policies",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/projects/{{projectId}}/alert-policies",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"policies\": [\n    {\n      \"sensorType\": \"MQ\",\n      \"required\": true,\n      \"thresholdRequired\": true,\n      \"defaultEnabled\": true,\n      \"defaultSeverity\": \"critical\"\n    },\n    {\n      \"sensorType\": \"HUMIDITY\",\n      \"required\": false,\n      \"thresholdRequired\": true,\n      \"defaultEnabled\": true,\n      \"defaultSeverity\": \"warning\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Alert Rules",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/projects/{{projectId}}/alert-rules"
+          },
+          "response": []
+        },
+        {
+          "name": "Create Alert Rule",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/projects/{{projectId}}/alert-rules",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sensorType\": \"MQ\",\n  \"operator\": \">\",\n  \"threshold\": 300,\n  \"severity\": \"critical\",\n  \"enabled\": true,\n  \"actions\": [\n    {\n      \"type\": \"send_push\",\n      \"payload\": {\n        \"title\": \"Gas Leak Alert\",\n        \"body\": \"MQ level exceeded threshold\"\n      }\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const json = pm.response.json();",
+                  "  const value = json?.id || json?._id;",
+                  "  if (value) pm.collectionVariables.set('ruleId', String(value));",
+                  "} catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Update Alert Rule",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/projects/{{projectId}}/alert-rules/{{ruleId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"threshold\": 350,\n  \"enabled\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Alert Rule",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/projects/{{projectId}}/alert-rules/{{ruleId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Alert History",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/projects/{{projectId}}/alert-history?limit=50&cursor={{alertCursor}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const json = pm.response.json();",
+                  "  const cursor = json?.nextCursor ?? '';",
+                  "  pm.collectionVariables.set('alertCursor', String(cursor));",
+                  "} catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Trigger Alert (Internal)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "x-internal-key",
+                "value": "{{internalAlertsApiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/internal/alerts/trigger",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"projectId\": \"{{projectId}}\",\n  \"sensorType\": \"MQ\",\n  \"severity\": \"critical\",\n  \"value\": 430,\n  \"threshold\": 300,\n  \"ruleId\": \"{{ruleId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
     }
   ],
   "variable": [
@@ -1514,6 +1798,10 @@
     },
     {
       "key": "flowId",
+      "value": ""
+    },
+    {
+      "key": "projectId",
       "value": ""
     },
     {
@@ -1570,6 +1858,18 @@
     },
     {
       "key": "is_active",
+      "value": ""
+    },
+    {
+      "key": "ruleId",
+      "value": ""
+    },
+    {
+      "key": "alertCursor",
+      "value": ""
+    },
+    {
+      "key": "internalAlertsApiKey",
       "value": ""
     }
   ]
