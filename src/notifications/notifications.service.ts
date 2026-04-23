@@ -851,6 +851,26 @@ export class NotificationsService {
           title: input.title,
           body: input.body,
         },
+        // Android high-priority alert with default sound.
+        android: {
+          priority: 'high',
+          notification: {
+            sound: 'default',
+          },
+        },
+        // iOS alert push with default sound and high delivery priority.
+        apns: {
+          headers: {
+            'apns-priority': '10',
+            'apns-push-type': 'alert',
+          },
+          payload: {
+            aps: {
+              sound: 'default',
+              contentAvailable: true,
+            },
+          },
+        },
         data: this.normalizeDataPayload({
           ...input.data,
           severity: input.severity ?? 'warning',
