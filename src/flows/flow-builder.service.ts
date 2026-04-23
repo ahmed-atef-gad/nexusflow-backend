@@ -280,6 +280,7 @@ export class FlowBuilderService {
     node: Node,
     pin: number,
     allowedPins: Set<number>,
+    takenPins: Set<number>,
     fieldName: string,
     code: string
   ): void {
@@ -290,6 +291,14 @@ export class FlowBuilderService {
         code
       );
     }
+    if (takenPins.has(pin)) {
+      this.throwNodeError(
+        node,
+        `Pin ${pin} is already used by another node, cannot be assigned to ${this.getNodeLabel(node)}.`,
+        'NODE_PIN_ALREADY_USED'
+      );
+    }
+    takenPins.add(pin);
   }
 
   private getValidatedModuleDefinition(node: Node): ModuleDefinition {
@@ -534,7 +543,7 @@ export class FlowBuilderService {
 
   buildSetupFromNodes(nodes: Node[]): SetupObject {
     const setupPins: Record<number, SetupItem> = {};
-    const setupPinOwners: Record<number, string> = {};
+    const takenPins: Set<number> = new Set();
     const gpioTask: Task = {
       taskName: INPUT_GPIO_TASK_NAME,
       intervalMs: this.defaultGpioIntervalMs,
@@ -577,6 +586,7 @@ export class FlowBuilderService {
               node,
               pinNumber,
               ANALOG_PIN_SET,
+              takenPins,
               'analog pin',
               'NODE_ANALOG_PIN_INVALID'
             );
@@ -585,6 +595,7 @@ export class FlowBuilderService {
               node,
               pinNumber,
               GPIO_INPUT_PIN_SET,
+              takenPins,
               'input pin',
               'NODE_INPUT_PIN_INVALID'
             );
@@ -593,6 +604,7 @@ export class FlowBuilderService {
               node,
               pinNumber,
               DAC_PIN_SET,
+              takenPins,
               'dac pin',
               'NODE_DAC_PIN_INVALID'
             );
@@ -601,6 +613,7 @@ export class FlowBuilderService {
               node,
               pinNumber,
               GPIO_IO_PIN_SET,
+              takenPins,
               'output pin',
               'NODE_OUTPUT_PIN_INVALID'
             );
@@ -630,17 +643,8 @@ export class FlowBuilderService {
               Math.max(0, Math.trunc(initialAngle ?? 0))
             );
           }
-          const nodeLabel = this.getNodeLabel(node);
-          if (setupPins[pinNumber]) {
-            this.throwNodeError(
-              node,
-              `Duplicate pin ${pinNumber} is already assigned to ${setupPinOwners[pinNumber] || 'another node'}.`,
-              'NODE_DUPLICATE_PIN'
-            );
-          }
 
           setupPins[pinNumber] = setupItem;
-          setupPinOwners[pinNumber] = nodeLabel;
           // Add to GPIO task commands
           if (module.moduleId.startsWith('ESP32-gpio-input')) {
             const moduleInterval = this.toOptionalNumber(
@@ -793,6 +797,7 @@ export class FlowBuilderService {
             node,
             triggerPin!,
             GPIO_IO_PIN_SET,
+            takenPins,
             'trigger pin',
             'ULTRASONIC_TRIGGER_PIN_INVALID'
           );
@@ -800,6 +805,7 @@ export class FlowBuilderService {
             node,
             echoPin!,
             GPIO_INPUT_PIN_SET,
+            takenPins,
             'echo pin',
             'ULTRASONIC_ECHO_PIN_INVALID'
           );
@@ -808,6 +814,7 @@ export class FlowBuilderService {
             node,
             pinNumber!,
             GPIO_INPUT_PIN_SET,
+            takenPins,
             'input pin',
             'NODE_INPUT_PIN_INVALID'
           );
@@ -879,6 +886,7 @@ export class FlowBuilderService {
               node,
               digitalPin,
               GPIO_INPUT_PIN_SET,
+              takenPins,
               'digital pin',
               'NODE_DIGITAL_PIN_INVALID'
             );
@@ -889,6 +897,7 @@ export class FlowBuilderService {
               node,
               analogPin,
               ANALOG_PIN_SET,
+              takenPins,
               'analog pin',
               'NODE_ANALOG_PIN_INVALID'
             );
