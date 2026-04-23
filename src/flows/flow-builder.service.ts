@@ -534,6 +534,7 @@ export class FlowBuilderService {
 
   buildSetupFromNodes(nodes: Node[]): SetupObject {
     const setupPins: Record<number, SetupItem> = {};
+    const setupPinOwners: Record<number, string> = {};
     const gpioTask: Task = {
       taskName: INPUT_GPIO_TASK_NAME,
       intervalMs: this.defaultGpioIntervalMs,
@@ -629,8 +630,17 @@ export class FlowBuilderService {
               Math.max(0, Math.trunc(initialAngle ?? 0))
             );
           }
-          // Deduplicate by pin (last definition wins)
+          const nodeLabel = this.getNodeLabel(node);
+          if (setupPins[pinNumber]) {
+            this.throwNodeError(
+              node,
+              `Duplicate pin ${pinNumber} is already assigned to ${setupPinOwners[pinNumber] || 'another node'}.`,
+              'NODE_DUPLICATE_PIN'
+            );
+          }
+
           setupPins[pinNumber] = setupItem;
+          setupPinOwners[pinNumber] = nodeLabel;
           // Add to GPIO task commands
           if (module.moduleId.startsWith('ESP32-gpio-input')) {
             const moduleInterval = this.toOptionalNumber(
