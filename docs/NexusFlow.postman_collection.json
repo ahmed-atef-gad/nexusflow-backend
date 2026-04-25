@@ -1508,7 +1508,7 @@
             "url": "{{baseUrl}}/v1/notifications/devices/register",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"projectId\": \"{{projectId}}\",\n  \"deviceId\": \"mobile-device-001\",\n  \"platform\": \"android\",\n  \"fcmToken\": \"replace-with-real-fcm-token\",\n  \"appVersion\": \"1.0.0\",\n  \"locale\": \"en-US\"\n}",
+              "raw": "{\n  \"deviceId\": \"mobile-device-001\",\n  \"platform\": \"android\",\n  \"fcmToken\": \"replace-with-real-fcm-token\",\n  \"appVersion\": \"1.0.0\",\n  \"locale\": \"en-US\"\n}",
               "options": {
                 "raw": {
                   "language": "json"

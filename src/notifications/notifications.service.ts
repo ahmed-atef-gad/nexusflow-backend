@@ -146,7 +146,6 @@ export class NotificationsService {
     dto: RegisterNotificationDeviceDto,
   ): Promise<{
     id: string;
-    projectId: string;
     userId: string;
     deviceId: string;
     platform: 'android' | 'ios';
@@ -166,7 +165,6 @@ export class NotificationsService {
       { userId, deviceId: dto.deviceId },
       {
         $set: {
-          projectId: dto.projectId,
           platform: dto.platform,
           fcmToken: dto.fcmToken,
           appVersion: dto.appVersion,
@@ -186,7 +184,6 @@ export class NotificationsService {
 
     return {
       id: document.id,
-      projectId: document.projectId,
       userId: document.userId,
       deviceId: document.deviceId,
       platform: document.platform,
@@ -816,8 +813,21 @@ export class NotificationsService {
     failureCount: number;
     invalidatedTokens: number;
   }> {
+    const recipientUserIds = await this.getProjectRecipientUserIds(input.projectId);
+    if (!recipientUserIds.length) {
+      this.logger.warn(
+        `Skipping push dispatch for project ${input.projectId}: no project recipients found.`,
+      );
+      return {
+        requestedTokens: 0,
+        successCount: 0,
+        failureCount: 0,
+        invalidatedTokens: 0,
+      };
+    }
+
     const activeTokens = await this.notificationDeviceTokenModel
-      .find({ projectId: input.projectId, isActive: true })
+      .find({ userId: { $in: recipientUserIds }, isActive: true })
       .select({ fcmToken: 1 })
       .lean();
 
@@ -998,6 +1008,27 @@ export class NotificationsService {
     this.logger.warn(
       `Marked ${tokens.length} FCM tokens inactive due to Firebase error: ${errorCode}`,
     );
+  }
+
+  private async getProjectRecipientUserIds(projectId: string): Promise<string[]> {
+    if (!Types.ObjectId.isValid(projectId)) {
+      return [];
+    }
+
+    const flow = await this.flowModel
+      .findById(projectId)
+      .select({ userId: 1 })
+      .lean<{ userId?: Types.ObjectId | string }>()
+      .exec();
+
+    if (flow?.userId instanceof Types.ObjectId) {
+      return [flow.userId.toHexString()];
+    }
+    if (typeof flow?.userId === 'string' && flow.userId.trim()) {
+      return [flow.userId];
+    }
+
+    return [];
   }
 
   private async assertUserCanAccessProject(
