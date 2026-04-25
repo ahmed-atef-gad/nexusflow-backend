@@ -11,7 +11,8 @@ Current implementation scope:
 - Runtime rule evaluation from MQTT sensor input
 
 Important current mapping:
-- `projectId` in notification APIs is currently the same value as `flowId`.
+- for project-scoped notifications APIs, `projectId` is currently the same value as `flowId`
+- device registration (`/v1/notifications/devices/register`) is device-level and does not require `projectId`
 
 ## High-Level Flow
 
@@ -29,7 +30,7 @@ sequenceDiagram
     NS->>DB: Read enabled alert_rules
     NS->>NS: Evaluate threshold/operator + cooldown
     NS->>DB: Insert alert_events
-    NS->>FCM: Send multicast push to device_tokens
+    NS->>FCM: Send multicast push to active owner device_tokens
     FCM-->>NS: Per-token response
     NS->>DB: Mark dead tokens inactive on UNREGISTERED
     App->>NS: GET alert-history
@@ -81,7 +82,6 @@ All user-facing endpoints below require cookie auth:
 
 ```json
 {
-  "projectId": "6802ec3f7fd4db8af143dcf1",
   "deviceId": "mobile-device-001",
   "platform": "android",
   "fcmToken": "fcm-token",
@@ -94,6 +94,7 @@ Behavior:
 - upsert by `(userId, deviceId)`
 - reactivates previously invalidated token
 - updates `lastSeenAt`
+- no per-project re-registration is required for the same device
 
 ### 2) Notification preferences
 
@@ -238,7 +239,7 @@ Before reading/updating notification data:
 - Use `alert-history` on app open/resume to recover missed alerts.
 - Store `nextCursor` for infinite scroll.
 - Do not rely on push as the only source of truth; history is authoritative.
-- Keep `projectId` consistent with active flow id in current backend.
+- `projectId` is still required for project-scoped APIs (rules/policies/preferences/history), and maps to `flowId` in current backend.
 
 ## Postman
 

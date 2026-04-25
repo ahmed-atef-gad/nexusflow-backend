@@ -22,7 +22,7 @@ export class NotificationsController {
   @ApiOperation({
     summary: 'Register or update mobile FCM token',
     description:
-      'Upserts device token by authenticated user and deviceId. Reactivates token if it was invalidated earlier.',
+      'Upserts device token by authenticated user and deviceId (device-level registration, not project-level). Reactivates token if it was invalidated earlier.',
   })
   @ApiBody({
     type: RegisterNotificationDeviceDto,
@@ -33,7 +33,6 @@ export class NotificationsController {
     schema: {
       example: {
         id: '6802ec3f7fd4db8af143dcf1',
-        projectId: 'project-alpha',
         userId: '6801ec3f7fd4db8af143dcf0',
         deviceId: 'a1b2c3d4-device-id',
         platform: 'android',

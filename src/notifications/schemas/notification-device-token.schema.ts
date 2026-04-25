@@ -9,9 +9,6 @@ export class NotificationDeviceToken {
   userId: string;
 
   @Prop({ required: true, index: true })
-  projectId: string;
-
-  @Prop({ required: true, index: true })
   deviceId: string;
 
   @Prop({ required: true, enum: ['android', 'ios'] })
@@ -47,4 +44,3 @@ export const NotificationDeviceTokenSchema = SchemaFactory.createForClass(
 );
 
 NotificationDeviceTokenSchema.index({ userId: 1, deviceId: 1 }, { unique: true });
-NotificationDeviceTokenSchema.index({ projectId: 1, isActive: 1 });

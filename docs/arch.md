@@ -218,4 +218,5 @@ Main collections represented by Mongoose schemas:
 - MQTT is part of this backend deployment (not an external broker in this repo).
 - MQTT auth supports both user clients and ESP clients with different auth paths.
 - Function nodes are statically validated and executed in a restricted VM context.
-- In current implementation, notifications use `projectId = flowId` as the project scope key.
+- In current implementation, project-scoped notifications APIs use `projectId = flowId` as the project scope key.
+- Device token registration is user/device-scoped and does not include `projectId`.
