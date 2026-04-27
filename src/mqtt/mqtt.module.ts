@@ -7,6 +7,7 @@ import { Transport } from '../pigeon-mqtt/enum/pigeon.transport.enum';
 import { DevicesModule } from '../devices/devices.module';
 import { MqttHandlers } from './mqtt.handlers';
 import { UsersModule } from '../users/users.module';
+import { FlowsModule } from '../flows/flows.module';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Logic, LogicSchema } from '../flows/schemas/logic.schema';
 import { AuthModule } from '../auth/auth.module';
@@ -17,6 +18,7 @@ import { NotificationsModule } from 'src/notifications/notifications.module';
 @Module({
   imports: [
     DevicesModule,
+    FlowsModule,
     UsersModule,
     AuthModule,
     NotificationsModule,
