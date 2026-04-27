@@ -13,8 +13,8 @@ import {
   Query,
 } from '@nestjs/common';
 import { DevicesService } from './devices.service';
-import { AuthGuard } from '../gaurds/auth/auth.guard';
-import { OwnerGuard } from '../gaurds/auth/owner.guard';
+import { AuthGuard } from '../guards/auth/auth.guard';
+import { OwnerGuard } from '../guards/auth/owner.guard';
 import { CreateDeviceDto } from './dto/create-device.dto';
 import {
   ApiTags,

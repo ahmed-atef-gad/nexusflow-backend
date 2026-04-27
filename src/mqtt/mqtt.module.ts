@@ -11,7 +11,7 @@ import { FlowsModule } from '../flows/flows.module';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Logic, LogicSchema } from '../flows/schemas/logic.schema';
 import { AuthModule } from '../auth/auth.module';
-import { RolesGuard } from '../gaurds/auth/roles.guard';
+import { RolesGuard } from '../guards/auth/roles.guard';
 import { NotificationsModule } from 'src/notifications/notifications.module';
 
 @Global()

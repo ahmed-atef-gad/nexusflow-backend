@@ -8,7 +8,7 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { getUserIdFromRequest, type AuthenticatedRequest } from 'src/auth/utils/auth.util';
-import { AuthGuard } from 'src/gaurds/auth/auth.guard';
+import { AuthGuard } from 'src/guards/auth/auth.guard';
 import { RegisterNotificationDeviceDto } from './dto/register-notification-device.dto';
 import { NotificationsService } from './notifications.service';
 

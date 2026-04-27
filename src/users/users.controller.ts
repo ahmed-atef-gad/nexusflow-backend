@@ -12,7 +12,7 @@ import {
   UseGuards,
   Patch,
 } from '@nestjs/common';
-import { AuthGuard } from '../gaurds/auth/auth.guard';
+import { AuthGuard } from '../guards/auth/auth.guard';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UsersService } from './users.service';
@@ -31,9 +31,9 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { Roles } from './../auth/decorators/roles.decorator';
-import { RolesGuard } from '../gaurds/auth/roles.guard';
+import { RolesGuard } from '../guards/auth/roles.guard';
 import { Role } from './enums/role.enum';
-import { OwnerGuard } from '../gaurds/auth/owner.guard';
+import { OwnerGuard } from '../guards/auth/owner.guard';
 import type { AuthenticatedRequest } from '../auth/utils/auth.util';
 import { getUserIdFromRequest } from '../auth/utils/auth.util';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';

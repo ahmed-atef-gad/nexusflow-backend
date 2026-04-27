@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AuthModule } from 'src/auth/auth.module';
 import { FlowsModule } from 'src/flows/flows.module';
-import { RolesGuard } from 'src/gaurds/auth/roles.guard';
+import { RolesGuard } from 'src/guards/auth/roles.guard';
 import { UsersModule } from 'src/users/users.module';
 import {
   FlowTemplate,

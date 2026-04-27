@@ -12,7 +12,7 @@ import {
 } from '@nestjs/common';
 import { FlowsService } from './flows.service';
 import { Flow } from './schemas/flow.schema';
-import { AuthGuard } from '../gaurds/auth/auth.guard';
+import { AuthGuard } from '../guards/auth/auth.guard';
 import {
   ApiTags,
   ApiCookieAuth,

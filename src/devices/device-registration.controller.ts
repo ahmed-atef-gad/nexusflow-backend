@@ -8,7 +8,7 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { AuthGuard } from '../gaurds/auth/auth.guard';
+import { AuthGuard } from '../guards/auth/auth.guard';
 import { DevicesService } from './devices.service';
 import { RegisterDeviceWithCodeDto } from './dto/register-device-with-code.dto';
 

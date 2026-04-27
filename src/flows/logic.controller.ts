@@ -20,10 +20,10 @@ import {
   ApiBody,
   ApiQuery,
 } from '@nestjs/swagger';
-import { AuthGuard } from '../gaurds/auth/auth.guard';
+import { AuthGuard } from '../guards/auth/auth.guard';
 import { Logic } from './schemas/logic.schema';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { RolesGuard } from '../gaurds/auth/roles.guard';
+import { RolesGuard } from '../guards/auth/roles.guard';
 import { Role } from '../users/enums/role.enum';
 import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
 

@@ -10,11 +10,11 @@ import {
   DeviceRegistrationCode,
   DeviceRegistrationCodeSchema,
 } from './schemas/device-registration-code.schema';
-import { DeviceAuthGuard } from '../gaurds/device-auth.guard';
+import { DeviceAuthGuard } from '../guards/device-auth.guard';
 import { AuthModule } from '../auth/auth.module';
 import { FlowsModule } from 'src/flows/flows.module';
 import { UsersModule } from 'src/users/users.module';
-import { OwnerGuard } from '../gaurds/auth/owner.guard';
+import { OwnerGuard } from '../guards/auth/owner.guard';
 
 @Module({
   imports: [
