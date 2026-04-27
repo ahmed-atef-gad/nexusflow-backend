@@ -51,7 +51,10 @@ export class SetupController {
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(Role.Admin)
   @ApiCookieAuth('jwt')
-  @ApiOperation({ summary: 'Create a Setup document manually' })
+  @ApiOperation({
+    summary: 'Create a Setup document manually',
+    description: 'Admin only: accessible by Admin or Owner.',
+  })
   @ApiBody({ type: SetupPayload })
   @ApiResponse({ status: 201, description: 'Setup created', type: Setup })
   @Post()
@@ -67,7 +70,10 @@ export class SetupController {
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(Role.Admin)
   @ApiCookieAuth('jwt')
-  @ApiOperation({ summary: 'Get all setups' })
+  @ApiOperation({
+    summary: 'Get all setups',
+    description: 'Admin only: accessible by Admin or Owner.',
+  })
   @ApiResponse({ status: 200 })
   @ApiQuery({
     name: 'page',
@@ -95,7 +101,10 @@ export class SetupController {
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(Role.Admin)
   @ApiCookieAuth('jwt')
-  @ApiOperation({ summary: 'Get setup by ID' })
+  @ApiOperation({
+    summary: 'Get setup by ID',
+    description: 'Admin only: accessible by Admin or Owner.',
+  })
   @ApiParam({ name: 'id' })
   @ApiResponse({ status: 200, type: Setup })
   @Get(':id')
@@ -112,7 +121,10 @@ export class SetupController {
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(Role.Admin)
   @ApiCookieAuth('jwt')
-  @ApiOperation({ summary: 'Get setup by Flow ID' })
+  @ApiOperation({
+    summary: 'Get setup by Flow ID',
+    description: 'Admin only: accessible by Admin or Owner.',
+  })
   @ApiParam({ name: 'flowId' })
   @ApiResponse({ status: 200, type: Setup })
   @Get('flow/:flowId')
@@ -130,7 +142,10 @@ export class SetupController {
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(Role.Admin)
   @ApiCookieAuth('jwt')
-  @ApiOperation({ summary: 'Update setup by ID' })
+  @ApiOperation({
+    summary: 'Update setup by ID',
+    description: 'Admin only: accessible by Admin or Owner.',
+  })
   @ApiParam({ name: 'id' })
   @ApiBody({ type: SetupPayload })
   @ApiResponse({ status: 200, type: Setup })
@@ -147,7 +162,10 @@ export class SetupController {
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(Role.Admin)
   @ApiCookieAuth('jwt')
-  @ApiOperation({ summary: 'Delete setup by ID' })
+  @ApiOperation({
+    summary: 'Delete setup by ID',
+    description: 'Admin only: accessible by Admin or Owner.',
+  })
   @ApiParam({ name: 'id' })
   @ApiResponse({
     status: 200,

@@ -133,7 +133,7 @@ export class UsersController {
   @ApiOperation({
     summary: 'Create a user (Admin)',
     description:
-      'Creates a new user with optional admin fields such as roles and activation flags.',
+      'Creates a new user with optional admin fields such as roles and activation flags. Admin only: accessible by Admin or Owner.',
   })
   @ApiBody({ type: CreateUserDto })
   @ApiCreatedResponse({
@@ -177,7 +177,8 @@ export class UsersController {
   @Patch(':id')
   @ApiOperation({
     summary: 'Update a user (Admin)',
-    description: 'Updates user fields by ID. Password changes are re-hashed.',
+    description:
+      'Updates user fields by ID. Password changes are re-hashed. Admin only: accessible by Admin or Owner.',
   })
   @ApiParam({
     name: 'id',
@@ -227,7 +228,8 @@ export class UsersController {
   @Get()
   @ApiOperation({
     summary: 'List all users (Admin)',
-    description: 'Returns a list of all users in the system.',
+    description:
+      'Returns a list of all users in the system. Admin only: accessible by Admin or Owner.',
   })
   @ApiOkResponse({
     description: 'Users fetched successfully',
@@ -297,7 +299,8 @@ export class UsersController {
   @Get(':id')
   @ApiOperation({
     summary: 'Get user by ID (Admin)',
-    description: 'Fetches a user by MongoDB ID.',
+    description:
+      'Fetches a user by MongoDB ID. Admin only: accessible by Admin or Owner.',
   })
   @ApiParam({
     name: 'id',
@@ -335,7 +338,8 @@ export class UsersController {
   @Delete(':id')
   @ApiOperation({
     summary: 'Delete user (Admin)',
-    description: 'Deletes a user by MongoDB ID.',
+    description:
+      'Deletes a user by MongoDB ID. Admin only: accessible by Admin or Owner.',
   })
   @ApiParam({
     name: 'id',

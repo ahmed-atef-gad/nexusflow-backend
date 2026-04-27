@@ -65,7 +65,7 @@ export class MqttController {
   @ApiOperation({
     summary: 'Get active MQTT user count (Admin)',
     description:
-      'Returns the number of currently connected MQTT user clients (excluding devices).',
+      'Returns the number of currently connected MQTT user clients (excluding devices). Admin only: accessible by Admin or Owner.',
   })
   @ApiOkResponse({
     description: 'Active MQTT user count fetched successfully',
@@ -92,7 +92,7 @@ export class MqttController {
   @ApiOperation({
     summary: 'Get normalized active MQTT clients (Admin)',
     description:
-      'Returns all currently connected MQTT clients grouped by user/owner, with user sessions and devices nested per user.',
+      'Returns all currently connected MQTT clients grouped by user/owner, with user sessions and devices nested per user. Admin only: accessible by Admin or Owner.',
   })
   @ApiOkResponse({
     description: 'Normalized active MQTT clients fetched successfully',

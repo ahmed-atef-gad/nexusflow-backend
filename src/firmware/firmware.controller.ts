@@ -47,7 +47,7 @@ export class FirmwareController {
   @ApiOperation({
     summary: 'Upload firmware binary (.bin)',
     description:
-      'Uploads a new firmware binary and marks it as the latest active release.',
+      'Uploads a new firmware binary and marks it as the latest active release. Admin only: accessible by Admin or Owner.',
   })
   @ApiCookieAuth('jwt')
   @ApiConsumes('multipart/form-data')
@@ -124,7 +124,7 @@ export class FirmwareController {
   @ApiOperation({
     summary: 'Delete firmware by ID',
     description:
-      'Deletes firmware metadata and removes its binary file from server storage.',
+      'Deletes firmware metadata and removes its binary file from server storage. Admin only: accessible by Admin or Owner.',
   })
   @ApiCookieAuth('jwt')
   @ApiParam({
