@@ -19,8 +19,8 @@ import { Flow, FlowSchema } from './schemas/flow.schema';
 import { Setup, SetupSchema } from './schemas/setup.schema';
 import { Logic, LogicSchema } from './schemas/logic.schema';
 import { Ui, UiSchema } from './schemas/ui.schema';
-import { RolesGuard } from '../gaurds/auth/roles.guard';
-import { OwnerGuard } from '../gaurds/auth/owner.guard';
+import { RolesGuard } from '../guards/auth/roles.guard';
+import { OwnerGuard } from '../guards/auth/owner.guard';
 
 @Module({
   imports: [

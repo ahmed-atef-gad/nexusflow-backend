@@ -26,8 +26,8 @@ import {
 import { Roles } from 'src/auth/decorators/roles.decorator';
 import { getUserIdFromRequest } from 'src/auth/utils/auth.util';
 import type { AuthenticatedRequest } from 'src/auth/utils/auth.util';
-import { AuthGuard } from 'src/gaurds/auth/auth.guard';
-import { RolesGuard } from 'src/gaurds/auth/roles.guard';
+import { AuthGuard } from 'src/guards/auth/auth.guard';
+import { RolesGuard } from 'src/guards/auth/roles.guard';
 import { Role } from 'src/users/enums/role.enum';
 import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
 import { CreateFlowTemplateDto } from './dto/create-flow-template.dto';

@@ -3,7 +3,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { RateLimiterModule } from 'nestjs-rate-limiter';
 import { AuthModule } from '../auth/auth.module';
 import { DevicesModule } from '../devices/devices.module';
-import { RolesGuard } from '../gaurds/auth/roles.guard';
+import { RolesGuard } from '../guards/auth/roles.guard';
 import { UsersModule } from '../users/users.module';
 import { FirmwareController } from './firmware.controller';
 import { FirmwareService } from './firmware.service';

@@ -5,7 +5,7 @@ import { UsersModule } from 'src/users/users.module';
 import { PassportModule } from '@nestjs/passport';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { AuthGuard } from 'src/gaurds/auth/auth.guard';
+import { AuthGuard } from 'src/guards/auth/auth.guard';
 import { VerificationModule } from 'src/verification/verification.module';
 
 

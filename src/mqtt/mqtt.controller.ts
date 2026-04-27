@@ -9,8 +9,8 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { AuthGuard } from '../gaurds/auth/auth.guard';
-import { RolesGuard } from '../gaurds/auth/roles.guard';
+import { AuthGuard } from '../guards/auth/auth.guard';
+import { RolesGuard } from '../guards/auth/roles.guard';
 import { Role } from '../users/enums/role.enum';
 import { MqttService } from './mqtt.service';
 import type { NormalizedMqttConnections } from './mqtt.service';

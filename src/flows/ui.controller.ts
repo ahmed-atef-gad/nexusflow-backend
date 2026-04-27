@@ -16,10 +16,10 @@ import {
   ApiUnauthorizedResponse,
   ApiForbiddenResponse,
 } from '@nestjs/swagger';
-import { AuthGuard } from '../gaurds/auth/auth.guard';
+import { AuthGuard } from '../guards/auth/auth.guard';
 import { Ui } from './schemas/ui.schema';
 import { IsOwner } from '../auth/decorators/owner.decorator';
-import { OwnerGuard } from '../gaurds/auth/owner.guard';
+import { OwnerGuard } from '../guards/auth/owner.guard';
 
 @ApiTags('UI (User Interface)')
 @ApiCookieAuth('jwt')

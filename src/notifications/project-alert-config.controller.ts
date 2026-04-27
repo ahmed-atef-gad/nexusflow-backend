@@ -20,7 +20,7 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { getUserIdFromRequest, type AuthenticatedRequest } from 'src/auth/utils/auth.util';
-import { AuthGuard } from 'src/gaurds/auth/auth.guard';
+import { AuthGuard } from 'src/guards/auth/auth.guard';
 import { CreateAlertRuleDto } from './dto/create-alert-rule.dto';
 import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
 import { UpdateAlertRuleDto } from './dto/update-alert-rule.dto';

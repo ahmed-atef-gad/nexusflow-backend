@@ -4,8 +4,8 @@ import { UsersService } from './users.service';
 import { MongooseModule } from '@nestjs/mongoose';
 import { User, UserSchema } from './schemas/user.schema';
 import { JwtService } from '@nestjs/jwt';
-import { RolesGuard } from '../gaurds/auth/roles.guard';
-import { OwnerGuard } from '../gaurds/auth/owner.guard';
+import { RolesGuard } from '../guards/auth/roles.guard';
+import { OwnerGuard } from '../guards/auth/owner.guard';
 import { DefaultOwnerSeed } from './default-owner.seed';
 
 @Module({

@@ -23,11 +23,11 @@ import {
   ApiHeader,
   ApiQuery,
 } from '@nestjs/swagger';
-import { AuthGuard } from '../gaurds/auth/auth.guard';
+import { AuthGuard } from '../guards/auth/auth.guard';
 import { Setup } from './schemas/setup.schema';
-import { DeviceAuthGuard } from '../gaurds/device-auth.guard';
+import { DeviceAuthGuard } from '../guards/device-auth.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { RolesGuard } from '../gaurds/auth/roles.guard';
+import { RolesGuard } from '../guards/auth/roles.guard';
 import { Role } from '../users/enums/role.enum';
 import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
 
