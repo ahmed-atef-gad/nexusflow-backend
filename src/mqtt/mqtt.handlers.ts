@@ -9,16 +9,9 @@ import { PigeonService } from '../pigeon-mqtt/pigeon.service';
 import { DevicesService } from '../devices/devices.service';
 import { UsersService } from '../users/users.service';
 import { MqttService } from './mqtt.service';
-import { InjectModel } from '@nestjs/mongoose';
-import { Logic, LogicDocument } from '../flows/schemas/logic.schema';
-import { Model } from 'mongoose';
+import { LogicService } from '../flows/logic.service';
 import { NotificationsService } from 'src/notifications/notifications.service';
 import * as vm from 'node:vm';
-import {
-  DEFAULT_FUNCTION_NODE_MAX_AST_NODES,
-  DEFAULT_FUNCTION_NODE_MAX_CODE_LENGTH,
-  validateFunctionNodeCode,
-} from '../flows/function-node-security.util';
 
 type OutputModuleType = 'pwm' | 'digital' | 'dac' | 'servo' | 'other';
 
@@ -54,17 +47,6 @@ type RuntimeMessage = {
   };
 };
 
-type MqttClientAttributes = {
-  esp?: boolean;
-  clientType?: 'esp' | 'user';
-  macAddress?: string;
-  deviceId?: string;
-  deviceName?: string;
-  username?: string;
-  ownerId?: string;
-  ownerUsername?: string;
-};
-
 type MqttClientContext = {
   id?: string;
   deviceMac?: string;
@@ -78,7 +60,7 @@ type MqttClientContext = {
   authorizedDeviceMacs?: string[];
   userId?: string;
   mqttUsername?: string;
-  attributes?: MqttClientAttributes;
+  connectedAt?: Date;
 };
 
 type MqttPacketContext = {
@@ -105,32 +87,14 @@ const INPUT_TOPIC_PATTERN = /^logic\/input\/([^/]+)$/;
 const LEGACY_INPUT_TOPIC_PATTERN = /^esp\/([^/]+)$/;
 const DEFAULT_FUNCTION_NODE_EXECUTION_TIMEOUT_MS = 100;
 const DEFAULT_FUNCTION_NODE_MAX_PAYLOAD_BYTES = 8192;
-const MAX_FUNCTION_VALIDATION_CACHE_SIZE = 500;
 const MAX_RUNTIME_STEPS_PER_PATH = 64;
 const MAX_RUNTIME_FUNCTION_STEPS_PER_PATH = 16;
-const DEFAULT_MQTT_LOGIC_CACHE_TTL_MS = 3000;
-const DEFAULT_MQTT_LOGIC_CACHE_MAX_ENTRIES = 1000;
-const DEFAULT_MQTT_LOGIC_CACHE_SWEEP_INTERVAL_MS = 30000;
-
-type CachedLogicFlows = {
-  flowId: string;
-  flows: unknown[][];
-  expiresAt: number;
-};
 
 @Injectable()
 export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(MqttHandlers.name);
   private readonly functionExecutionTimeoutMs: number;
-  private readonly functionNodeMaxCodeLength: number;
-  private readonly functionNodeMaxAstNodes: number;
   private readonly functionNodeMaxPayloadBytes: number;
-  private readonly logicCacheTtlMs: number;
-  private readonly logicCacheMaxEntries: number;
-  private readonly logicCacheSweepIntervalMs: number;
-  private readonly functionValidationCache = new Map<string, string | null>();
-  private readonly logicFlowsCache = new Map<string, CachedLogicFlows>();
-  private logicCacheSweepTimer: NodeJS.Timeout | null = null;
 
   constructor(
     private readonly pigeonService: PigeonService,
@@ -138,37 +102,16 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     private readonly usersService: UsersService,
     private readonly mqttService: MqttService,
     private readonly notificationsService: NotificationsService,
-    @InjectModel(Logic.name)
-    private readonly logicModel: Model<LogicDocument>,
+    private readonly logicService: LogicService,
     private readonly configService: ConfigService
   ) {
     this.functionExecutionTimeoutMs = this.readPositiveConfigNumber(
       'FUNCTION_NODE_EXECUTION_TIMEOUT_MS',
       DEFAULT_FUNCTION_NODE_EXECUTION_TIMEOUT_MS
     );
-    this.functionNodeMaxCodeLength = this.readPositiveConfigNumber(
-      'FUNCTION_NODE_MAX_CODE_LENGTH',
-      DEFAULT_FUNCTION_NODE_MAX_CODE_LENGTH
-    );
-    this.functionNodeMaxAstNodes = this.readPositiveConfigNumber(
-      'FUNCTION_NODE_MAX_AST_NODES',
-      DEFAULT_FUNCTION_NODE_MAX_AST_NODES
-    );
     this.functionNodeMaxPayloadBytes = this.readPositiveConfigNumber(
       'FUNCTION_NODE_MAX_PAYLOAD_BYTES',
       DEFAULT_FUNCTION_NODE_MAX_PAYLOAD_BYTES
-    );
-    this.logicCacheTtlMs = this.readPositiveConfigNumber(
-      'MQTT_LOGIC_CACHE_TTL_MS',
-      DEFAULT_MQTT_LOGIC_CACHE_TTL_MS
-    );
-    this.logicCacheMaxEntries = this.readPositiveConfigNumber(
-      'MQTT_LOGIC_CACHE_MAX_ENTRIES',
-      DEFAULT_MQTT_LOGIC_CACHE_MAX_ENTRIES
-    );
-    this.logicCacheSweepIntervalMs = this.readPositiveConfigNumber(
-      'MQTT_LOGIC_CACHE_SWEEP_INTERVAL_MS',
-      DEFAULT_MQTT_LOGIC_CACHE_SWEEP_INTERVAL_MS
     );
   }
 
@@ -181,18 +124,12 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     broker.on('clientDisconnect', this.onClientDisconnect.bind(this));
     broker.on('publish', this.onClientPublish.bind(this));
 
-    this.logicCacheSweepTimer = setInterval(
-      () => this.pruneLogicCache(),
-      this.logicCacheSweepIntervalMs
-    );
-    this.logicCacheSweepTimer.unref();
+    // start logic cache sweeper in LogicService
+    this.logicService.startLogicCacheSweeper();
   }
 
   onModuleDestroy() {
-    if (this.logicCacheSweepTimer) {
-      clearInterval(this.logicCacheSweepTimer);
-      this.logicCacheSweepTimer = null;
-    }
+    this.logicService.stopLogicCacheSweeper();
   }
 
   private readPositiveConfigNumber(name: string, fallback: number): number {
@@ -209,83 +146,6 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
   }
   private normalizeUsername(value: string): string {
     return value.trim();
-  }
-
-  private pruneLogicCache(): void {
-    if (!this.logicFlowsCache.size) return;
-
-    const now = Date.now();
-    for (const [cacheKey, cachedEntry] of this.logicFlowsCache.entries()) {
-      if (cachedEntry.expiresAt <= now) {
-        this.logicFlowsCache.delete(cacheKey);
-      }
-    }
-  }
-
-  private trimLogicCacheIfNeeded(): void {
-    if (this.logicFlowsCache.size < this.logicCacheMaxEntries) return;
-
-    let oldestCacheKey: string | null = null;
-    let oldestExpiresAt = Number.POSITIVE_INFINITY;
-
-    for (const [cacheKey, cachedEntry] of this.logicFlowsCache.entries()) {
-      if (cachedEntry.expiresAt < oldestExpiresAt) {
-        oldestExpiresAt = cachedEntry.expiresAt;
-        oldestCacheKey = cacheKey;
-      }
-    }
-
-    if (oldestCacheKey) {
-      this.logicFlowsCache.delete(oldestCacheKey);
-    }
-  }
-
-  private buildLogicCacheKey(deviceMac: string): string {
-    return this.normalizeMacAddress(deviceMac);
-  }
-
-  private evictLogicCacheForDevice(deviceMac: string): void {
-    this.logicFlowsCache.delete(this.buildLogicCacheKey(deviceMac));
-  }
-
-  private async getLogicFlowsForFlowId(
-    flowId: string,
-    deviceMac: string
-  ): Promise<unknown[][]> {
-    const cacheKey = this.buildLogicCacheKey(deviceMac);
-    const now = Date.now();
-    const cachedEntry = this.logicFlowsCache.get(cacheKey);
-    if (
-      cachedEntry &&
-      cachedEntry.expiresAt > now &&
-      cachedEntry.flowId === flowId
-    ) {
-      return cachedEntry.flows;
-    }
-
-    if (cachedEntry) {
-      this.logicFlowsCache.delete(cacheKey);
-    }
-
-    const logicDoc = await this.logicModel
-      .findOne({ flowId })
-      .select('program')
-      .lean()
-      .exec();
-
-    const rawFlows = Array.isArray((logicDoc as any)?.program?.flows)
-      ? ((logicDoc as any).program.flows as unknown[][])
-      : [];
-    const safeFlows = rawFlows.filter(Array.isArray);
-
-    this.trimLogicCacheIfNeeded();
-    this.logicFlowsCache.set(cacheKey, {
-      flowId,
-      flows: safeFlows,
-      expiresAt: now + this.logicCacheTtlMs,
-    });
-
-    return safeFlows;
   }
 
   private isMacAddress(value: string): boolean {
@@ -435,16 +295,6 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
         client.linkedFlowId = device.activeFlowId?.toString() ?? null;
         client.isEsp = true;
         client.isUserClient = false;
-        client.attributes = {
-          ...(client.attributes ?? {}),
-          esp: true,
-          clientType: 'esp',
-          macAddress: normalizedClientMac,
-          deviceId,
-          deviceName: deviceName ?? undefined,
-          ownerId,
-          ownerUsername,
-        };
 
         this.logger.log(
           `MQTT auth accepted. clientId=${clientId} type=esp mac=${normalizedClientMac}`
@@ -489,16 +339,12 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       client.isUserClient = true;
       client.userId = userId;
       client.mqttUsername = user.username;
-      client.attributes = {
-        ...(client.attributes ?? {}),
-        esp: false,
-        clientType: 'user',
-        username: user.username,
-      };
 
       this.logger.log(
         `MQTT auth accepted. clientId=${clientId} type=user username=${user.username}`
       );
+
+      client.connectedAt = new Date();
       return done(null, true);
     } catch (error) {
       this.logger.error(
@@ -642,7 +488,7 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       const normalizedMac = this.normalizeMacAddress(
         client.deviceMac ?? clientId
       );
-      this.evictLogicCacheForDevice(normalizedMac);
+      this.logicService.evictForDevice(normalizedMac);
 
       await this.mqttService.publish(`client/${clientId}/online`, {
         online: false,
@@ -770,7 +616,10 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     rawPayload: InputPayload | null,
     inputNodeId: string
   ): string {
-    if (typeof rawPayload?.sensorType === 'string' && rawPayload.sensorType.trim()) {
+    if (
+      typeof rawPayload?.sensorType === 'string' &&
+      rawPayload.sensorType.trim()
+    ) {
       return rawPayload.sensorType.trim();
     }
 
@@ -789,7 +638,10 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       return normalizedInput;
     }
 
-    if (typeof rawPayload.value === 'number' && Number.isFinite(rawPayload.value)) {
+    if (
+      typeof rawPayload.value === 'number' &&
+      Number.isFinite(rawPayload.value)
+    ) {
       return rawPayload.value;
     }
     if (
@@ -1023,37 +875,6 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private validateFunctionCodeAtRuntime(code: string): string | null {
-    if (this.functionValidationCache.has(code)) {
-      const cached = this.functionValidationCache.get(code) ?? null;
-
-      // Guard against stale cache entries from older deployments where
-      // mapValue was not yet part of the allowed globals.
-      if (
-        cached === "'mapValue' is not defined" &&
-        /\bmapValue\s*\(/.test(code)
-      ) {
-        this.functionValidationCache.delete(code);
-      } else {
-        return cached;
-      }
-    }
-
-    const validationError = validateFunctionNodeCode(code, {
-      maxCodeLength: this.functionNodeMaxCodeLength,
-      maxAstNodes: this.functionNodeMaxAstNodes,
-    });
-
-    if (
-      this.functionValidationCache.size >= MAX_FUNCTION_VALIDATION_CACHE_SIZE
-    ) {
-      this.functionValidationCache.clear();
-    }
-
-    this.functionValidationCache.set(code, validationError);
-    return validationError;
-  }
-
   private executeFunctionCodeInSandbox(
     code: string,
     message: RuntimeMessage
@@ -1138,7 +959,8 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     currentMessage: RuntimeMessage
   ): RuntimeMessage | null {
     const code = String(step.code ?? '').trim() || 'return msg;';
-    const validationError = this.validateFunctionCodeAtRuntime(code);
+    const validationError =
+      this.logicService.validateFunctionCodeAtRuntime(code);
     if (validationError) {
       throw new Error(`Invalid function code: ${validationError}`);
     }
@@ -1279,7 +1101,10 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       );
     }
 
-    const flows = await this.getLogicFlowsForFlowId(flowId, deviceMac);
+    const flows = await this.logicService.getLogicFlowsForFlowId(
+      flowId,
+      deviceMac
+    );
 
     if (!flows.length) {
       this.logger.debug(
@@ -1329,10 +1154,9 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       );
 
       const usesFunctionSteps = this.pathUsesFunctionSteps(flow);
-      const initialPayload =
-        usesFunctionSteps
-          ? this.buildFunctionInitialPayload(rawPayload, inputValue)
-          : inputValue;
+      const initialPayload = usesFunctionSteps
+        ? this.buildFunctionInitialPayload(rawPayload, inputValue)
+        : inputValue;
 
       let currentMessage = this.createRuntimeMessage({
         inputNodeId,
@@ -1481,7 +1305,7 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
           this.logger.log(
             `Flow update detected for device ${topicMac}, evicting logic cache.`
           );
-          this.evictLogicCacheForDevice(topicMac);
+          this.logicService.evictForDevice(topicMac);
         }
       }
 
