@@ -221,6 +221,13 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     return segments[2] === 'response' || segments[2] === '+';
   }
 
+  private isVirtualEspResponseTopic(topic: string): boolean {
+    const segments = topic.split('/').filter(Boolean);
+    if (segments.length !== 3 || segments[0] !== 'esp') return false;
+    if (this.isMacAddress(segments[1])) return false;
+    return segments[2] === 'response';
+  }
+
   private isAuthorizedForDevicesTopic(
     clientMac: string,
     topic: string
@@ -523,6 +530,10 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     }
 
     if (this.isEspTopic(topic)) {
+      if (client?.isEsp && this.isVirtualEspResponseTopic(topic)) {
+        return done(null);
+      }
+
       if (client?.isEsp) {
         const clientMac = client?.deviceMac;
         if (clientMac && this.isAuthorizedForEspTopic(clientMac, topic)) {
@@ -707,6 +718,10 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     }
 
     if (this.isEspTopic(topic)) {
+      if (client?.isEsp && this.isVirtualEspResponseTopic(topic)) {
+        return packet;
+      }
+
       if (client?.isEsp) {
         const clientMac = client?.deviceMac;
         if (clientMac && this.isAuthorizedForEspTopic(clientMac, topic)) {
