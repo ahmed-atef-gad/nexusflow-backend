@@ -109,6 +109,7 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(MqttHandlers.name);
   private readonly functionExecutionTimeoutMs: number;
   private readonly functionNodeMaxPayloadBytes: number;
+  private readonly activeEspSessions = new Map<string, string>();
 
   constructor(
     private readonly pigeonService: PigeonService,
@@ -304,6 +305,28 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     return done(error, false);
   }
 
+  private reserveEspSession(deviceMac: string, clientId: string): boolean {
+    const normalizedMac = this.normalizeMacAddress(deviceMac);
+    const normalizedClientId = clientId.trim();
+    const activeClientId = this.activeEspSessions.get(normalizedMac);
+
+    if (!activeClientId) {
+      this.activeEspSessions.set(normalizedMac, normalizedClientId);
+      return true;
+    }
+
+    if (activeClientId === normalizedClientId) {
+      return true;
+    }
+
+    if (!this.mqttService.isClientConnected(activeClientId)) {
+      this.activeEspSessions.set(normalizedMac, normalizedClientId);
+      return true;
+    }
+
+    return false;
+  }
+
   private async onAuthenticate(
     client: MqttClientContext,
     username: Buffer | string | undefined,
@@ -353,6 +376,14 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
           return this.rejectAuth(
             clientId,
             `reason=invalid device credentials mac=${normalizedClientMac}`,
+            done
+          );
+        }
+
+        if (!this.reserveEspSession(normalizedClientMac, clientId)) {
+          return this.rejectAuth(
+            clientId,
+            `reason=device already has an active mqtt session mac=${normalizedClientMac}`,
             done
           );
         }
@@ -663,6 +694,9 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       const normalizedMac = this.normalizeMacAddress(
         client.deviceMac ?? clientId
       );
+      if (this.activeEspSessions.get(normalizedMac) === clientId) {
+        this.activeEspSessions.delete(normalizedMac);
+      }
       this.logicService.evictForDevice(normalizedMac);
 
       await this.mqttService.publish(`client/${clientId}/online`, {
