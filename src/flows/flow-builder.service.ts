@@ -66,7 +66,7 @@ const ANALOG_PIN_SET = new Set<number>(ANALOG_PINS);
 const DAC_PIN_SET = new Set<number>(DAC_PINS);
 
 type OutputModuleType = 'pwm' | 'digital' | 'dac' | 'servo' | 'other';
-type RuntimeStepType = 'input' | 'function' | 'output';
+type RuntimeStepType = 'input' | 'function' | 'output' | 'mqtt-out';
 
 export const INPUT_GPIO_TASK_NAME = 'GpioTask';
 export const OUTPUT_GPIO_TASK_NAME = 'GpioOutput';
@@ -106,6 +106,9 @@ export type RuntimeStep = {
   pin?: number;
   value?: number | string;
   topic?: string;
+  variables?: Record<string, string | number | boolean>;
+  channel?: string;
+  targetFlowIds?: string[];
 };
 
 export type CommandExtraction = {
@@ -1145,6 +1148,7 @@ export class FlowBuilderService {
 
   private isInputModule(moduleId: string): boolean {
     return (
+      moduleId.startsWith('mqtt-in') ||
       moduleId.startsWith('ESP32-gpio-input') ||
       moduleId.startsWith('DHT-Sensor') ||
       moduleId.startsWith('PIR-Sensor') ||
@@ -1174,7 +1178,31 @@ export class FlowBuilderService {
   }
 
   private isOutputModule(moduleId: string): boolean {
-    return moduleId.startsWith('ESP32-gpio-output');
+    return (
+      moduleId.startsWith('ESP32-gpio-output') ||
+      moduleId.startsWith('mqtt-out')
+    );
+  }
+
+  private normalizeMqttChannel(value: unknown): string {
+    const channel = String(value ?? 'default')
+      .trim()
+      .replace(/[^a-zA-Z0-9_-]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '');
+
+    return channel || 'default';
+  }
+
+  private parseTargetFlowIds(value: unknown): string[] {
+    return Array.from(
+      new Set(
+        String(value ?? '')
+          .split(',')
+          .map((item) => item.trim())
+          .filter(Boolean)
+      )
+    );
   }
 
   private resolveOutputCommand(moduleId: string): number | undefined {
@@ -1216,6 +1244,29 @@ export class FlowBuilderService {
     const targetModuleId = targetNode.data?.moduleId ?? '';
     if (!this.isOutputModule(targetModuleId)) {
       return null;
+    }
+
+    if (targetModuleId === 'mqtt-out') {
+      const targetFlowIds = this.parseTargetFlowIds(
+        targetNode.data?.variables?.targetFlowIds
+      );
+
+      if (!targetFlowIds.length) {
+        this.appendNodeWarning(
+          targetNode,
+          `MQTT Out node ${this.getNodeLabel(targetNode)} has no target flows and was skipped.`,
+          'MQTT_OUT_TARGET_FLOWS_MISSING'
+        );
+        return null;
+      }
+
+      return {
+        id: targetNode.id,
+        moduleId: targetModuleId,
+        stepType: 'mqtt-out',
+        channel: this.normalizeMqttChannel(targetNode.data?.variables?.channel),
+        targetFlowIds,
+      };
     }
 
     const pin = this.toOptionalNumber(targetNode.data?.variables?.pinNumber);
@@ -1379,6 +1430,17 @@ export class FlowBuilderService {
       }
 
       const targetModuleId = targetNode.data?.moduleId ?? '';
+      if (
+        node.data?.moduleId === 'mqtt-in' &&
+        !this.isFunctionModule(targetModuleId)
+      ) {
+        this.throwNodeError(
+          targetNode,
+          `MQTT In node ${this.getNodeLabel(node)} must connect to a Function node before downstream modules.`,
+          'MQTT_IN_REQUIRES_FUNCTION'
+        );
+      }
+
       const outputStep = this.buildOutputStepFromNode(targetNode);
       if (outputStep) {
         paths.push([outputStep]);
@@ -1423,11 +1485,18 @@ export class FlowBuilderService {
       id: node.id,
       moduleId: node.data?.moduleId ?? '',
       stepType: 'input',
+      variables: node.data?.variables,
+      channel:
+        node.data?.moduleId === 'mqtt-in'
+          ? this.normalizeMqttChannel(node.data?.variables?.channel)
+          : undefined,
     };
   }
 
   private hasRuntimeOutputStep(path: RuntimeStep[]): boolean {
-    return path.some((step) => step.stepType === 'output');
+    return path.some(
+      (step) => step.stepType === 'output' || step.stepType === 'mqtt-out'
+    );
   }
 
   private buildLogicPathForInputNode(

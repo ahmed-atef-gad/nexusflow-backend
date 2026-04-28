@@ -22,6 +22,16 @@ export const MODULE_DEFINITIONS: ModuleDefinition[] = [
     ports: 'both',
   },
   {
+    id: 'mqtt-in',
+    name: 'MQTT In',
+    ports: 'source',
+  },
+  {
+    id: 'mqtt-out',
+    name: 'MQTT Out',
+    ports: 'target',
+  },
+  {
     id: 'ESP32-gpio-input',
     name: 'Digital Input',
     ports: 'source',
