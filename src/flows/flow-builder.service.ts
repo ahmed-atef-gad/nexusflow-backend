@@ -981,7 +981,8 @@ export class FlowBuilderService {
   buildUiFromNodes(
     nodes: Node[],
     edges: RFEdge[],
-    deviceMac?: string
+    deviceMac?: string,
+    flowId?: string
   ): UiItem[] {
     if (nodes.length === 0) {
       throw new BadRequestException('Flow must contain at least one node');
@@ -999,6 +1000,24 @@ export class FlowBuilderService {
 
       if (module.moduleId.startsWith('logic-function')) {
         return; // Skip function nodes in UI generation
+      }
+
+      if (module.moduleId === 'mqtt-out') {
+        return;
+      }
+
+      if (module.moduleId === 'mqtt-in') {
+        uiElements.push({
+          moduleId: module.moduleId,
+          moduleName: module.name,
+          alias: module.alias,
+          moduleType: 'input',
+          topic: flowId
+            ? `nexusflow/ui/mqtt-in/${flowId}/${node.id}`
+            : `nexusflow/ui/mqtt-in/${node.id}`,
+          channel: this.normalizeMqttChannel(module.variables?.channel),
+        });
+        return;
       }
 
       if (module.moduleId.startsWith('ESP32-gpio-output')) {

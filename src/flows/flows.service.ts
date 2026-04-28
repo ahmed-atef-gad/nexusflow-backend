@@ -213,7 +213,9 @@ export class FlowsService {
     createdFlow.set('nodes', nodesWithDiagnostics);
     uiData = this.flowBuilderService.buildUiFromNodes(
       nodesWithDiagnostics,
-      edges
+      edges,
+      undefined,
+      createdFlow.id as string
     );
 
     const savedFlow = await createdFlow.save();
@@ -357,7 +359,8 @@ export class FlowsService {
     const uiData = this.flowBuilderService.buildUiFromNodes(
       flow.nodes ?? [],
       flow.edges ?? [],
-      deviceMac
+      deviceMac,
+      flowId
     );
     await this.uiService.upsertByFlowId(flowId, uiData);
     return uiData;
@@ -418,7 +421,8 @@ export class FlowsService {
       uiData = this.flowBuilderService.buildUiFromNodes(
         nodesWithDiagnostics,
         updatedFlow.edges,
-        device?.macAddress
+        device?.macAddress,
+        id
       );
 
       topicsData = this.flowBuilderService.buildTopicsForUi(device?.macAddress);

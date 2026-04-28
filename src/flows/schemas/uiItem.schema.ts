@@ -43,6 +43,13 @@ export class UiItem {
   responseTopic?: string;
 
   @ApiProperty({
+    required: false,
+    description: 'Optional logical MQTT channel for MQTT In modules',
+  })
+  @Prop()
+  channel?: string;
+
+  @ApiProperty({
     type: String,
     description: 'Type of module (input, output, etc.)',
   })
