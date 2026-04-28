@@ -171,15 +171,15 @@ sequenceDiagram
     participant App as Mobile App
 
     ESP->>MQTT: Sensor payload publish
-    MQTT->>N: processSensorReading(projectId=flowId, sensorType, value)
-    N->>DB: Load alert_rules for project and evaluate thresholds
+    MQTT->>N: processSensorReading(flowId, nodeId, readings)
+    N->>DB: Load enabled alert_rules for flow+node and evaluate operators
     N->>N: Apply cooldown and policy checks
     N->>DB: Insert alert_events
     N->>FCM: Send multicast push to active device_tokens
     FCM-->>N: Delivery result per token
     N->>DB: Mark dead tokens inactive on UNREGISTERED
 
-    App->>N: GET alert-history
+    App->>N: GET /v1/flows/:flowId/alert-history
     N-->>App: Last alerts + nextCursor
 ```
 
@@ -218,5 +218,5 @@ Main collections represented by Mongoose schemas:
 - MQTT is part of this backend deployment (not an external broker in this repo).
 - MQTT auth supports both user clients and ESP clients with different auth paths.
 - Function nodes are statically validated and executed in a restricted VM context.
-- In current implementation, project-scoped notifications APIs use `projectId = flowId` as the project scope key.
-- Device token registration is user/device-scoped and does not include `projectId`.
+- Notifications APIs use `flowId` in routes for flow-scoped resources.
+- Device token registration is user/device-scoped and does not include `flowId`.

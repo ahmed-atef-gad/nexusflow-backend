@@ -5,11 +5,14 @@ export type AlertPolicyDocument = HydratedDocument<AlertPolicy>;
 
 @Schema({ collection: 'alert_policies', timestamps: true })
 export class AlertPolicy {
-  @Prop({ required: true, index: true })
-  projectId!: string;
+  @Prop({ required: true })
+  moduleId!: string;
 
   @Prop({ required: true })
-  sensorType!: string;
+  readingKey!: string;
+
+  @Prop({ required: true })
+  label!: string;
 
   @Prop({ required: true, default: false })
   required!: boolean;
@@ -23,10 +26,13 @@ export class AlertPolicy {
   @Prop({ required: true, enum: ['critical', 'warning', 'info'] })
   defaultSeverity!: 'critical' | 'warning' | 'info';
 
+  @Prop({ type: [String], default: ['>', '<', '>=', '<='] })
+  supportedOperators!: Array<'>' | '<' | '>=' | '<=' | 'between' | 'outside'>;
+
   @Prop({ required: true, default: true, index: true })
   isActive!: boolean;
 }
 
 export const AlertPolicySchema = SchemaFactory.createForClass(AlertPolicy);
 
-AlertPolicySchema.index({ projectId: 1, sensorType: 1 }, { unique: true });
+AlertPolicySchema.index({ moduleId: 1, readingKey: 1 }, { unique: true });

@@ -3,7 +3,6 @@ import {
   ForbiddenException,
   Injectable,
   InternalServerErrorException,
-  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -30,8 +29,14 @@ import {
   NotificationPreference,
   NotificationPreferenceDocument,
 } from './schemas/notification-preference.schema';
-import { UpsertAlertPoliciesDto } from './dto/upsert-alert-policies.dto';
-import { CreateAlertRuleDto } from './dto/create-alert-rule.dto';
+import {
+  AlertComparisonOperator,
+  UpsertAlertPoliciesDto,
+} from './dto/upsert-alert-policies.dto';
+import {
+  AlertRuleOperator,
+  CreateAlertRuleDto,
+} from './dto/create-alert-rule.dto';
 import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
 import { UpdateAlertRuleDto } from './dto/update-alert-rule.dto';
 import {
@@ -41,72 +46,83 @@ import {
 
 type AlertSeverity = 'critical' | 'warning' | 'info';
 
-type SendProjectAlertInput = {
-  projectId: string;
-  title: string;
-  body: string;
-  data?: Record<string, string | number | boolean>;
-  severity?: AlertSeverity;
-};
-
 type ProcessSensorReadingInput = {
-  projectId: string;
-  sensorType: string;
-  value: number;
+  flowId: string;
+  nodeId: string;
+  readings: Record<string, number>;
   occurredAt?: Date;
   metadata?: Record<string, string | number | boolean>;
 };
 
-type AlertRuleActionPayload = {
-  title?: string;
-  body?: string;
-};
-
-type TriggerAlertResult = {
-  event: {
-    id: string;
-    projectId: string;
-    sensorType: string;
-    severity: AlertSeverity;
-    title: string;
-    body: string;
-    value?: number;
-    threshold?: number;
-    ruleId?: string;
-    occurredAt: Date;
-    createdAt?: Date;
-  };
-  delivery: {
-    requestedTokens: number;
-    successCount: number;
-    failureCount: number;
-    invalidatedTokens: number;
-    error?: string;
-  };
-};
-
-type AlertHistoryCursor = {
-  occurredAt: string;
+type DeviceRegistrationResponse = {
   id: string;
+  deviceId: string;
+  platform: 'android' | 'ios';
+  appVersion?: string;
+  locale?: string;
+  registeredAt?: Date;
+  updatedAt?: Date;
 };
 
 type AlertHistoryItem = {
   id: string;
-  projectId: string;
-  sensorType: string;
+  flowId: string;
+  ruleId: string;
+  nodeId: string;
+  moduleId: string;
+  readingKey: string;
   severity: AlertSeverity;
   title: string;
   body: string;
-  value?: number;
-  threshold?: number;
-  ruleId?: string;
+  value: number;
+  operator: AlertRuleOperator;
+  threshold: number | null;
+  min: number | null;
+  max: number | null;
   occurredAt: Date;
   createdAt?: Date;
 };
 
+type RuleOutput = {
+  id: string;
+  flowId: string;
+  nodeId: string;
+  moduleId: string;
+  readingKey: string;
+  operator: AlertRuleOperator;
+  threshold: number | null;
+  min: number | null;
+  max: number | null;
+  severity: AlertSeverity;
+  enabled: boolean;
+  actions: unknown[];
+  createdAt?: Date;
+  updatedAt?: Date;
+};
+
+const SIMPLE_OPERATORS: AlertRuleOperator[] = ['>', '<', '>=', '<='];
+const RANGE_OPERATORS: AlertRuleOperator[] = ['between', 'outside'];
+const ALL_OPERATORS = new Set<AlertRuleOperator>([
+  '>',
+  '<',
+  '>=',
+  '<=',
+  'between',
+  'outside',
+]);
+
+const MODULE_READING_KEYS: Record<string, string[]> = {
+  'MQ2-Sensor': ['analog', 'digital'],
+  'DHT-Sensor-11': ['temperature', 'humidity'],
+  'DHT-Sensor-22': ['temperature', 'humidity'],
+  'PIR-Sensor': ['motion'],
+  'Rain-Sensor': ['analog', 'digital'],
+  'Soil-Sensor': ['analog', 'digital'],
+  'Ultrasonic-Sensor': ['distance_cm'],
+};
+
 @Injectable()
 export class NotificationsService {
-  private readonly logger = new Logger(NotificationsService.name);
   private firebaseApp?: App;
   private messagingClient?: Messaging;
   private readonly deadTokenErrorCodes = new Set([
@@ -141,161 +157,441 @@ export class NotificationsService {
   async registerDeviceToken(
     userId: string,
     dto: RegisterNotificationDeviceDto
-  ): Promise<{
-    id: string;
-    userId: string;
-    deviceId: string;
-    platform: 'android' | 'ios';
-    isActive: boolean;
-    lastSeenAt: Date;
-    updatedAt?: Date;
-    createdAt?: Date;
-  }> {
-    // FCM token must belong to a single active registration.
+  ): Promise<DeviceRegistrationResponse> {
     await this.notificationDeviceTokenModel.deleteMany({
       fcmToken: dto.fcmToken,
       $or: [{ userId: { $ne: userId } }, { deviceId: { $ne: dto.deviceId } }],
     });
 
     const now = new Date();
-    const document = await this.notificationDeviceTokenModel.findOneAndUpdate(
-      { userId, deviceId: dto.deviceId },
-      {
-        $set: {
-          platform: dto.platform,
-          fcmToken: dto.fcmToken,
-          appVersion: dto.appVersion,
-          locale: dto.locale,
-          isActive: true,
-          lastError: null,
-          invalidatedAt: null,
-          lastSeenAt: now,
-        },
-      },
-      {
-        upsert: true,
-        new: true,
-        setDefaultsOnInsert: true,
-      }
-    );
+    const existing = await this.notificationDeviceTokenModel
+      .findOne({ userId, deviceId: dto.deviceId })
+      .exec();
 
-    const doc = document as unknown as {
-      id: string;
-      userId: string;
-      deviceId: string;
-      platform: 'android' | 'ios';
-      isActive: boolean;
-      lastSeenAt?: Date;
-      updatedAt?: Date;
-      createdAt?: Date;
-    };
-
-    return {
-      id: doc.id,
-      userId: doc.userId,
-      deviceId: doc.deviceId,
-      platform: doc.platform,
-      isActive: doc.isActive,
-      lastSeenAt: doc.lastSeenAt ?? new Date(),
-      updatedAt: doc.updatedAt,
-      createdAt: doc.createdAt,
-    };
-  }
-
-  async triggerAlert(input: TriggerAlertDto): Promise<TriggerAlertResult> {
-    const occurredAt = input.occurredAt
-      ? new Date(input.occurredAt)
-      : new Date();
-    const title = input.title?.trim() || this.buildDefaultAlertTitle(input);
-    const body = input.body?.trim() || this.buildDefaultAlertBody(input);
-
-    const createdEvent = await this.alertEventModel.create({
-      projectId: input.projectId,
-      sensorType: input.sensorType,
-      severity: input.severity,
-      title,
-      body,
-      value: input.value,
-      threshold: input.threshold,
-      ruleId: input.ruleId,
-      occurredAt,
-    });
-    const createdEventSafe = createdEvent as unknown as {
-      id: string;
-      projectId: string;
-      sensorType: string;
-      severity: AlertSeverity;
-      title: string;
-      body: string;
-      value?: number;
-      threshold?: number;
-      ruleId?: string;
-      occurredAt: Date;
-      createdAt: Date;
-    };
-
-    let delivery: TriggerAlertResult['delivery'];
-    try {
-      delivery = await this.sendAlertToProject({
-        projectId: input.projectId,
-        title,
-        body,
-        severity: createdEventSafe.severity,
-        data: {
-          type: 'ALERT_TRIGGERED',
-          sensorType: input.sensorType,
-          ruleId: input.ruleId ?? '',
-          value: input.value ?? '',
-          threshold: input.threshold ?? '',
-          timestamp: occurredAt.toISOString(),
-        },
+    if (!existing) {
+      const created = await this.notificationDeviceTokenModel.create({
+        userId,
+        deviceId: dto.deviceId,
+        platform: dto.platform,
+        fcmToken: dto.fcmToken,
+        appVersion: dto.appVersion,
+        locale: dto.locale,
+        isActive: true,
+        lastError: null,
+        invalidatedAt: null,
+        lastSeenAt: now,
       });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Unknown push delivery error';
-      this.logger.error(
-        `Alert event ${createdEventSafe.id} saved but push delivery failed: ${message}`
-      );
 
-      delivery = {
-        requestedTokens: 0,
-        successCount: 0,
-        failureCount: 0,
-        invalidatedTokens: 0,
-        error: message,
+      return {
+        id: this.toObjectIdString(created),
+        deviceId: dto.deviceId,
+        platform: dto.platform,
+        appVersion: dto.appVersion,
+        locale: dto.locale,
+        registeredAt: created.createdAt ?? now,
       };
     }
 
+    existing.platform = dto.platform;
+    existing.fcmToken = dto.fcmToken;
+    existing.appVersion = dto.appVersion;
+    existing.locale = dto.locale;
+    existing.isActive = true;
+    existing.lastError = undefined;
+    existing.invalidatedAt = undefined;
+    existing.lastSeenAt = now;
+    await existing.save();
+
     return {
-      event: {
-        id: createdEventSafe.id,
-        projectId: createdEventSafe.projectId,
-        sensorType: createdEventSafe.sensorType,
-        severity: createdEventSafe.severity,
-        title: createdEventSafe.title,
-        body: createdEventSafe.body,
-        value:
-          typeof createdEventSafe.value === 'number'
-            ? createdEventSafe.value
-            : undefined,
-        threshold:
-          typeof createdEventSafe.threshold === 'number'
-            ? createdEventSafe.threshold
-            : undefined,
-        ruleId: createdEventSafe.ruleId,
-        occurredAt: createdEventSafe.occurredAt,
-        createdAt: createdEventSafe.createdAt,
-      },
-      delivery,
+      id: this.toObjectIdString(existing),
+      deviceId: dto.deviceId,
+      platform: dto.platform,
+      appVersion: dto.appVersion,
+      locale: dto.locale,
+      updatedAt: existing.updatedAt ?? now,
     };
+  }
+
+  async getAlertPolicies(moduleId?: string): Promise<{
+    items: Array<{
+      id: string;
+      moduleId: string;
+      readingKey: string;
+      label: string;
+      required: boolean;
+      thresholdRequired: boolean;
+      defaultEnabled: boolean;
+      defaultSeverity: AlertSeverity;
+      supportedOperators: AlertComparisonOperator[];
+      isActive: boolean;
+    }>;
+  }> {
+    const filter: FilterQuery<AlertPolicyDocument> = { isActive: true };
+    if (moduleId?.trim()) {
+      filter.moduleId = moduleId.trim();
+    }
+
+    const policies = await this.alertPolicyModel
+      .find(filter)
+      .sort({ moduleId: 1, readingKey: 1 })
+      .lean()
+      .exec();
+
+    return {
+      items: policies.map((policy) => ({
+        id: String(policy._id),
+        moduleId: policy.moduleId,
+        readingKey: policy.readingKey,
+        label: policy.label,
+        required: policy.required,
+        thresholdRequired: policy.thresholdRequired,
+        defaultEnabled: policy.defaultEnabled,
+        defaultSeverity: policy.defaultSeverity,
+        supportedOperators: this.normalizeSupportedOperators(
+          policy.supportedOperators
+        ),
+        isActive: policy.isActive,
+      })),
+    };
+  }
+
+  async upsertAlertPolicies(dto: UpsertAlertPoliciesDto): Promise<{
+    upserted: number;
+    items: Array<{
+      id: string;
+      moduleId: string;
+      readingKey: string;
+      label: string;
+      required: boolean;
+      thresholdRequired: boolean;
+      defaultEnabled: boolean;
+      defaultSeverity: AlertSeverity;
+      supportedOperators: AlertComparisonOperator[];
+      isActive: boolean;
+    }>;
+  }> {
+    const normalized = this.deduplicatePolicies(dto.policies ?? []);
+    if (!normalized.length) {
+      return { upserted: 0, items: [] };
+    }
+
+    const operations = normalized.map((policy) => ({
+      updateOne: {
+        filter: {
+          moduleId: policy.moduleId,
+          readingKey: this.normalizeReadingKey(policy.readingKey),
+        },
+        update: {
+          $set: {
+            moduleId: policy.moduleId,
+            readingKey: this.normalizeReadingKey(policy.readingKey),
+            label: policy.label.trim(),
+            required: policy.required,
+            thresholdRequired: policy.thresholdRequired,
+            defaultEnabled: policy.defaultEnabled,
+            defaultSeverity: policy.defaultSeverity,
+            supportedOperators: this.normalizeSupportedOperators(
+              policy.supportedOperators
+            ),
+            isActive: policy.isActive,
+          },
+        },
+        upsert: true,
+      },
+    }));
+
+    const result = await this.alertPolicyModel.bulkWrite(operations, {
+      ordered: false,
+    });
+
+    const filters = normalized.map((entry) => ({
+      moduleId: entry.moduleId,
+      readingKey: this.normalizeReadingKey(entry.readingKey),
+    }));
+    const items = await this.alertPolicyModel
+      .find({ $or: filters })
+      .lean()
+      .exec();
+
+    return {
+      upserted: (result.upsertedCount ?? 0) + (result.modifiedCount ?? 0),
+      items: items.map((policy) => ({
+        id: String(policy._id),
+        moduleId: policy.moduleId,
+        readingKey: policy.readingKey,
+        label: policy.label,
+        required: policy.required,
+        thresholdRequired: policy.thresholdRequired,
+        defaultEnabled: policy.defaultEnabled,
+        defaultSeverity: policy.defaultSeverity,
+        supportedOperators: this.normalizeSupportedOperators(
+          policy.supportedOperators
+        ),
+        isActive: policy.isActive,
+      })),
+    };
+  }
+
+  async getNotificationPreferences(
+    userId: string,
+    flowId: string
+  ): Promise<{
+    id: string;
+    flowId: string;
+    notificationsEnabled: boolean;
+    channels: string[];
+  }> {
+    await this.assertUserCanAccessFlow(userId, flowId);
+
+    const preference = await this.notificationPreferenceModel
+      .findOne({ flowId, userId })
+      .lean()
+      .exec();
+    if (!preference) {
+      throw new NotFoundException('Preferences not found for this flow.');
+    }
+
+    return {
+      id: String(preference._id),
+      flowId: preference.flowId,
+      notificationsEnabled: preference.notificationsEnabled,
+      channels: Array.isArray(preference.channels)
+        ? preference.channels
+        : ['push'],
+    };
+  }
+
+  async updateNotificationPreferences(
+    userId: string,
+    flowId: string,
+    dto: UpdateNotificationPreferencesDto
+  ): Promise<{
+    id: string;
+    flowId: string;
+    notificationsEnabled: boolean;
+    channels: string[];
+  }> {
+    await this.assertUserCanAccessFlow(userId, flowId);
+
+    const normalizedChannels = this.normalizeChannels(dto.channels);
+
+    const updated = await this.notificationPreferenceModel
+      .findOneAndUpdate(
+        { flowId, userId },
+        {
+          $set: {
+            notificationsEnabled: dto.notificationsEnabled,
+            channels: normalizedChannels,
+          },
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      )
+      .exec();
+
+    return {
+      id: this.toObjectIdString(updated),
+      flowId,
+      notificationsEnabled: dto.notificationsEnabled,
+      channels: normalizedChannels,
+    };
+  }
+
+  async getAlertRules(
+    userId: string,
+    flowId: string,
+    nodeId?: string
+  ): Promise<{ items: RuleOutput[] }> {
+    await this.assertUserCanAccessFlow(userId, flowId);
+
+    const filter: FilterQuery<AlertRuleDocument> = { flowId, userId };
+    if (nodeId?.trim()) {
+      filter.nodeId = nodeId.trim();
+    }
+
+    const rules = await this.alertRuleModel
+      .find(filter)
+      .sort({ updatedAt: -1, createdAt: -1 })
+      .lean()
+      .exec();
+
+    return { items: rules.map((rule) => this.mapRule(rule)) };
+  }
+
+  async getAlertRule(
+    userId: string,
+    flowId: string,
+    ruleId: string
+  ): Promise<RuleOutput> {
+    await this.assertUserCanAccessFlow(userId, flowId);
+    const rule = await this.alertRuleModel
+      .findOne({ _id: ruleId, flowId, userId })
+      .lean()
+      .exec();
+    if (!rule) {
+      throw new NotFoundException('Alert rule not found.');
+    }
+
+    return this.mapRule(rule);
+  }
+
+  async createAlertRule(
+    userId: string,
+    flowId: string,
+    dto: CreateAlertRuleDto
+  ): Promise<RuleOutput> {
+    const flow = await this.assertUserCanAccessFlow(userId, flowId);
+    this.assertNodeBelongsToFlow(flow, dto.nodeId, dto.moduleId);
+    this.assertReadingKeyAllowed(dto.moduleId, dto.readingKey);
+
+    const policy = await this.findPolicyForRule(dto.moduleId, dto.readingKey);
+    this.validateRuleCondition({
+      operator: dto.operator,
+      threshold: dto.threshold,
+      min: dto.min,
+      max: dto.max,
+    });
+
+    if (policy?.required && dto.enabled === false) {
+      throw new ForbiddenException(
+        'This alert rule is required by policy and cannot be disabled.'
+      );
+    }
+
+    try {
+      const created = await this.alertRuleModel.create({
+        flowId,
+        userId,
+        nodeId: dto.nodeId.trim(),
+        moduleId: dto.moduleId.trim(),
+        readingKey: this.normalizeReadingKey(dto.readingKey),
+        operator: dto.operator,
+        threshold: dto.threshold === undefined ? null : (dto.threshold ?? null),
+        min: dto.min === undefined ? null : (dto.min ?? null),
+        max: dto.max === undefined ? null : (dto.max ?? null),
+        severity: dto.severity,
+        enabled: dto.enabled,
+        actions: this.normalizeRuleActions(dto.actions),
+      });
+
+      return this.mapRule(created.toObject());
+    } catch (error) {
+      if (
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        (error as { code?: number }).code === 11000
+      ) {
+        throw new BadRequestException(
+          'An alert rule for this node and reading key already exists.'
+        );
+      }
+      throw error;
+    }
+  }
+
+  async updateAlertRule(
+    userId: string,
+    flowId: string,
+    ruleId: string,
+    dto: UpdateAlertRuleDto
+  ): Promise<RuleOutput> {
+    const flow = await this.assertUserCanAccessFlow(userId, flowId);
+    const existing = await this.alertRuleModel
+      .findOne({ _id: ruleId, flowId, userId })
+      .exec();
+    if (!existing) {
+      throw new NotFoundException('Alert rule not found.');
+    }
+
+    const candidate = {
+      nodeId: dto.nodeId ?? existing.nodeId,
+      moduleId: dto.moduleId ?? existing.moduleId,
+      readingKey: dto.readingKey ?? existing.readingKey,
+      operator: dto.operator ?? existing.operator,
+      threshold:
+        dto.threshold !== undefined
+          ? dto.threshold
+          : (existing.threshold ?? null),
+      min: dto.min !== undefined ? dto.min : (existing.min ?? null),
+      max: dto.max !== undefined ? dto.max : (existing.max ?? null),
+      severity: dto.severity ?? existing.severity,
+      enabled: dto.enabled ?? existing.enabled,
+      actions:
+        dto.actions !== undefined ? dto.actions : (existing.actions ?? []),
+    };
+
+    this.assertNodeBelongsToFlow(flow, candidate.nodeId, candidate.moduleId);
+    this.assertReadingKeyAllowed(candidate.moduleId, candidate.readingKey);
+    this.validateRuleCondition({
+      operator: candidate.operator,
+      threshold: candidate.threshold,
+      min: candidate.min,
+      max: candidate.max,
+    });
+
+    const policy = await this.findPolicyForRule(
+      candidate.moduleId,
+      candidate.readingKey
+    );
+    if (policy?.required && candidate.enabled === false) {
+      throw new ForbiddenException(
+        'This alert rule is required by policy and cannot be disabled.'
+      );
+    }
+
+    existing.nodeId = candidate.nodeId.trim();
+    existing.moduleId = candidate.moduleId.trim();
+    existing.readingKey = this.normalizeReadingKey(candidate.readingKey);
+    existing.operator = candidate.operator;
+    existing.threshold =
+      candidate.threshold === undefined ? null : (candidate.threshold ?? null);
+    existing.min = candidate.min === undefined ? null : (candidate.min ?? null);
+    existing.max = candidate.max === undefined ? null : (candidate.max ?? null);
+    existing.severity = candidate.severity;
+    existing.enabled = candidate.enabled;
+    existing.actions = this.normalizeRuleActions(candidate.actions);
+
+    await existing.save();
+    return this.mapRule(existing.toObject());
+  }
+
+  async deleteAlertRule(
+    userId: string,
+    flowId: string,
+    ruleId: string
+  ): Promise<void> {
+    await this.assertUserCanAccessFlow(userId, flowId);
+
+    const existing = await this.alertRuleModel
+      .findOne({ _id: ruleId, flowId, userId })
+      .exec();
+    if (!existing) {
+      throw new NotFoundException('Alert rule not found.');
+    }
+
+    const policy = await this.findPolicyForRule(
+      existing.moduleId,
+      existing.readingKey
+    );
+    if (policy?.required) {
+      throw new ForbiddenException(
+        'This alert rule is required by policy and cannot be deleted.'
+      );
+    }
+
+    await this.alertRuleModel.deleteOne({ _id: existing._id }).exec();
   }
 
   async getAlertHistory(
     userId: string,
-    projectId: string,
+    flowId: string,
     query: AlertHistoryQueryDto
-  ): Promise<{ items: AlertHistoryItem[]; nextCursor: string | null }> {
-    await this.assertUserCanAccessProject(userId, projectId);
+  ): Promise<{
+    items: AlertHistoryItem[];
+    nextCursor: string | null;
+    hasMore: boolean;
+  }> {
+    await this.assertUserCanAccessFlow(userId, flowId);
 
     const parsedLimit = Number(query.limit);
     const limit =
@@ -303,8 +599,24 @@ export class NotificationsService {
         ? Math.min(parsedLimit, 100)
         : 50;
 
-    const cursor = this.decodeHistoryCursor(query.cursor);
-    const filter = this.buildHistoryFilter(projectId, cursor);
+    const filter: FilterQuery<AlertEventDocument> = { flowId };
+    if (query.nodeId?.trim()) {
+      filter.nodeId = query.nodeId.trim();
+    }
+    if (query.severity) {
+      filter.severity = query.severity;
+    }
+
+    const cursorClause = await this.buildCursorFilterClause(
+      flowId,
+      query.cursor,
+      filter
+    );
+    if (cursorClause) {
+      filter.$and = filter.$and
+        ? [...filter.$and, cursorClause]
+        : [cursorClause];
+    }
 
     const events = await this.alertEventModel
       .find(filter)
@@ -315,548 +627,113 @@ export class NotificationsService {
 
     const hasMore = events.length > limit;
     const selected = hasMore ? events.slice(0, limit) : events;
-
-    const items = selected.map((event) => ({
+    const items: AlertHistoryItem[] = selected.map((event) => ({
       id: String(event._id),
-      projectId: event.projectId,
-      sensorType: event.sensorType,
+      flowId: event.flowId,
+      ruleId: event.ruleId,
+      nodeId: event.nodeId,
+      moduleId: event.moduleId,
+      readingKey: event.readingKey,
       severity: event.severity,
       title: event.title,
       body: event.body,
-      value: event.value,
-      threshold: event.threshold,
-      ruleId: event.ruleId,
+      value: event.value ?? 0,
+      operator: event.operator,
+      threshold: event.threshold ?? null,
+      min: event.min ?? null,
+      max: event.max ?? null,
       occurredAt: event.occurredAt,
       createdAt: event.createdAt,
     }));
 
-    const nextCursor =
-      hasMore && selected.length
-        ? this.encodeHistoryCursor({
-            occurredAt: selected[selected.length - 1].occurredAt.toISOString(),
-            id: String(selected[selected.length - 1]._id),
-          })
-        : null;
+    const nextCursor = hasMore
+      ? String(selected[selected.length - 1]._id)
+      : null;
 
-    return {
-      items,
-      nextCursor,
-    };
+    return { items, nextCursor, hasMore };
   }
 
-  async getNotificationPreferences(
-    userId: string,
-    projectId: string
-  ): Promise<{
-    items: Array<{
-      sensorType: string;
-      enabled: boolean;
-      threshold?: number;
-      required: boolean;
-      thresholdRequired: boolean;
-      defaultEnabled: boolean;
-      defaultSeverity: AlertSeverity;
-    }>;
+  async triggerAlertFromInternal(input: TriggerAlertDto): Promise<{
+    triggered: boolean;
+    historyId?: string;
+    pushSent: boolean;
+    message?: string;
+    reason?: string;
   }> {
-    await this.assertUserCanAccessProject(userId, projectId);
-
-    const [policies, existingPreferences] = await Promise.all([
-      this.alertPolicyModel
-        .find({ projectId, isActive: true })
-        .sort({ sensorType: 1 })
-        .lean()
-        .exec(),
-      this.notificationPreferenceModel
-        .findOne({ projectId, userId })
-        .lean()
-        .exec(),
-    ]);
-
-    const preferenceMap = new Map<
-      string,
-      { enabled: boolean; threshold?: number }
-    >();
-    for (const preference of existingPreferences?.sensors ?? []) {
-      const sensorType = this.normalizeSensorType(preference.sensorType);
-      if (!sensorType) {
-        continue;
-      }
-      preferenceMap.set(sensorType, {
-        enabled: preference.enabled,
-        threshold: preference.threshold,
-      });
-    }
-
-    return {
-      items: policies.map((policy) => {
-        const sensorType = this.normalizeSensorType(policy.sensorType);
-        const preference = preferenceMap.get(sensorType);
-        const enabled = policy.required
-          ? true
-          : (preference?.enabled ?? policy.defaultEnabled);
-
-        return {
-          sensorType,
-          enabled,
-          threshold: preference?.threshold,
-          required: policy.required,
-          thresholdRequired: policy.thresholdRequired,
-          defaultEnabled: policy.defaultEnabled,
-          defaultSeverity: policy.defaultSeverity,
-        };
-      }),
-    };
-  }
-
-  async updateNotificationPreferences(
-    userId: string,
-    projectId: string,
-    dto: UpdateNotificationPreferencesDto
-  ): Promise<{
-    items: Array<{
-      sensorType: string;
-      enabled: boolean;
-      threshold?: number;
-      required: boolean;
-      thresholdRequired: boolean;
-      defaultEnabled: boolean;
-      defaultSeverity: AlertSeverity;
-    }>;
-  }> {
-    await this.assertUserCanAccessProject(userId, projectId);
-
-    const [policies, existingPreferences] = await Promise.all([
-      this.alertPolicyModel
-        .find({ projectId, isActive: true })
-        .sort({ sensorType: 1 })
-        .lean()
-        .exec(),
-      this.notificationPreferenceModel
-        .findOne({ projectId, userId })
-        .lean()
-        .exec(),
-    ]);
-
-    if (!policies.length) {
-      throw new BadRequestException(
-        'No alert policies configured for this project.'
-      );
-    }
-
-    const typedPolicies = policies as unknown as Array<{
-      sensorType: string;
-      enabled: boolean;
-      threshold?: number;
-      required: boolean;
-      thresholdRequired: boolean;
-      defaultEnabled: boolean;
-      defaultSeverity: AlertSeverity;
-    }>;
-
-    const policyMap = new Map(
-      typedPolicies.map((policy) => [
-        this.normalizeSensorType(policy.sensorType),
-        policy,
-      ])
-    );
-    const existingPreferenceMap = new Map<
-      string,
-      { enabled: boolean; threshold?: number }
-    >();
-    for (const preference of existingPreferences?.sensors ?? []) {
-      const sensorType = this.normalizeSensorType(preference.sensorType);
-      if (!sensorType) {
-        continue;
-      }
-      existingPreferenceMap.set(sensorType, {
-        enabled: preference.enabled,
-        threshold: preference.threshold,
-      });
-    }
-
-    const normalizedInput = new Map<
-      string,
-      { enabled: boolean; threshold?: number }
-    >();
-    for (const sensorPreference of dto.sensors ?? []) {
-      const sensorType = this.normalizeSensorType(sensorPreference.sensorType);
-      if (!sensorType) {
-        continue;
-      }
-
-      const policy = policyMap.get(sensorType);
-      if (!policy) {
-        throw new BadRequestException(
-          `Unknown sensorType "${sensorPreference.sensorType}" for this project.`
-        );
-      }
-
-      if (
-        policy.thresholdRequired &&
-        sensorPreference.threshold === undefined &&
-        existingPreferenceMap.get(sensorType)?.threshold === undefined
-      ) {
-        throw new BadRequestException(
-          `threshold is required for sensorType "${sensorType}".`
-        );
-      }
-
-      normalizedInput.set(sensorType, {
-        enabled: policy.required ? true : sensorPreference.enabled,
-        threshold:
-          sensorPreference.threshold !== undefined
-            ? sensorPreference.threshold
-            : existingPreferenceMap.get(sensorType)?.threshold,
-      });
-    }
-
-    for (const policy of policies) {
-      const sensorType = this.normalizeSensorType(policy.sensorType);
-      if (normalizedInput.has(sensorType)) {
-        continue;
-      }
-
-      if (policy.required) {
-        normalizedInput.set(sensorType, {
-          enabled: true,
-          threshold: existingPreferenceMap.get(sensorType)?.threshold,
-        });
-      }
-    }
-
-    const mergedSensors = Array.from(normalizedInput.entries())
-      .map(([sensorType, value]) => ({
-        sensorType,
-        enabled: value.enabled,
-        threshold: value.threshold,
-      }))
-      .sort((left, right) => left.sensorType.localeCompare(right.sensorType));
-
-    await this.notificationPreferenceModel.findOneAndUpdate(
-      { projectId, userId },
-      { $set: { sensors: mergedSensors } },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
-
-    return this.getNotificationPreferences(userId, projectId);
-  }
-
-  async getAlertPolicies(
-    userId: string,
-    projectId: string
-  ): Promise<{
-    items: Array<{
-      id: string;
-      projectId: string;
-      sensorType: string;
-      required: boolean;
-      thresholdRequired: boolean;
-      defaultEnabled: boolean;
-      defaultSeverity: AlertSeverity;
-      isActive: boolean;
-    }>;
-  }> {
-    await this.assertUserCanAccessProject(userId, projectId);
-
-    const policies = await this.alertPolicyModel
-      .find({ projectId, isActive: true })
-      .sort({ sensorType: 1 })
-      .lean()
-      .exec();
-
-    return {
-      items: policies.map((policy) => ({
-        id: String(policy._id),
-        projectId: policy.projectId,
-        sensorType: policy.sensorType,
-        required: policy.required,
-        thresholdRequired: policy.thresholdRequired,
-        defaultEnabled: policy.defaultEnabled,
-        defaultSeverity: policy.defaultSeverity,
-        isActive: policy.isActive,
-      })),
-    };
-  }
-
-  async upsertAlertPolicies(
-    userId: string,
-    projectId: string,
-    dto: UpsertAlertPoliciesDto
-  ): Promise<{
-    updatedCount: number;
-    items: Array<{ id: string; sensorType: string }>;
-  }> {
-    await this.assertUserCanAccessProject(userId, projectId);
-
-    const normalizedPolicies = this.deduplicatePolicies(dto.policies ?? []);
-    if (!normalizedPolicies.length) {
-      return { updatedCount: 0, items: [] };
-    }
-
-    const operations = normalizedPolicies.map((policy) => ({
-      updateOne: {
-        filter: { projectId, sensorType: policy.sensorType },
-        update: {
-          $set: {
-            required: policy.required,
-            thresholdRequired: policy.thresholdRequired,
-            defaultEnabled: policy.defaultEnabled,
-            defaultSeverity: policy.defaultSeverity,
-            isActive: true,
-          },
-        },
-        upsert: true,
-      },
-    }));
-
-    await this.alertPolicyModel.bulkWrite(operations, { ordered: false });
-
-    const items = await this.alertPolicyModel
-      .find({
-        projectId,
-        sensorType: {
-          $in: normalizedPolicies.map((entry) => entry.sensorType),
-        },
+    const rule = await this.alertRuleModel
+      .findOne({
+        _id: input.ruleId,
+        flowId: input.flowId,
+        nodeId: input.nodeId,
+        moduleId: input.moduleId,
+        readingKey: this.normalizeReadingKey(input.readingKey),
+        enabled: true,
       })
-      .select({ sensorType: 1 })
-      .lean()
       .exec();
+    if (!rule) {
+      throw new NotFoundException('Rule not found.');
+    }
 
-    return {
-      updatedCount: items.length,
-      items: items.map((item) => ({
-        id: String(item._id),
-        sensorType: item.sensorType,
-      })),
-    };
-  }
-
-  async getAlertRules(
-    userId: string,
-    projectId: string
-  ): Promise<{
-    items: Array<{
-      id: string;
-      projectId: string;
-      userId: string;
-      sensorType: string;
-      operator: '>' | '<' | '>=' | '<=' | '==' | '!=';
-      threshold: number;
-      enabled: boolean;
-      severity: AlertSeverity;
-      actions: unknown[];
-      createdAt?: Date;
-      updatedAt?: Date;
-    }>;
-  }> {
-    await this.assertUserCanAccessProject(userId, projectId);
-
-    const rules = (await this.alertRuleModel
-      .find({ projectId, userId })
-      .sort({ updatedAt: -1, createdAt: -1 })
-      .lean()
-      .exec()) as Array<{
-      _id: unknown;
-      projectId: string;
-      userId: string;
-      sensorType: string;
-      operator?: string;
-      threshold?: number;
-      enabled?: boolean;
-      severity?: AlertSeverity;
-      actions?: unknown[];
-      createdAt?: Date;
-      updatedAt?: Date;
-    }>;
-
-    return {
-      items: rules.map((rule) => ({
-        id: String(rule._id),
-        projectId: rule.projectId,
-        userId: rule.userId,
-        sensorType: rule.sensorType,
-        operator: this.normalizeComparisonOperator(rule.operator),
-        threshold: typeof rule.threshold === 'number' ? rule.threshold : 0,
-        enabled: Boolean(rule.enabled),
-        severity: (rule.severity as AlertSeverity) ?? 'info',
-        actions: Array.isArray(rule.actions) ? rule.actions : [],
-        createdAt: rule.createdAt,
-        updatedAt: rule.updatedAt,
-      })),
-    };
-  }
-
-  async createAlertRule(
-    userId: string,
-    projectId: string,
-    dto: CreateAlertRuleDto
-  ): Promise<{
-    id: string;
-    projectId: string;
-    userId: string;
-    sensorType: string;
-    operator: '>' | '<' | '>=' | '<=' | '==' | '!=';
-    threshold: number;
-    enabled: boolean;
-    severity: AlertSeverity;
-    actions: unknown[];
-    createdAt?: Date;
-    updatedAt?: Date;
-  }> {
-    await this.assertUserCanAccessProject(userId, projectId);
-
-    const createdRule = await this.alertRuleModel.create({
-      projectId,
-      userId,
-      sensorType: dto.sensorType.trim(),
-      operator: dto.operator,
-      threshold: dto.threshold,
-      enabled: dto.enabled ?? true,
-      severity: dto.severity,
-      actions: this.normalizeRuleActions(dto.actions),
+    this.validateRuleCondition({
+      operator: input.operator,
+      threshold: input.threshold,
+      min: input.min,
+      max: input.max,
     });
-    const createdRuleSafe = createdRule as unknown as {
-      id: string;
-      projectId: string;
-      userId: string;
-      sensorType: string;
-      operator: string;
-      threshold: number;
-      enabled: boolean;
-      severity: AlertSeverity;
-      actions?: unknown[];
-      createdAt?: Date;
-      updatedAt?: Date;
-    };
-
-    return {
-      id: createdRuleSafe.id,
-      projectId: createdRuleSafe.projectId,
-      userId: createdRuleSafe.userId,
-      sensorType: createdRuleSafe.sensorType,
-      operator: this.normalizeComparisonOperator(createdRuleSafe.operator),
-      threshold: createdRuleSafe.threshold,
-      enabled: createdRuleSafe.enabled,
-      severity: createdRuleSafe.severity,
-      actions: Array.isArray(createdRuleSafe.actions)
-        ? createdRuleSafe.actions
-        : [],
-      createdAt: createdRuleSafe.createdAt,
-      updatedAt: createdRuleSafe.updatedAt,
-    };
-  }
-
-  async updateAlertRule(
-    userId: string,
-    projectId: string,
-    ruleId: string,
-    dto: UpdateAlertRuleDto
-  ): Promise<{
-    id: string;
-    projectId: string;
-    userId: string;
-    sensorType: string;
-    operator: '>' | '<' | '>=' | '<=' | '==' | '!=';
-    threshold: number;
-    enabled: boolean;
-    severity: AlertSeverity;
-    actions: unknown[];
-    createdAt?: Date;
-    updatedAt?: Date;
-  }> {
-    await this.assertUserCanAccessProject(userId, projectId);
-
-    const updatePayload: Record<string, unknown> = {};
-    if (dto.sensorType !== undefined) {
-      updatePayload.sensorType = dto.sensorType.trim();
-    }
-    if (dto.operator !== undefined) {
-      updatePayload.operator = dto.operator;
-    }
-    if (dto.threshold !== undefined) {
-      updatePayload.threshold = dto.threshold;
-    }
-    if (dto.severity !== undefined) {
-      updatePayload.severity = dto.severity;
-    }
-    if (dto.enabled !== undefined) {
-      updatePayload.enabled = dto.enabled;
-    }
-    if (dto.actions !== undefined) {
-      updatePayload.actions = this.normalizeRuleActions(dto.actions);
+    const conditionMatched = this.matchesOperator({
+      operator: input.operator,
+      value: input.value,
+      threshold: input.threshold ?? null,
+      min: input.min ?? null,
+      max: input.max ?? null,
+    });
+    if (!conditionMatched) {
+      return {
+        triggered: false,
+        reason: 'Reading does not satisfy the provided rule condition.',
+        pushSent: false,
+      };
     }
 
-    const updatedRule = (await this.alertRuleModel
-      .findOneAndUpdate(
-        { _id: ruleId, projectId, userId },
-        { $set: updatePayload },
-        { new: true }
-      )
-      .exec()) as unknown as {
-      id: string;
-      projectId: string;
-      userId: string;
-      sensorType: string;
-      operator: string;
-      threshold: number;
-      enabled: boolean;
-      severity: AlertSeverity;
-      actions?: unknown[];
-      createdAt?: Date;
-      updatedAt?: Date;
-    } | null;
-
-    if (!updatedRule) {
-      throw new NotFoundException('Alert rule not found');
+    const flowOwnerId = await this.getFlowOwnerId(input.flowId);
+    if (!flowOwnerId) {
+      throw new NotFoundException('Flow not found.');
     }
 
-    return {
-      id: (updatedRule as unknown as { id: string }).id,
-      projectId: (updatedRule as unknown as { projectId: string }).projectId,
-      userId: (updatedRule as unknown as { userId: string }).userId,
-      sensorType: (updatedRule as unknown as { sensorType: string }).sensorType,
-      operator: this.normalizeComparisonOperator(
-        (updatedRule as unknown as { operator: string }).operator
-      ),
-      threshold:
-        typeof (updatedRule as unknown as { threshold?: number }).threshold ===
-        'number'
-          ? (updatedRule as unknown as { threshold: number }).threshold
-          : 0,
-      enabled: Boolean(
-        (updatedRule as unknown as { enabled?: boolean }).enabled
-      ),
-      severity:
-        (updatedRule as unknown as { severity?: AlertSeverity }).severity ??
-        'info',
-      actions: Array.isArray(
-        (updatedRule as unknown as { actions?: unknown[] }).actions
-      )
-        ? (updatedRule as unknown as { actions?: unknown[] }).actions!
-        : [],
-      createdAt: (updatedRule as unknown as { createdAt?: Date }).createdAt,
-      updatedAt: (updatedRule as unknown as { updatedAt?: Date }).updatedAt,
-    };
-  }
-
-  async deleteAlertRule(
-    userId: string,
-    projectId: string,
-    ruleId: string
-  ): Promise<{ acknowledged: boolean; deletedRuleId: string }> {
-    await this.assertUserCanAccessProject(userId, projectId);
-
-    const result = await this.alertRuleModel
-      .findOneAndDelete({ _id: ruleId, projectId, userId })
+    const preference = await this.notificationPreferenceModel
+      .findOne({ flowId: input.flowId, userId: flowOwnerId })
+      .lean()
       .exec();
 
-    if (!result) {
-      throw new NotFoundException('Alert rule not found');
+    const notificationsEnabled = preference
+      ? preference.notificationsEnabled
+      : true;
+    if (!notificationsEnabled) {
+      return {
+        triggered: false,
+        reason: 'Notifications are disabled for this flow via preferences.',
+        pushSent: false,
+      };
     }
 
+    const occurredAt = input.occurredAt
+      ? new Date(input.occurredAt)
+      : new Date();
+    const fired = await this.fireAlertFromRule({
+      flowId: input.flowId,
+      rule,
+      value: input.value,
+      occurredAt,
+      metadata: { source: 'internal-trigger' },
+    });
+
     return {
-      acknowledged: true,
-      deletedRuleId: ruleId,
+      triggered: true,
+      historyId: fired.historyId,
+      pushSent: fired.pushSent,
+      message: fired.pushSent
+        ? 'Alert fired and push notification sent.'
+        : 'Alert fired but no active push tokens were available.',
     };
   }
 
@@ -864,57 +741,71 @@ export class NotificationsService {
     evaluatedRules: number;
     triggeredRules: number;
   }> {
-    const normalizedSensorType = this.normalizeSensorType(input.sensorType);
-    if (!normalizedSensorType || !Number.isFinite(input.value)) {
+    if (!Types.ObjectId.isValid(input.flowId) || !input.nodeId?.trim()) {
+      return { evaluatedRules: 0, triggeredRules: 0 };
+    }
+
+    const flowOwnerId = await this.getFlowOwnerId(input.flowId);
+    if (!flowOwnerId) {
+      return { evaluatedRules: 0, triggeredRules: 0 };
+    }
+
+    const preference = await this.notificationPreferenceModel
+      .findOne({ flowId: input.flowId, userId: flowOwnerId })
+      .lean()
+      .exec();
+    const notificationsEnabled = preference
+      ? preference.notificationsEnabled
+      : true;
+    if (!notificationsEnabled) {
       return { evaluatedRules: 0, triggeredRules: 0 };
     }
 
     const rules = await this.alertRuleModel
-      .find({ projectId: input.projectId, enabled: true })
+      .find({
+        flowId: input.flowId,
+        nodeId: input.nodeId.trim(),
+        enabled: true,
+      })
       .lean()
       .exec();
+    if (!rules.length) {
+      return { evaluatedRules: 0, triggeredRules: 0 };
+    }
 
     let evaluatedRules = 0;
     let triggeredRules = 0;
     const occurredAt = input.occurredAt ?? new Date();
 
     for (const rule of rules) {
-      const ruleIdStr = String(rule._id as unknown as string);
-      if (
-        this.normalizeSensorType(rule.sensorType) !== normalizedSensorType ||
-        typeof rule.threshold !== 'number' ||
-        !Number.isFinite(rule.threshold)
-      ) {
+      const value = input.readings[this.normalizeReadingKey(rule.readingKey)];
+      if (typeof value !== 'number' || !Number.isFinite(value)) {
         continue;
       }
 
       evaluatedRules++;
-      if (!this.matchesOperator(input.value, rule.operator, rule.threshold)) {
+      const matches = this.matchesOperator({
+        operator: rule.operator,
+        value,
+        threshold: rule.threshold ?? null,
+        min: rule.min ?? null,
+        max: rule.max ?? null,
+      });
+      if (!matches) {
         continue;
       }
 
-      const cooldownKey = `${input.projectId}:${ruleIdStr}`;
+      const cooldownKey = `${input.flowId}:${this.toObjectIdString(rule)}`;
       if (!this.shouldTriggerRule(cooldownKey)) {
         continue;
       }
 
-      const pushAction = this.extractPushAction(rule.actions);
-      const pushPayload = this.extractPushPayload(pushAction?.payload);
-
-      await this.triggerAlert({
-        projectId: input.projectId,
-        sensorType: rule.sensorType,
-        severity: rule.severity,
-        title: pushPayload.title,
-        body: pushPayload.body,
-        value: input.value,
-        threshold: rule.threshold,
-        ruleId: ruleIdStr,
-        occurredAt: occurredAt.toISOString(),
-        data: {
-          ...input.metadata,
-          source: 'mqtt',
-        },
+      await this.fireAlertFromRule({
+        flowId: input.flowId,
+        rule,
+        value,
+        occurredAt,
+        metadata: input.metadata,
       });
       triggeredRules++;
     }
@@ -922,19 +813,178 @@ export class NotificationsService {
     return { evaluatedRules, triggeredRules };
   }
 
-  async sendAlertToProject(input: SendProjectAlertInput): Promise<{
+  async syncRulesForFlowNodes(params: {
+    flowId: string;
+    userId: string;
+    nodes: Array<{ nodeId: string; moduleId: string }>;
+  }): Promise<void> {
+    if (!params.flowId || !params.userId) {
+      return;
+    }
+
+    const normalizedNodes = params.nodes
+      .map((node) => ({
+        nodeId: node.nodeId.trim(),
+        moduleId: node.moduleId.trim(),
+      }))
+      .filter((node) => node.nodeId && node.moduleId);
+
+    const nodeMap = new Map(normalizedNodes.map((node) => [node.nodeId, node]));
+    const existingRules = await this.alertRuleModel
+      .find({ flowId: params.flowId, userId: params.userId })
+      .exec();
+
+    const staleRuleIds = existingRules
+      .filter((rule) => !nodeMap.has(rule.nodeId))
+      .map((rule) => rule._id);
+    if (staleRuleIds.length) {
+      await this.alertRuleModel
+        .deleteMany({ _id: { $in: staleRuleIds } })
+        .exec();
+    }
+
+    const activePolicies = await this.alertPolicyModel
+      .find({ isActive: true })
+      .lean()
+      .exec();
+    const policiesByModule = new Map<string, typeof activePolicies>();
+    for (const policy of activePolicies) {
+      const key = policy.moduleId.trim();
+      const items = policiesByModule.get(key) ?? [];
+      items.push(policy);
+      policiesByModule.set(key, items);
+    }
+
+    const existingKeySet = new Set(
+      existingRules.map(
+        (rule) => `${rule.nodeId}::${this.normalizeReadingKey(rule.readingKey)}`
+      )
+    );
+
+    const defaultActions = (label: string) => [
+      {
+        type: 'send_push' as const,
+        payload: {
+          title: `${label} Alert`,
+          body: `${label} threshold exceeded`,
+        },
+      },
+    ];
+
+    const toInsert: Partial<AlertRule>[] = [];
+    for (const node of normalizedNodes) {
+      const policies = policiesByModule.get(node.moduleId) ?? [];
+      for (const policy of policies) {
+        const readingKey = this.normalizeReadingKey(policy.readingKey);
+        const ruleKey = `${node.nodeId}::${readingKey}`;
+        if (existingKeySet.has(ruleKey)) {
+          continue;
+        }
+
+        const operator = this.pickDefaultOperator(policy.supportedOperators);
+        toInsert.push({
+          flowId: params.flowId,
+          userId: params.userId,
+          nodeId: node.nodeId,
+          moduleId: node.moduleId,
+          readingKey,
+          operator,
+          threshold: null,
+          min: null,
+          max: null,
+          severity: policy.defaultSeverity,
+          enabled: false,
+          actions: defaultActions(policy.label),
+        });
+      }
+    }
+
+    if (toInsert.length) {
+      await this.alertRuleModel.insertMany(toInsert, { ordered: false });
+    }
+  }
+
+  async cleanupFlowNotificationData(flowId: string): Promise<void> {
+    await Promise.all([
+      this.alertRuleModel.deleteMany({ flowId }).exec(),
+      this.alertEventModel.deleteMany({ flowId }).exec(),
+      this.notificationPreferenceModel.deleteMany({ flowId }).exec(),
+    ]);
+  }
+
+  private async fireAlertFromRule(params: {
+    flowId: string;
+    rule: AlertRuleDocument | (AlertRule & { _id: unknown });
+    value: number;
+    occurredAt: Date;
+    metadata?: Record<string, string | number | boolean>;
+  }): Promise<{ historyId: string; pushSent: boolean }> {
+    const rule = params.rule as AlertRule & { _id: unknown };
+    const ruleId = String(rule._id);
+    const pushAction = this.extractPushAction(rule.actions);
+    const pushPayload = this.extractPushPayload(pushAction?.payload);
+    const title = pushPayload.title ?? this.buildDefaultRuleTitle(rule);
+    const body =
+      pushPayload.body ?? this.buildDefaultRuleBody(rule, params.value);
+
+    const createdEvent = await this.alertEventModel.create({
+      flowId: params.flowId,
+      ruleId,
+      nodeId: rule.nodeId,
+      moduleId: rule.moduleId,
+      readingKey: this.normalizeReadingKey(rule.readingKey),
+      severity: rule.severity,
+      title,
+      body,
+      value: params.value,
+      operator: rule.operator,
+      threshold: rule.threshold ?? null,
+      min: rule.min ?? null,
+      max: rule.max ?? null,
+      occurredAt: params.occurredAt,
+    });
+
+    const delivery = await this.sendAlertToFlowOwner({
+      flowId: params.flowId,
+      title,
+      body,
+      severity: rule.severity,
+      data: {
+        type: 'ALERT_TRIGGERED',
+        ruleId,
+        nodeId: rule.nodeId,
+        moduleId: rule.moduleId,
+        readingKey: this.normalizeReadingKey(rule.readingKey),
+        value: params.value,
+        operator: rule.operator,
+        threshold: rule.threshold ?? '',
+        min: rule.min ?? '',
+        max: rule.max ?? '',
+        timestamp: params.occurredAt.toISOString(),
+        ...params.metadata,
+      },
+    });
+
+    return {
+      historyId: this.toObjectIdString(createdEvent),
+      pushSent: delivery.successCount > 0,
+    };
+  }
+
+  private async sendAlertToFlowOwner(input: {
+    flowId: string;
+    title: string;
+    body: string;
+    data?: Record<string, string | number | boolean>;
+    severity?: AlertSeverity;
+  }): Promise<{
     requestedTokens: number;
     successCount: number;
     failureCount: number;
     invalidatedTokens: number;
   }> {
-    const recipientUserIds = await this.getProjectRecipientUserIds(
-      input.projectId
-    );
-    if (!recipientUserIds.length) {
-      this.logger.warn(
-        `Skipping push dispatch for project ${input.projectId}: no project recipients found.`
-      );
+    const ownerId = await this.getFlowOwnerId(input.flowId);
+    if (!ownerId) {
       return {
         requestedTokens: 0,
         successCount: 0,
@@ -944,7 +994,7 @@ export class NotificationsService {
     }
 
     const activeTokens = await this.notificationDeviceTokenModel
-      .find({ userId: { $in: recipientUserIds }, isActive: true })
+      .find({ userId: ownerId, isActive: true })
       .select({ fcmToken: 1 })
       .lean();
 
@@ -956,7 +1006,7 @@ export class NotificationsService {
       )
     );
 
-    if (tokens.length === 0) {
+    if (!tokens.length) {
       return {
         requestedTokens: 0,
         successCount: 0,
@@ -978,14 +1028,10 @@ export class NotificationsService {
           title: input.title,
           body: input.body,
         },
-        // Android high-priority alert with default sound.
         android: {
           priority: 'high',
-          notification: {
-            sound: 'default',
-          },
+          notification: { sound: 'default' },
         },
-        // iOS alert push with default sound and high delivery priority.
         apns: {
           headers: {
             'apns-priority': '10',
@@ -1001,7 +1047,7 @@ export class NotificationsService {
         data: this.normalizeDataPayload({
           ...input.data,
           severity: input.severity ?? 'warning',
-          projectId: input.projectId,
+          flowId: input.flowId,
         }),
       };
 
@@ -1022,6 +1068,418 @@ export class NotificationsService {
       failureCount,
       invalidatedTokens: uniqueDeadTokens.length,
     };
+  }
+
+  private async assertUserCanAccessFlow(
+    userId: string,
+    flowId: string
+  ): Promise<Pick<Flow, 'userId' | 'nodes'>> {
+    if (!Types.ObjectId.isValid(flowId)) {
+      throw new ForbiddenException(
+        'You are not allowed to access this flow alerts.'
+      );
+    }
+
+    const flow = await this.flowModel
+      .findOne({ _id: flowId, userId })
+      .select({ userId: 1, nodes: 1 })
+      .lean()
+      .exec();
+    if (!flow) {
+      throw new ForbiddenException(
+        'You are not allowed to access this flow alerts.'
+      );
+    }
+
+    return flow;
+  }
+
+  private assertNodeBelongsToFlow(
+    flow: Pick<Flow, 'nodes'>,
+    nodeId: string,
+    moduleId: string
+  ): void {
+    const normalizedNodeId = nodeId.trim();
+    const normalizedModuleId = moduleId.trim();
+    const node = (flow.nodes ?? []).find(
+      (entry) => entry.id === normalizedNodeId
+    );
+    if (!node) {
+      throw new BadRequestException(
+        'nodeId does not exist in the provided flow.'
+      );
+    }
+    const nodeModuleId = String(node.data?.moduleId ?? '').trim();
+    if (nodeModuleId !== normalizedModuleId) {
+      throw new BadRequestException(
+        'moduleId does not match the node module in this flow.'
+      );
+    }
+  }
+
+  private assertReadingKeyAllowed(moduleId: string, readingKey: string): void {
+    const normalizedModuleId = moduleId.trim();
+    const normalizedReadingKey = this.normalizeReadingKey(readingKey);
+    const supported = MODULE_READING_KEYS[normalizedModuleId];
+
+    if (!supported || !supported.includes(normalizedReadingKey)) {
+      throw new BadRequestException(
+        `readingKey "${readingKey}" is not supported for moduleId "${moduleId}".`
+      );
+    }
+  }
+
+  private validateRuleCondition(input: {
+    operator: AlertRuleOperator;
+    threshold?: number | null;
+    min?: number | null;
+    max?: number | null;
+  }): void {
+    const operator = input.operator;
+    if (!ALL_OPERATORS.has(operator)) {
+      throw new BadRequestException(`Unsupported operator "${operator}".`);
+    }
+
+    if (SIMPLE_OPERATORS.includes(operator)) {
+      if (input.threshold === null || input.threshold === undefined) {
+        throw new BadRequestException(
+          `Operator "${operator}" requires "threshold".`
+        );
+      }
+      if (
+        typeof input.threshold !== 'number' ||
+        !Number.isFinite(input.threshold)
+      ) {
+        throw new BadRequestException('"threshold" must be a finite number.');
+      }
+      if (input.min !== null && input.min !== undefined) {
+        throw new BadRequestException(
+          `"min" must be null for operator "${operator}".`
+        );
+      }
+      if (input.max !== null && input.max !== undefined) {
+        throw new BadRequestException(
+          `"max" must be null for operator "${operator}".`
+        );
+      }
+      return;
+    }
+
+    if (input.threshold !== null && input.threshold !== undefined) {
+      throw new BadRequestException(
+        `Operator "${operator}" requires "threshold" to be null.`
+      );
+    }
+    if (input.min === null || input.min === undefined) {
+      throw new BadRequestException(`Operator "${operator}" requires "min".`);
+    }
+    if (input.max === null || input.max === undefined) {
+      throw new BadRequestException(`Operator "${operator}" requires "max".`);
+    }
+    if (!Number.isFinite(input.min) || !Number.isFinite(input.max)) {
+      throw new BadRequestException('"min" and "max" must be finite numbers.');
+    }
+    if (input.min >= input.max) {
+      throw new BadRequestException('"min" must be strictly less than "max".');
+    }
+  }
+
+  private matchesOperator(input: {
+    operator: AlertRuleOperator;
+    value: number;
+    threshold: number | null;
+    min: number | null;
+    max: number | null;
+  }): boolean {
+    switch (input.operator) {
+      case '>':
+        return input.threshold !== null && input.value > input.threshold;
+      case '<':
+        return input.threshold !== null && input.value < input.threshold;
+      case '>=':
+        return input.threshold !== null && input.value >= input.threshold;
+      case '<=':
+        return input.threshold !== null && input.value <= input.threshold;
+      case 'between':
+        return (
+          input.min !== null &&
+          input.max !== null &&
+          input.value >= input.min &&
+          input.value <= input.max
+        );
+      case 'outside':
+        return (
+          input.min !== null &&
+          input.max !== null &&
+          (input.value < input.min || input.value > input.max)
+        );
+      default:
+        return false;
+    }
+  }
+
+  private async findPolicyForRule(
+    moduleId: string,
+    readingKey: string
+  ): Promise<AlertPolicyDocument | null> {
+    return this.alertPolicyModel
+      .findOne({
+        moduleId: moduleId.trim(),
+        readingKey: this.normalizeReadingKey(readingKey),
+        isActive: true,
+      })
+      .exec();
+  }
+
+  private mapRule(rule: Partial<AlertRule> & { _id?: unknown }): RuleOutput {
+    return {
+      id: this.toObjectIdString(rule),
+      flowId: String(rule.flowId ?? ''),
+      nodeId: String(rule.nodeId ?? ''),
+      moduleId: String(rule.moduleId ?? ''),
+      readingKey: String(rule.readingKey ?? ''),
+      operator: (rule.operator as AlertRuleOperator) ?? '>',
+      threshold:
+        typeof rule.threshold === 'number'
+          ? rule.threshold
+          : (rule.threshold ?? null),
+      min: typeof rule.min === 'number' ? rule.min : (rule.min ?? null),
+      max: typeof rule.max === 'number' ? rule.max : (rule.max ?? null),
+      severity: (rule.severity as AlertSeverity) ?? 'warning',
+      enabled: Boolean(rule.enabled),
+      actions: Array.isArray(rule.actions) ? rule.actions : [],
+      createdAt: rule.createdAt,
+      updatedAt: rule.updatedAt,
+    };
+  }
+
+  private normalizeRuleActions(actions?: unknown): Array<{
+    type: 'send_push';
+    payload?: Record<string, unknown>;
+  }> {
+    if (!Array.isArray(actions)) {
+      return [];
+    }
+
+    return actions
+      .filter(
+        (action) =>
+          action &&
+          typeof action === 'object' &&
+          (action as { type?: string }).type === 'send_push'
+      )
+      .map((action) => ({
+        type: 'send_push' as const,
+        payload:
+          action && typeof action === 'object'
+            ? ((action as { payload?: unknown }).payload as
+                | Record<string, unknown>
+                | undefined)
+            : undefined,
+      }));
+  }
+
+  private normalizeReadingKey(readingKey: string): string {
+    return readingKey.trim().toLowerCase();
+  }
+
+  private normalizeChannels(channels?: string[]): string[] {
+    if (!Array.isArray(channels) || !channels.length) {
+      return ['push'];
+    }
+    const normalized = Array.from(
+      new Set(
+        channels
+          .map((channel) => String(channel).trim().toLowerCase())
+          .filter(Boolean)
+      )
+    );
+    return normalized.length ? normalized : ['push'];
+  }
+
+  private normalizeSupportedOperators(
+    operators: unknown
+  ): AlertComparisonOperator[] {
+    if (!Array.isArray(operators)) {
+      return ['>', '<', '>=', '<='];
+    }
+
+    const normalized = Array.from(
+      new Set(
+        operators
+          .map((operator) =>
+            typeof operator === 'string' ? operator.trim() : ''
+          )
+          .filter(
+            (operator): operator is AlertComparisonOperator =>
+              operator === '>' ||
+              operator === '<' ||
+              operator === '>=' ||
+              operator === '<=' ||
+              operator === 'between' ||
+              operator === 'outside'
+          )
+      )
+    );
+    return normalized.length ? normalized : ['>', '<', '>=', '<='];
+  }
+
+  private deduplicatePolicies(
+    policies: UpsertAlertPoliciesDto['policies']
+  ): UpsertAlertPoliciesDto['policies'] {
+    const deduped = new Map<
+      string,
+      UpsertAlertPoliciesDto['policies'][number]
+    >();
+    for (const policy of policies) {
+      if (!policy?.moduleId || !policy?.readingKey) {
+        continue;
+      }
+      const key = `${policy.moduleId.trim()}::${this.normalizeReadingKey(
+        policy.readingKey
+      )}`;
+      deduped.set(key, {
+        ...policy,
+        moduleId: policy.moduleId.trim(),
+        readingKey: this.normalizeReadingKey(policy.readingKey),
+        label: policy.label.trim(),
+        supportedOperators: this.normalizeSupportedOperators(
+          policy.supportedOperators
+        ),
+      });
+    }
+    return Array.from(deduped.values());
+  }
+
+  private pickDefaultOperator(supportedOperators: unknown): AlertRuleOperator {
+    const normalized = this.normalizeSupportedOperators(supportedOperators);
+    const preferredSimple = normalized.find((operator) =>
+      SIMPLE_OPERATORS.includes(operator)
+    );
+    return (preferredSimple ?? normalized[0] ?? '>') as AlertRuleOperator;
+  }
+
+  private async getFlowOwnerId(flowId: string): Promise<string | null> {
+    if (!Types.ObjectId.isValid(flowId)) {
+      return null;
+    }
+
+    const flow = await this.flowModel
+      .findById(flowId)
+      .select({ userId: 1 })
+      .lean<{ userId?: Types.ObjectId | string }>()
+      .exec();
+
+    if (flow?.userId instanceof Types.ObjectId) {
+      return flow.userId.toHexString();
+    }
+    if (typeof flow?.userId === 'string' && flow.userId.trim()) {
+      return flow.userId;
+    }
+    return null;
+  }
+
+  private async buildCursorFilterClause(
+    flowId: string,
+    cursor: string | undefined,
+    baseFilter: FilterQuery<AlertEventDocument>
+  ): Promise<FilterQuery<AlertEventDocument> | null> {
+    if (!cursor || !Types.ObjectId.isValid(cursor)) {
+      return null;
+    }
+
+    const cursorId = new Types.ObjectId(cursor);
+    const cursorEvent = await this.alertEventModel
+      .findOne({
+        _id: cursorId,
+        flowId,
+      })
+      .select({ occurredAt: 1 })
+      .lean()
+      .exec();
+    if (!cursorEvent) {
+      return null;
+    }
+
+    return {
+      $or: [
+        { occurredAt: { $lt: cursorEvent.occurredAt } },
+        { occurredAt: cursorEvent.occurredAt, _id: { $lt: cursorId } },
+      ],
+      ...(baseFilter.nodeId ? { nodeId: baseFilter.nodeId } : {}),
+      ...(baseFilter.severity ? { severity: baseFilter.severity } : {}),
+    };
+  }
+
+  private extractPushAction(
+    actions: unknown
+  ): { type: 'send_push'; payload?: unknown } | null {
+    if (!Array.isArray(actions)) {
+      return null;
+    }
+
+    const action = actions.find(
+      (candidate) =>
+        candidate &&
+        typeof candidate === 'object' &&
+        (candidate as { type?: string }).type === 'send_push'
+    ) as unknown;
+
+    if (!action || typeof action !== 'object') {
+      return null;
+    }
+
+    return action as { type: 'send_push'; payload?: unknown };
+  }
+
+  private toObjectIdString(value: { _id?: unknown }): string {
+    const rawId = value._id;
+    if (typeof rawId === 'string') {
+      return rawId;
+    }
+    if (rawId instanceof Types.ObjectId) {
+      return rawId.toHexString();
+    }
+    if (rawId && typeof rawId === 'object') {
+      const candidate = rawId as { toString?: () => string };
+      if (typeof candidate.toString === 'function') {
+        const converted = candidate.toString();
+        if (converted && converted !== '[object Object]') {
+          return converted;
+        }
+      }
+    }
+    throw new InternalServerErrorException(
+      'Document id is missing or invalid.'
+    );
+  }
+
+  private extractPushPayload(payload: unknown): {
+    title?: string;
+    body?: string;
+  } {
+    if (!payload || typeof payload !== 'object') {
+      return {};
+    }
+    const candidate = payload as Partial<{ title: string; body: string }>;
+    return {
+      title: typeof candidate.title === 'string' ? candidate.title : undefined,
+      body: typeof candidate.body === 'string' ? candidate.body : undefined,
+    };
+  }
+
+  private buildDefaultRuleTitle(rule: AlertRule): string {
+    const label = `${rule.moduleId} ${rule.readingKey}`.trim();
+    if (rule.severity === 'critical') return `${label} Critical Alert`;
+    if (rule.severity === 'warning') return `${label} Warning`;
+    return `${label} Notification`;
+  }
+
+  private buildDefaultRuleBody(rule: AlertRule, value: number): string {
+    if (RANGE_OPERATORS.includes(rule.operator)) {
+      return `${rule.moduleId} ${rule.readingKey} value ${value} matched ${rule.operator} range (${rule.min}..${rule.max}).`;
+    }
+    return `${rule.moduleId} ${rule.readingKey} value ${value} crossed threshold ${rule.threshold}.`;
   }
 
   private getMessagingClient(): Messaging {
@@ -1123,215 +1581,6 @@ export class NotificationsService {
         },
       }
     );
-
-    this.logger.warn(
-      `Marked ${tokens.length} FCM tokens inactive due to Firebase error: ${errorCode}`
-    );
-  }
-
-  private async getProjectRecipientUserIds(
-    projectId: string
-  ): Promise<string[]> {
-    if (!Types.ObjectId.isValid(projectId)) {
-      return [];
-    }
-
-    const flow = await this.flowModel
-      .findById(projectId)
-      .select({ userId: 1 })
-      .lean<{ userId?: Types.ObjectId | string }>()
-      .exec();
-
-    if (flow?.userId instanceof Types.ObjectId) {
-      return [flow.userId.toHexString()];
-    }
-    if (typeof flow?.userId === 'string' && flow.userId.trim()) {
-      return [flow.userId];
-    }
-
-    return [];
-  }
-
-  private async assertUserCanAccessProject(
-    userId: string,
-    projectId: string
-  ): Promise<void> {
-    if (!Types.ObjectId.isValid(projectId)) {
-      throw new ForbiddenException(
-        'You are not allowed to access this project alerts.'
-      );
-    }
-
-    const ownedFlow = await this.flowModel
-      .findOne({ _id: projectId, userId })
-      .select({ _id: 1 })
-      .lean()
-      .exec();
-
-    if (!ownedFlow) {
-      throw new ForbiddenException(
-        'You are not allowed to access this project alerts.'
-      );
-    }
-  }
-
-  private buildHistoryFilter(
-    projectId: string,
-    cursor: AlertHistoryCursor | null
-  ): FilterQuery<AlertEventDocument> {
-    if (!cursor) {
-      return { projectId };
-    }
-
-    const occurredAt = new Date(cursor.occurredAt);
-    const cursorId = this.parseObjectId(cursor.id);
-    if (!cursorId || Number.isNaN(occurredAt.getTime())) {
-      return { projectId };
-    }
-
-    return {
-      projectId,
-      $or: [
-        { occurredAt: { $lt: occurredAt } },
-        { occurredAt, _id: { $lt: cursorId } },
-      ],
-    };
-  }
-
-  private parseObjectId(value: string): Types.ObjectId | null {
-    if (!Types.ObjectId.isValid(value)) {
-      return null;
-    }
-    return new Types.ObjectId(value);
-  }
-
-  private decodeHistoryCursor(cursor?: string): AlertHistoryCursor | null {
-    if (!cursor) {
-      return null;
-    }
-
-    try {
-      const decoded = Buffer.from(cursor, 'base64').toString('utf8');
-      const parsed: unknown = JSON.parse(decoded);
-      if (!parsed || typeof parsed !== 'object') {
-        return null;
-      }
-
-      const candidate = parsed as Partial<AlertHistoryCursor>;
-      if (
-        typeof candidate.id !== 'string' ||
-        typeof candidate.occurredAt !== 'string'
-      ) {
-        return null;
-      }
-
-      return {
-        id: candidate.id,
-        occurredAt: candidate.occurredAt,
-      };
-    } catch {
-      return null;
-    }
-  }
-
-  private encodeHistoryCursor(cursor: AlertHistoryCursor): string {
-    return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64');
-  }
-
-  private deduplicatePolicies(
-    policies: UpsertAlertPoliciesDto['policies']
-  ): UpsertAlertPoliciesDto['policies'] {
-    const deduped = new Map<
-      string,
-      UpsertAlertPoliciesDto['policies'][number]
-    >();
-    for (const policy of policies) {
-      if (!policy?.sensorType) {
-        continue;
-      }
-      deduped.set(policy.sensorType.trim().toUpperCase(), {
-        ...policy,
-        sensorType: policy.sensorType.trim().toUpperCase(),
-      });
-    }
-    return Array.from(deduped.values());
-  }
-
-  private normalizeRuleActions(
-    actions?: CreateAlertRuleDto['actions']
-  ): AlertRuleDocument['actions'] {
-    if (!Array.isArray(actions)) {
-      return [];
-    }
-
-    return actions.map((action) => ({
-      type: action.type,
-      topic: action.topic,
-      templateId: action.templateId,
-      payload:
-        action.payload && typeof action.payload === 'object'
-          ? action.payload
-          : undefined,
-    }));
-  }
-
-  private buildDefaultAlertTitle(input: TriggerAlertDto): string {
-    const sensor = input.sensorType.toUpperCase();
-    if (input.severity === 'critical') {
-      return `${sensor} Critical Alert`;
-    }
-    if (input.severity === 'warning') {
-      return `${sensor} Warning`;
-    }
-    return `${sensor} Notification`;
-  }
-
-  private buildDefaultAlertBody(input: TriggerAlertDto): string {
-    const valuePart =
-      input.value !== undefined ? `value ${input.value}` : 'a new reading';
-    const thresholdPart =
-      input.threshold !== undefined ? ` (threshold ${input.threshold})` : '';
-    return `${input.sensorType} reported ${valuePart}${thresholdPart}.`;
-  }
-
-  private normalizeSensorType(value: string): string {
-    return (value ?? '').trim().toUpperCase();
-  }
-
-  private normalizeComparisonOperator(
-    operator: string | null | undefined
-  ): '>' | '<' | '>=' | '<=' | '==' | '!=' {
-    return operator === '>' ||
-      operator === '<' ||
-      operator === '>=' ||
-      operator === '<=' ||
-      operator === '==' ||
-      operator === '!='
-      ? operator
-      : '==';
-  }
-
-  private matchesOperator(
-    value: number,
-    operator: string,
-    threshold: number
-  ): boolean {
-    switch (operator) {
-      case '>':
-        return value > threshold;
-      case '<':
-        return value < threshold;
-      case '>=':
-        return value >= threshold;
-      case '<=':
-        return value <= threshold;
-      case '==':
-        return value === threshold;
-      case '!=':
-        return value !== threshold;
-      default:
-        return false;
-    }
   }
 
   private shouldTriggerRule(cooldownKey: string): boolean {
@@ -1356,39 +1605,6 @@ export class NotificationsService {
         this.recentRuleTriggers.delete(key);
       }
     }
-  }
-
-  private extractPushAction(
-    actions: unknown
-  ): { type: 'send_push'; payload?: unknown } | null {
-    if (!Array.isArray(actions)) {
-      return null;
-    }
-
-    const action = actions.find(
-      (candidate) =>
-        candidate &&
-        typeof candidate === 'object' &&
-        (candidate as { type?: string }).type === 'send_push'
-    ) as unknown;
-
-    if (!action || typeof action !== 'object') {
-      return null;
-    }
-
-    return action as { type: 'send_push'; payload?: unknown };
-  }
-
-  private extractPushPayload(payload: unknown): AlertRuleActionPayload {
-    if (!payload || typeof payload !== 'object') {
-      return {};
-    }
-
-    const candidate = payload as Partial<AlertRuleActionPayload>;
-    return {
-      title: typeof candidate.title === 'string' ? candidate.title : undefined,
-      body: typeof candidate.body === 'string' ? candidate.body : undefined,
-    };
   }
 
   private readPositiveConfigNumber(name: string, fallback: number): number {

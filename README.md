@@ -459,11 +459,11 @@ This README is not a full API reference. Swagger at `/api` is the source of trut
 - `/firmware/admin/*`: admin firmware management
 - `/firmware/device/*`: device firmware update endpoints
 - `/mqtt/*`: MQTT test/admin visibility endpoints
-- `/v1/notifications/devices/register`: register or refresh mobile FCM token (device-level, no `projectId` in payload)
-- `/v1/projects/:projectId/notification-preferences`: user notification settings
-- `/v1/projects/:projectId/alert-policies`: policy defaults per sensor type
-- `/v1/projects/:projectId/alert-rules`: alert rule CRUD
-- `/v1/projects/:projectId/alert-history`: missed/previous alerts
+- `/v1/notifications/devices/register`: register or refresh mobile FCM token (device-level, no `flowId` in payload)
+- `/v1/alert-policies`: global policy catalog per `moduleId + readingKey`
+- `/v1/flows/:flowId/notification-preferences`: per-user flow notification settings
+- `/v1/flows/:flowId/alert-rules`: alert rule CRUD for specific flow nodes
+- `/v1/flows/:flowId/alert-history`: missed/previous alerts with cursor pagination
 - `/v1/internal/alerts/trigger`: internal alert ingestion endpoint
 
 ## MQTT Role In The System

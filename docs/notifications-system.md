@@ -2,19 +2,29 @@
 
 ## Purpose
 
-This document explains how notifications work end-to-end in NexusFlow so mobile developers and backend contributors can integrate safely.
+This guide explains the current notifications architecture and API contract used by backend and mobile.
 
-Current implementation scope:
-- Push delivery through Firebase Cloud Messaging (FCM)
-- Alert history persistence for offline recovery
-- Policy, preference, and rule management APIs
-- Runtime rule evaluation from MQTT sensor input
+Scope:
+- FCM device-token registration
+- Global alert policies
+- Per-flow notification preferences
+- Per-flow/node alert rules
+- Alert history for missed notifications
+- Internal alert trigger endpoint
 
-Important current mapping:
-- for project-scoped notifications APIs, `projectId` is currently the same value as `flowId`
-- device registration (`/v1/notifications/devices/register`) is device-level and does not require `projectId`
+## Core Model
 
-## High-Level Flow
+- `flowId`: flow scope for rules/preferences/history
+- `nodeId`: specific node instance inside a flow
+- `moduleId`: module type (example: `MQ2-Sensor`, `DHT-Sensor-22`)
+- `readingKey`: reading field for that module (example: `analog`, `temperature`)
+
+Rule identity and linking:
+- A rule is linked by `flowId + nodeId + moduleId + readingKey`
+- Backend validates that `nodeId` actually belongs to the flow and matches `moduleId`
+- Unique guard exists per `flowId + nodeId + readingKey` to avoid duplicates
+
+## Runtime Pipeline
 
 ```mermaid
 sequenceDiagram
@@ -26,130 +36,106 @@ sequenceDiagram
     participant App as Mobile App
 
     ESP->>MQTT: Publish sensor payload
-    MQTT->>NS: processSensorReading(projectId, sensorType, value)
-    NS->>DB: Read enabled alert_rules
-    NS->>NS: Evaluate threshold/operator + cooldown
-    NS->>DB: Insert alert_events
-    NS->>FCM: Send multicast push to active owner device_tokens
+    MQTT->>NS: processSensorReading(flowId, nodeId, readings)
+    NS->>DB: Load enabled rules for flow+node
+    NS->>NS: Evaluate operator/threshold + cooldown
+    NS->>DB: Insert alert_events snapshot
+    NS->>FCM: Send multicast push to active owner tokens
     FCM-->>NS: Per-token response
     NS->>DB: Mark dead tokens inactive on UNREGISTERED
-    App->>NS: GET alert-history
+    App->>NS: GET /v1/flows/:flowId/alert-history
     NS-->>App: items + nextCursor
 ```
 
-## Main Components
-
-- `src/notifications/notifications.service.ts`
-  - core business logic
-  - FCM initialization and sending
-  - dead token cleanup
-  - policies/preferences/rules handling
-  - alert history pagination
-- `src/notifications/notifications.controller.ts`
-  - mobile device token registration endpoint
-- `src/notifications/project-alert-config.controller.ts`
-  - policies, rules, and notification preferences endpoints
-- `src/notifications/project-alert-history.controller.ts`
-  - alert history endpoint
-- `src/notifications/notifications-internal.controller.ts`
-  - internal alert trigger endpoint
-- `src/mqtt/mqtt.handlers.ts`
-  - evaluates rules for incoming sensor messages and triggers alerts
-
-## MongoDB Collections
+## Mongo Collections
 
 - `device_tokens`
-  - registered mobile push tokens
-  - stores `isActive`, `lastError`, `invalidatedAt`, `lastSeenAt`
-- `alert_events`
-  - durable alert history (source of truth for missed alerts)
 - `alert_policies`
-  - default behavior per sensor type (`required`, `thresholdRequired`, severity)
 - `notification_preferences`
-  - per-user overrides for enabled state and threshold
 - `alert_rules`
-  - runtime rules evaluated on sensor readings
+- `alert_events`
 
 ## API Contract
 
-All user-facing endpoints below require cookie auth:
-- Header: `Cookie: jwt=<token>`
+All user-facing endpoints require `Cookie: jwt=<token>`.
 
-### 1) Register device token
+### 1) Register Device Token
 
 - `POST /v1/notifications/devices/register`
-- Body:
 
 ```json
 {
   "deviceId": "mobile-device-001",
   "platform": "android",
-  "fcmToken": "fcm-token",
+  "fcmToken": "replace-with-real-fcm-token",
   "appVersion": "1.0.0",
   "locale": "en-US"
 }
 ```
 
-Behavior:
-- upsert by `(userId, deviceId)`
-- reactivates previously invalidated token
-- updates `lastSeenAt`
-- no per-project re-registration is required for the same device
+Notes:
+- Device-scoped only (no `flowId` in body)
+- Upsert by `(userId, deviceId)`
+- If token exists for another user/device, old mapping is removed
 
-### 2) Notification preferences
+### 2) Alert Policies (Global)
 
-- `GET /v1/projects/:projectId/notification-preferences`
-- `PUT /v1/projects/:projectId/notification-preferences`
+- `GET /v1/alert-policies?moduleId=MQ2-Sensor`
+- `PUT /v1/alert-policies` (admin only)
 
-Update body:
-
-```json
-{
-  "sensors": [
-    { "sensorType": "MQ", "enabled": true, "threshold": 300 },
-    { "sensorType": "HUMIDITY", "enabled": true, "threshold": 72 }
-  ]
-}
-```
-
-Rules:
-- `required=true` policies are always forced to `enabled=true`
-- unknown `sensorType` causes `400`
-- if `thresholdRequired=true` and no threshold is available, request fails with `400`
-
-### 3) Alert policies
-
-- `GET /v1/projects/:projectId/alert-policies`
-- `PUT /v1/projects/:projectId/alert-policies`
-
-Upsert body:
+`PUT` body:
 
 ```json
 {
   "policies": [
     {
-      "sensorType": "MQ",
+      "moduleId": "MQ2-Sensor",
+      "readingKey": "analog",
+      "label": "MQ2 Gas Level (Analog)",
       "required": true,
       "thresholdRequired": true,
       "defaultEnabled": true,
-      "defaultSeverity": "critical"
+      "defaultSeverity": "critical",
+      "supportedOperators": [">", "<", ">=", "<=", "between", "outside"],
+      "isActive": true
     }
   ]
 }
 ```
 
-### 4) Alert rules
+### 3) Notification Preferences (Per Flow)
 
-- `GET /v1/projects/:projectId/alert-rules`
-- `POST /v1/projects/:projectId/alert-rules`
-- `PATCH /v1/projects/:projectId/alert-rules/:ruleId`
-- `DELETE /v1/projects/:projectId/alert-rules/:ruleId`
+- `GET /v1/flows/:flowId/notification-preferences`
+- `PUT /v1/flows/:flowId/notification-preferences`
 
-Create body:
+`PUT` body:
 
 ```json
 {
-  "sensorType": "MQ",
+  "notificationsEnabled": true,
+  "channels": ["push"]
+}
+```
+
+Notes:
+- Runtime default when preference doc is missing is `notificationsEnabled = true`
+- `GET` returns `404` if preference doc does not exist yet
+
+### 4) Alert Rules (Per Flow + Node)
+
+- `GET /v1/flows/:flowId/alert-rules?nodeId=<optional>`
+- `GET /v1/flows/:flowId/alert-rules/:ruleId`
+- `POST /v1/flows/:flowId/alert-rules`
+- `PATCH /v1/flows/:flowId/alert-rules/:ruleId`
+- `DELETE /v1/flows/:flowId/alert-rules/:ruleId`
+
+Create example:
+
+```json
+{
+  "nodeId": "MQ2-Sensor-1777061998955-55w",
+  "moduleId": "MQ2-Sensor",
+  "readingKey": "analog",
   "operator": ">",
   "threshold": 300,
   "severity": "critical",
@@ -159,90 +145,66 @@ Create body:
       "type": "send_push",
       "payload": {
         "title": "Gas Leak Alert",
-        "body": "MQ level exceeded threshold"
+        "body": "MQ2 analog level exceeded threshold"
       }
     }
   ]
 }
 ```
 
-### 5) Alert history (missed notifications support)
+Validation highlights:
+- Node must exist inside flow
+- Reading key must be allowed for module
+- Operator must match provided condition fields (`threshold` or `min/max`)
+- Required-policy rules cannot be disabled/deleted
 
-- `GET /v1/projects/:projectId/alert-history?limit=50&cursor=...`
-- default `limit=50`, max `100`
-- response contains:
-  - `items`
-  - `nextCursor` (or `null`)
+### 5) Alert History
 
-### 6) Internal alert trigger
+- `GET /v1/flows/:flowId/alert-history?limit=50&cursor=<optional>&nodeId=<optional>&severity=<optional>`
+
+Behavior:
+- Sorted by `occurredAt desc`, then `_id desc`
+- Cursor pagination returns `nextCursor` and `hasMore`
+- This is the source for missed notifications when device was offline
+
+### 6) Internal Trigger Endpoint
 
 - `POST /v1/internal/alerts/trigger`
-- Optional header:
-  - `x-internal-key: <INTERNAL_ALERTS_API_KEY>`
-- Body:
+- Optional header: `x-internal-key: <INTERNAL_ALERTS_API_KEY>`
+
+Body:
 
 ```json
 {
-  "projectId": "6802ec3f7fd4db8af143dcf1",
-  "sensorType": "MQ",
-  "severity": "critical",
+  "flowId": "69b58d513b6489cbd6655026",
+  "ruleId": "69e7cf54e463e7c6e48fb54d",
+  "nodeId": "MQ2-Sensor-1777061998955-55w",
+  "moduleId": "MQ2-Sensor",
+  "readingKey": "analog",
+  "operator": ">",
   "value": 430,
   "threshold": 300
 }
 ```
 
-Behavior:
-- persists `alert_events` first
-- then attempts push dispatch
-
 ## Dead Token Handling
 
-When FCM marks a token invalid (for example app uninstalled):
-- service catches error codes like:
-  - `messaging/registration-token-not-registered`
-  - `UNREGISTERED`
-- token is marked inactive:
-  - `isActive = false`
-  - `lastError = "UNREGISTERED"`
-  - `invalidatedAt = now`
+When Firebase returns dead-token errors (`UNREGISTERED`, `messaging/registration-token-not-registered`, `messaging/invalid-registration-token`):
+- token is marked inactive
+- `lastError` and `invalidatedAt` are updated
+- future sends skip inactive tokens
 
-This prevents repeated wasteful sends.
+## Offline / Missed Alerts
 
-## Runtime Rule Evaluation
+Push is not durable delivery. Mobile should always call:
+- `GET /v1/flows/:flowId/alert-history`
 
-At MQTT ingestion time:
-- sensor type and value are extracted from payload
-- all enabled rules for project are evaluated
-- operator comparison applied (`>`, `<`, `>=`, `<=`, `==`, `!=`)
-- cooldown is applied per rule using `ALERT_RULE_COOLDOWN_MS` (default `60000`)
-- on match:
-  - event saved to history
-  - push dispatched
-
-## Ownership and Access
-
-Before reading/updating notification data:
-- service verifies current user owns the flow identified by `projectId`
-- if flow ownership check fails, request is rejected with `403`
+on app open/resume to backfill alerts that may have been missed while offline.
 
 ## Required Environment Variables
 
 - `FIREBASE_PROJECT_ID`
 - `FIREBASE_CLIENT_EMAIL`
 - `FIREBASE_PRIVATE_KEY`
-- `INTERNAL_ALERTS_API_KEY` (recommended in non-local environments)
-- `ALERT_RULE_COOLDOWN_MS` (optional)
-
-## Mobile Integration Notes
-
-- Always call `register` after login and whenever token refreshes.
-- Use `alert-history` on app open/resume to recover missed alerts.
-- Store `nextCursor` for infinite scroll.
-- Do not rely on push as the only source of truth; history is authoritative.
-- `projectId` is still required for project-scoped APIs (rules/policies/preferences/history), and maps to `flowId` in current backend.
-
-## Postman
-
-Ready-to-use requests are available in:
-- `docs/NexusFlow.postman_collection.json`
-- Folder: `Notifications`
+- `INTERNAL_ALERTS_API_KEY` (recommended outside local)
+- `ALERT_RULE_COOLDOWN_MS` (optional, default `60000`)

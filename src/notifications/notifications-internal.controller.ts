@@ -43,8 +43,8 @@ export class NotificationsInternalController {
     type: TriggerAlertDto,
   })
   @ApiResponse({
-    status: 201,
-    description: 'Alert event created and push dispatch attempted',
+    status: 200,
+    description: 'Alert evaluated and push dispatch attempted',
   })
   @Post('trigger')
   async triggerAlert(
@@ -52,7 +52,7 @@ export class NotificationsInternalController {
     @Body() body: TriggerAlertDto
   ) {
     this.assertInternalKey(internalKey);
-    return this.notificationsService.triggerAlert(body);
+    return this.notificationsService.triggerAlertFromInternal(body);
   }
 
   private assertInternalKey(incomingKey?: string): void {

@@ -6,10 +6,19 @@ export type AlertEventDocument = HydratedDocument<AlertEvent>;
 @Schema({ collection: 'alert_events', timestamps: true })
 export class AlertEvent {
   @Prop({ required: true, index: true })
-  projectId!: string;
+  flowId!: string;
 
   @Prop({ required: true, index: true })
-  sensorType!: string;
+  ruleId!: string;
+
+  @Prop({ required: true, index: true })
+  nodeId!: string;
+
+  @Prop({ required: true, index: true })
+  moduleId!: string;
+
+  @Prop({ required: true, index: true })
+  readingKey!: string;
 
   @Prop({ required: true, enum: ['critical', 'warning', 'info'], index: true })
   severity!: 'critical' | 'warning' | 'info';
@@ -20,14 +29,20 @@ export class AlertEvent {
   @Prop({ required: true })
   body!: string;
 
-  @Prop()
+  @Prop({ type: Number })
   value?: number;
 
-  @Prop()
-  threshold?: number;
+  @Prop({ required: true })
+  operator!: '>' | '<' | '>=' | '<=' | 'between' | 'outside';
 
-  @Prop({ index: true })
-  ruleId?: string;
+  @Prop({ type: Number, default: null })
+  threshold?: number | null;
+
+  @Prop({ type: Number, default: null })
+  min?: number | null;
+
+  @Prop({ type: Number, default: null })
+  max?: number | null;
 
   @Prop({ required: true, index: true })
   occurredAt!: Date;
@@ -38,4 +53,5 @@ export class AlertEvent {
 
 export const AlertEventSchema = SchemaFactory.createForClass(AlertEvent);
 
-AlertEventSchema.index({ projectId: 1, occurredAt: -1 });
+AlertEventSchema.index({ flowId: 1, occurredAt: -1 });
+AlertEventSchema.index({ flowId: 1, nodeId: 1, occurredAt: -1 });
