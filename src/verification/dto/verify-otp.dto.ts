@@ -7,7 +7,7 @@ export class VerifyOtpDto {
     description: 'Email used when generating the OTP',
   })
   @IsEmail()
-  email: string;
+  email!: string;
 
   @ApiProperty({
     example: '123456',
@@ -16,5 +16,5 @@ export class VerifyOtpDto {
   @IsString()
   @Length(6, 6)
   @Matches(/^\d{6}$/)
-  otp: string;
+  otp!: string;
 }

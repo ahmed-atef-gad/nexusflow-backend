@@ -1,13 +1,14 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { HydratedDocument } from 'mongoose';
 import { OtpPurpose } from '../enums/otp-purpose.enum';
 
-export type EmailVerificationOtpDocument = EmailVerificationOtp & Document;
+export type EmailVerificationOtpDocument =
+  HydratedDocument<EmailVerificationOtp>;
 
 @Schema({ timestamps: true })
 export class EmailVerificationOtp {
   @Prop({ required: true, index: true })
-  email: string;
+  email!: string;
 
   @Prop({
     required: true,
@@ -15,19 +16,19 @@ export class EmailVerificationOtp {
     default: OtpPurpose.EmailVerification,
     index: true,
   })
-  purpose: OtpPurpose;
+  purpose!: OtpPurpose;
 
   @Prop({ required: true })
-  otp_hash: string;
+  otp_hash!: string;
 
   @Prop({ required: true, expires: 0 })
-  expires_at: Date;
+  expires_at!: Date;
 
   @Prop({ default: 0 })
-  failed_attempts: number;
+  failed_attempts!: number;
 
   @Prop({ type: Date, default: null })
-  consumed_at: Date | null;
+  consumed_at?: Date | null;
 }
 
 export const EmailVerificationOtpSchema =

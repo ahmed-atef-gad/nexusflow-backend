@@ -1206,7 +1206,11 @@ export class FlowBuilderService {
   }
 
   private normalizeMqttChannel(value: unknown): string {
-    const channel = String(value ?? 'default')
+    const normalizedValue =
+      typeof value === 'string' || typeof value === 'number'
+        ? value.toString()
+        : 'default';
+    const channel = normalizedValue
       .trim()
       .replace(/[^a-zA-Z0-9_-]/g, '-')
       .replace(/-+/g, '-')
@@ -1216,9 +1220,13 @@ export class FlowBuilderService {
   }
 
   private parseTargetFlowIds(value: unknown): string[] {
+    const targetFlowIdsValue =
+      typeof value === 'string' || typeof value === 'number'
+        ? value.toString()
+        : '';
     return Array.from(
       new Set(
-        String(value ?? '')
+        targetFlowIdsValue
           .split(',')
           .map((item) => item.trim())
           .filter(Boolean)

@@ -13,6 +13,7 @@ import { RegisterUserDto } from './dto/register-user.dto';
 import { LoginUserDto } from './dto/login-user.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { LogoutDto } from './dto/logout.dto';
 import {
   ApiBadRequestResponse,
   ApiBody,
@@ -29,13 +30,24 @@ type RequestWithCookies = Request & {
   cookies: Record<string, string | undefined>;
 };
 
+type ThrottleOptions = {
+  default: {
+    limit: number;
+    ttl: number;
+  };
+};
+
+const throttle = Throttle as unknown as (
+  options: ThrottleOptions
+) => ClassDecorator;
+
 /**
  * Authentication endpoints for registration, login, profile retrieval, and logout.
  * Uses an HttpOnly `jwt` cookie for session management.
  */
 @ApiTags('Authentication')
 @ApiCookieAuth('jwt')
-@Throttle({ default: { limit: 3, ttl: 60 * 1000 } }) // Apply a default rate limit to all auth routes
+@throttle({ default: { limit: 3, ttl: 60 * 1000 } }) // Apply a default rate limit to all auth routes
 @Controller('auth')
 export class AuthController {
   constructor(private authService: AuthService) {}
@@ -235,30 +247,36 @@ export class AuthController {
   @ApiOperation({
     summary: 'Logout user',
     description:
-      'Clears the `jwt` cookie and invalidates existing tokens by bumping token version.',
+      'Clears the `jwt` cookie and invalidates existing tokens by bumping token version. If `deviceId` is provided, the matching FCM token registration for that authenticated user is removed.',
   })
+  @ApiBody({ type: LogoutDto, required: false })
   @ApiResponse({
     status: 200,
     description: 'Logout successful',
     schema: {
       example: {
-        message: 'Logout successful',
+        message: 'Logged out successfully.',
+        fcmTokenCleared: true,
       },
     },
   })
   async logout(
     @Req() request: RequestWithCookies,
+    @Body() body: LogoutDto,
     @Res({ passthrough: true }) response: Response
   ) {
     const cookies = request.cookies as Record<string, string | undefined>;
     const token = cookies.jwt;
-    await this.authService.logout(token);
+    const result = await this.authService.logout(token, body?.deviceId);
     response.clearCookie('jwt', {
       httpOnly: true,
       path: '/',
       secure: true,
       sameSite: 'none',
     });
-    return { message: 'Logout successful' };
+    return {
+      message: 'Logged out successfully.',
+      fcmTokenCleared: result.fcmTokenCleared,
+    };
   }
 }

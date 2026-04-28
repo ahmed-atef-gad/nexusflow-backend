@@ -37,8 +37,11 @@ export class AlertRule {
   @Prop({ required: true, index: true })
   readingKey!: string;
 
-  @Prop({ required: true, enum: ['>', '<', '>=', '<=', 'between', 'outside'] })
-  operator!: '>' | '<' | '>=' | '<=' | 'between' | 'outside';
+  @Prop({
+    required: true,
+    enum: ['>', '<', '>=', '<=', '=', 'between', 'outside'],
+  })
+  operator!: '>' | '<' | '>=' | '<=' | '=' | 'between' | 'outside';
 
   @Prop({ type: Number, default: null })
   threshold?: number | null;

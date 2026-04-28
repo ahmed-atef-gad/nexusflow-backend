@@ -33,7 +33,7 @@ export class AlertEvent {
   value?: number;
 
   @Prop({ required: true })
-  operator!: '>' | '<' | '>=' | '<=' | 'between' | 'outside';
+  operator!: '>' | '<' | '>=' | '<=' | '=' | 'between' | 'outside';
 
   @Prop({ type: Number, default: null })
   threshold?: number | null;

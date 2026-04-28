@@ -17,12 +17,27 @@ import { VerificationModule } from './verification/verification.module';
 import { FirmwareModule } from './firmware/firmware.module';
 import { NotificationsModule } from './notifications/notifications.module';
 
+type ThrottlerConfig = {
+  limit: number;
+  ttl: number;
+};
+
+const throttlerForRoot = ThrottlerModule as unknown as {
+  forRoot: (
+    options: ThrottlerConfig[]
+  ) => ReturnType<typeof ThrottlerModule.forRoot>;
+};
+
+const throttlerGuard = ThrottlerGuard as unknown as new (
+  ...args: never[]
+) => ThrottlerGuard;
+
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
     }),
-    ThrottlerModule.forRoot([
+    throttlerForRoot.forRoot([
       {
         limit: 20,
         ttl: 10000,
@@ -55,7 +70,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     AppService,
     {
       provide: APP_GUARD,
-      useClass: ThrottlerGuard,
+      useClass: throttlerGuard,
     },
   ],
 })

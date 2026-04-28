@@ -1,30 +1,30 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document, Types } from 'mongoose';
+import { HydratedDocument, Types } from 'mongoose';
 
-export type FirmwareDocument = Firmware & Document;
+export type FirmwareDocument = HydratedDocument<Firmware>;
 
 @Schema({ timestamps: true })
 export class Firmware {
   @Prop({ required: true, unique: true, index: true, trim: true })
-  version: string;
+  version!: string;
 
   @Prop({ required: true })
-  originalFileName: string;
+  originalFileName!: string;
 
   @Prop({ required: true, unique: true })
-  storedFileName: string;
+  storedFileName!: string;
 
   @Prop({ required: true })
-  checksum: string;
+  checksum!: string;
 
   @Prop({ required: true, min: 1 })
-  size: number;
+  size!: number;
 
   @Prop({ type: Types.ObjectId, ref: 'User' })
   uploadedBy?: Types.ObjectId;
 
   @Prop({ default: true, index: true })
-  isActive: boolean;
+  isActive!: boolean;
 
   createdAt?: Date;
   updatedAt?: Date;

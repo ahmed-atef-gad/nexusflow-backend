@@ -1,12 +1,18 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
 import { UsersService } from 'src/users/users.service';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
+import { Model } from 'mongoose';
 import { RegisterUserDto } from './dto/register-user.dto';
 import { VerificationService } from 'src/verification/verification.service';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import {
+  NotificationDeviceToken,
+  NotificationDeviceTokenDocument,
+} from 'src/notifications/schemas/notification-device-token.schema';
 
 interface AuthenticatedUser {
   _id: string;
@@ -21,7 +27,9 @@ export class AuthService {
   constructor(
     private usersService: UsersService,
     private jwtService: JwtService,
-    private verificationService: VerificationService
+    private verificationService: VerificationService,
+    @InjectModel(NotificationDeviceToken.name)
+    private readonly notificationDeviceTokenModel: Model<NotificationDeviceTokenDocument>
   ) {}
 
   private normalizeEmail(email: string): string {
@@ -107,16 +115,36 @@ export class AuthService {
     return { message: 'Password reset successful' };
   }
 
-  async logout(token?: string) {
-    if (!token) return;
+  async logout(
+    token?: string,
+    deviceId?: string
+  ): Promise<{ fcmTokenCleared: boolean }> {
+    if (!token) return { fcmTokenCleared: false };
+
+    const normalizedDeviceId = deviceId?.trim();
+    let userId: string | undefined;
     try {
       const decoded: { sub?: string } = this.jwtService.verify(token);
-      if (!decoded?.sub) return;
-      await this.usersService.incrementTokenVersion(decoded.sub);
+      if (!decoded?.sub) return { fcmTokenCleared: false };
+      userId = decoded.sub;
+      await this.usersService.incrementTokenVersion(userId);
     } catch {
       // Swallow errors to avoid leaking auth details on logout
-      return;
+      return { fcmTokenCleared: false };
     }
+
+    if (!normalizedDeviceId) {
+      return { fcmTokenCleared: false };
+    }
+
+    const deletion = await this.notificationDeviceTokenModel
+      .deleteOne({
+        userId,
+        deviceId: normalizedDeviceId,
+      })
+      .exec();
+
+    return { fcmTokenCleared: (deletion.deletedCount ?? 0) > 0 };
   }
 
   /**

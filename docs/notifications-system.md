@@ -96,12 +96,21 @@ Notes:
       "thresholdRequired": true,
       "defaultEnabled": true,
       "defaultSeverity": "critical",
-      "supportedOperators": [">", "<", ">=", "<=", "between", "outside"],
+      "defaultOperator": ">",
+      "defaultThreshold": 300,
+      "defaultMin": null,
+      "defaultMax": null,
+      "supportedOperators": [">", "<", ">=", "<=", "=", "between", "outside"],
       "isActive": true
     }
   ]
 }
 ```
+
+Policy validation:
+- `defaultOperator` must be one of `supportedOperators`
+- Simple operators (`>`, `<`, `>=`, `<=`, `=`) require `defaultThreshold` and require `defaultMin/defaultMax = null`
+- Range operators (`between`, `outside`) require `defaultMin/defaultMax` and require `defaultThreshold = null`
 
 ### 3) Notification Preferences (Per Flow)
 
@@ -158,6 +167,9 @@ Validation highlights:
 - Operator must match provided condition fields (`threshold` or `min/max`)
 - Required-policy rules cannot be disabled/deleted
 
+Operator notes:
+- `=` is supported and is used for binary sensors (`digital = 1`, `motion = 1`)
+
 ### 5) Alert History
 
 - `GET /v1/flows/:flowId/alert-history?limit=50&cursor=<optional>&nodeId=<optional>&severity=<optional>`
@@ -200,6 +212,28 @@ Push is not durable delivery. Mobile should always call:
 - `GET /v1/flows/:flowId/alert-history`
 
 on app open/resume to backfill alerts that may have been missed while offline.
+
+## Auto-Created Rules
+
+- On flow save/update, backend syncs rules by node list.
+- For each node, backend loads all active policies where `policy.moduleId == node.moduleId`.
+- One rule is auto-created per matching `readingKey` policy.
+- If a node is removed from the flow, all its rules are deleted (cascade by `nodeId`).
+
+## Logout FCM Cleanup
+
+- `POST /auth/logout` accepts optional body:
+
+```json
+{
+  "deviceId": "mobile-device-001"
+}
+```
+
+- If `deviceId` is provided, backend removes the matching token only for the authenticated user.
+- Response includes `fcmTokenCleared`:
+  - `true` when token record was deleted
+  - `false` when no matching token was found or `deviceId` was not provided
 
 ## Required Environment Variables
 

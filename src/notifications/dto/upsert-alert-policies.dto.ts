@@ -4,8 +4,11 @@ import {
   IsBoolean,
   IsEnum,
   IsNotEmpty,
+  IsNumber,
+  IsOptional,
   IsString,
   Length,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -15,6 +18,7 @@ export type AlertComparisonOperator =
   | '<'
   | '>='
   | '<='
+  | '='
   | 'between'
   | 'outside';
 
@@ -57,12 +61,53 @@ export class AlertPolicyInputDto {
   defaultSeverity!: 'critical' | 'warning' | 'info';
 
   @ApiProperty({
+    enum: ['>', '<', '>=', '<=', '=', 'between', 'outside'],
+    example: '>',
+    description: 'Default operator for auto-created rules.',
+  })
+  @IsEnum(['>', '<', '>=', '<=', '=', 'between', 'outside'])
+  defaultOperator!: AlertComparisonOperator;
+
+  @ApiProperty({
+    example: 300,
+    nullable: true,
+    description: 'Default threshold for simple operators.',
+  })
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @Type(() => Number)
+  @IsNumber()
+  defaultThreshold?: number | null;
+
+  @ApiProperty({
+    example: 15,
+    nullable: true,
+    description: 'Default min for range operators.',
+  })
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @Type(() => Number)
+  @IsNumber()
+  defaultMin?: number | null;
+
+  @ApiProperty({
+    example: 35,
+    nullable: true,
+    description: 'Default max for range operators.',
+  })
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @Type(() => Number)
+  @IsNumber()
+  defaultMax?: number | null;
+
+  @ApiProperty({
     type: [String],
-    enum: ['>', '<', '>=', '<=', 'between', 'outside'],
+    enum: ['>', '<', '>=', '<=', '=', 'between', 'outside'],
     example: ['>', '<', '>=', '<='],
   })
   @IsArray()
-  @IsEnum(['>', '<', '>=', '<=', 'between', 'outside'], { each: true })
+  @IsEnum(['>', '<', '>=', '<=', '=', 'between', 'outside'], { each: true })
   supportedOperators!: AlertComparisonOperator[];
 
   @ApiProperty({ example: true })
