@@ -21,6 +21,7 @@ import { Logic, LogicSchema } from './schemas/logic.schema';
 import { Ui, UiSchema } from './schemas/ui.schema';
 import { RolesGuard } from '../guards/auth/roles.guard';
 import { OwnerGuard } from '../guards/auth/owner.guard';
+import { NotificationsModule } from 'src/notifications/notifications.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { OwnerGuard } from '../guards/auth/owner.guard';
     AuthModule,
     DevicesModule,
     UsersModule,
+    NotificationsModule,
   ],
   controllers: [
     FlowsController,

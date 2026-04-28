@@ -832,100 +832,46 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private extractAlertSensorType(
-    rawPayload: InputPayload | null,
-    inputNodeId: string
-  ): string {
-    if (
-      typeof rawPayload?.sensorType === 'string' &&
-      rawPayload.sensorType.trim()
-    ) {
-      return rawPayload.sensorType.trim();
-    }
-
-    if (typeof rawPayload?.type === 'string' && rawPayload.type.trim()) {
-      return rawPayload.type.trim();
-    }
-
-    return inputNodeId;
-  }
-
-  private extractAlertNumericValue(
+  private extractAlertReadings(
     rawPayload: InputPayload | null,
     normalizedInput: number | null
-  ): number | null {
-    if (!rawPayload) {
-      return normalizedInput;
+  ): Record<string, number> {
+    const readings: Record<string, number> = {};
+    const setReading = (key: string, value: unknown) => {
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        readings[key] = value;
+      }
+    };
+
+    if (rawPayload) {
+      setReading('analog', rawPayload.analog);
+      setReading('digital', rawPayload.digital);
+      setReading('motion', rawPayload.motion);
+      setReading('temperature', rawPayload.temperature);
+      setReading('humidity', rawPayload.humidity);
+      setReading('distance_cm', rawPayload.distance_cm);
+      setReading('raw', rawPayload.raw);
+      setReading('value', rawPayload.value);
+      setReading('result', rawPayload.result);
+      setReading('percent', rawPayload.percent);
+
+      if (typeof rawPayload.digital === 'boolean') {
+        readings.digital = rawPayload.digital ? 1 : 0;
+      }
+      if (typeof rawPayload.motion === 'boolean') {
+        readings.motion = rawPayload.motion ? 1 : 0;
+      }
+      if (typeof rawPayload.result === 'boolean') {
+        readings.result = rawPayload.result ? 1 : 0;
+      }
     }
 
-    if (
-      typeof rawPayload.value === 'number' &&
-      Number.isFinite(rawPayload.value)
-    ) {
-      return rawPayload.value;
-    }
-    if (
-      typeof rawPayload.result === 'number' &&
-      Number.isFinite(rawPayload.result)
-    ) {
-      return rawPayload.result;
-    }
-    if (typeof rawPayload.raw === 'number' && Number.isFinite(rawPayload.raw)) {
-      return rawPayload.raw;
-    }
-    if (
-      typeof rawPayload.analog === 'number' &&
-      Number.isFinite(rawPayload.analog)
-    ) {
-      return rawPayload.analog;
-    }
-    if (
-      typeof rawPayload.percent === 'number' &&
-      Number.isFinite(rawPayload.percent)
-    ) {
-      return rawPayload.percent;
-    }
-    if (
-      typeof rawPayload.temperature === 'number' &&
-      Number.isFinite(rawPayload.temperature)
-    ) {
-      return rawPayload.temperature;
-    }
-    if (
-      typeof rawPayload.humidity === 'number' &&
-      Number.isFinite(rawPayload.humidity)
-    ) {
-      return rawPayload.humidity;
-    }
-    if (
-      typeof rawPayload.distance_cm === 'number' &&
-      Number.isFinite(rawPayload.distance_cm)
-    ) {
-      return rawPayload.distance_cm;
-    }
-    if (
-      typeof rawPayload.digital === 'number' &&
-      Number.isFinite(rawPayload.digital)
-    ) {
-      return rawPayload.digital ? 1 : 0;
-    }
-    if (
-      typeof rawPayload.motion === 'number' &&
-      Number.isFinite(rawPayload.motion)
-    ) {
-      return rawPayload.motion ? 1 : 0;
-    }
-    if (typeof rawPayload.digital === 'boolean') {
-      return rawPayload.digital ? 1 : 0;
-    }
-    if (typeof rawPayload.motion === 'boolean') {
-      return rawPayload.motion ? 1 : 0;
-    }
-    if (typeof rawPayload.result === 'boolean') {
-      return rawPayload.result ? 1 : 0;
+    if (normalizedInput !== null) {
+      if (readings.value === undefined) readings.value = normalizedInput;
+      if (readings.result === undefined) readings.result = normalizedInput;
     }
 
-    return normalizedInput;
+    return readings;
   }
 
   private async evaluateAlertRulesForInput(params: {
@@ -937,24 +883,18 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     deviceMac: string;
     clientId: string;
   }): Promise<void> {
-    const sensorType = this.extractAlertSensorType(
-      params.rawPayload,
-      params.inputNodeId
-    );
-    const readingValue = this.extractAlertNumericValue(
+    const readings = this.extractAlertReadings(
       params.rawPayload,
       params.normalizedInput
     );
-
-    if (readingValue === null || !Number.isFinite(readingValue)) {
+    if (!Object.keys(readings).length) {
       return;
     }
 
     const outcome = await this.notificationsService.processSensorReading({
-      // Current runtime has no separate project entity; we scope alerts by active flow id.
-      projectId: params.flowId,
-      sensorType,
-      value: readingValue,
+      flowId: params.flowId,
+      nodeId: params.inputNodeId,
+      readings,
       metadata: {
         topic: params.topic,
         inputNodeId: params.inputNodeId,
@@ -965,7 +905,7 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
 
     if (outcome.triggeredRules > 0) {
       this.logger.log(
-        `Triggered ${outcome.triggeredRules} alert rule(s) for flowId=${params.flowId} sensorType=${sensorType} value=${readingValue}`
+        `Triggered ${outcome.triggeredRules} alert rule(s) for flowId=${params.flowId} nodeId=${params.inputNodeId}`
       );
     }
   }

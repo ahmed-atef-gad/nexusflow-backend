@@ -23,6 +23,7 @@ import { UiService } from './ui.service';
 import { UiItem } from './schemas/uiItem.schema';
 import { Ui } from './schemas/ui.schema';
 import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
+import { NotificationsService } from 'src/notifications/notifications.service';
 
 export type FlowWithUiAndWarnings = Flow & {
   nodeDiagnostics?: FlowNodeDiagnostic[];
@@ -39,8 +40,21 @@ export class FlowsService {
     private readonly logicService: LogicService,
     private readonly mqttService: MqttService,
     @Inject(forwardRef(() => DevicesService))
-    private readonly devicesService: DevicesService
+    private readonly devicesService: DevicesService,
+    private readonly notificationsService: NotificationsService
   ) {}
+
+  private extractNodeRefs(
+    nodes: Flow['nodes'] | undefined
+  ): Array<{ nodeId: string; moduleId: string }> {
+    if (!Array.isArray(nodes)) return [];
+    return nodes
+      .map((node) => ({
+        nodeId: String(node.id ?? '').trim(),
+        moduleId: String(node.data?.moduleId ?? '').trim(),
+      }))
+      .filter((node) => node.nodeId && node.moduleId);
+  }
 
   private toCommandExtraction(value: unknown): CommandExtraction {
     if (
@@ -216,6 +230,11 @@ export class FlowsService {
     ui = await this.uiService.create({
       flowId: savedFlowId,
       uiItems: uiData,
+    });
+    await this.notificationsService.syncRulesForFlowNodes({
+      flowId: savedFlowId,
+      userId,
+      nodes: this.extractNodeRefs(nodesWithDiagnostics),
     });
 
     return {
@@ -408,6 +427,11 @@ export class FlowsService {
       await this.setupService.upsertByFlowId(id, setupData);
       ui = await this.uiService.upsertByFlowId(id, uiData, topicsData);
       await this.logicService.upsertByFlowId(id, logicData);
+      await this.notificationsService.syncRulesForFlowNodes({
+        flowId: id,
+        userId,
+        nodes: this.extractNodeRefs(nodesWithDiagnostics),
+      });
 
       flow.set({
         ...updatedFlow,
@@ -459,5 +483,6 @@ export class FlowsService {
 
     await this.setupService.deleteByFlowId(id);
     await this.logicService.deleteByFlowId(id);
+    await this.notificationsService.cleanupFlowNotificationData(id);
   }
 }

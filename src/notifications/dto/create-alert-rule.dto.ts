@@ -10,40 +10,24 @@ import {
   IsOptional,
   IsString,
   Length,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 
+export type AlertRuleOperator = '>' | '<' | '>=' | '<=' | 'between' | 'outside';
+
 export class AlertRuleActionDto {
   @ApiProperty({
-    enum: ['device_action', 'send_push'],
+    enum: ['send_push'],
     example: 'send_push',
   })
-  @IsEnum(['device_action', 'send_push'])
-  type!: 'device_action' | 'send_push';
+  @IsEnum(['send_push'])
+  type!: 'send_push';
 
   @ApiPropertyOptional({
-    description: 'Optional topic override for push action',
-    example: 'project.project-alpha.critical',
-  })
-  @IsOptional()
-  @IsString()
-  @Length(1, 200)
-  topic?: string;
-
-  @ApiPropertyOptional({
-    description: 'Optional template id for message composition',
-    example: 'gas_alert_template',
-  })
-  @IsOptional()
-  @IsString()
-  @Length(1, 120)
-  templateId?: string;
-
-  @ApiPropertyOptional({
-    description: 'Optional payload for action execution',
     example: {
       title: 'Gas Leak Alert',
-      body: 'MQ level exceeded threshold',
+      body: 'MQ2 analog level exceeded threshold',
     },
   })
   @IsOptional()
@@ -52,49 +36,74 @@ export class AlertRuleActionDto {
 }
 
 export class CreateAlertRuleDto {
-  @ApiProperty({
-    description: 'Sensor type this rule listens to',
-    example: 'MQ',
-  })
+  @ApiProperty({ example: 'MQ2-Sensor-1777061998955-55w' })
   @IsString()
   @IsNotEmpty()
-  @Length(1, 100)
-  sensorType!: string;
+  @Length(1, 200)
+  nodeId!: string;
+
+  @ApiProperty({ example: 'MQ2-Sensor' })
+  @IsString()
+  @IsNotEmpty()
+  @Length(1, 120)
+  moduleId!: string;
+
+  @ApiProperty({ example: 'analog' })
+  @IsString()
+  @IsNotEmpty()
+  @Length(1, 120)
+  readingKey!: string;
 
   @ApiProperty({
-    enum: ['>', '<', '>=', '<=', '==', '!='],
+    enum: ['>', '<', '>=', '<=', 'between', 'outside'],
     example: '>',
   })
-  @IsEnum(['>', '<', '>=', '<=', '==', '!='])
-  operator!: '>' | '<' | '>=' | '<=' | '==' | '!=';
+  @IsEnum(['>', '<', '>=', '<=', 'between', 'outside'])
+  operator!: AlertRuleOperator;
 
-  @ApiProperty({
-    description: 'Threshold value for rule trigger',
+  @ApiPropertyOptional({
     example: 300,
+    nullable: true,
   })
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null && value !== undefined)
   @Type(() => Number)
   @IsNumber()
-  threshold!: number;
+  threshold?: number | null;
+
+  @ApiPropertyOptional({
+    example: 15,
+    nullable: true,
+  })
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @Type(() => Number)
+  @IsNumber()
+  min?: number | null;
+
+  @ApiPropertyOptional({
+    example: 35,
+    nullable: true,
+  })
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @Type(() => Number)
+  @IsNumber()
+  max?: number | null;
 
   @ApiProperty({
-    description: 'Severity when rule is triggered',
     enum: ['critical', 'warning', 'info'],
     example: 'critical',
   })
   @IsEnum(['critical', 'warning', 'info'])
   severity!: 'critical' | 'warning' | 'info';
 
-  @ApiPropertyOptional({
-    description: 'Whether rule is active',
-    example: true,
-  })
-  @IsOptional()
+  @ApiProperty({ example: true })
   @IsBoolean()
-  enabled?: boolean;
+  enabled!: boolean;
 
   @ApiPropertyOptional({
     type: [AlertRuleActionDto],
-    description: 'Actions executed when rule condition matches',
   })
   @IsOptional()
   @IsArray()

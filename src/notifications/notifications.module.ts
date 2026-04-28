@@ -11,6 +11,7 @@ import { NotificationsController } from './notifications.controller';
 import { ProjectAlertConfigController } from './project-alert-config.controller';
 import { ProjectAlertHistoryController } from './project-alert-history.controller';
 import { NotificationsService } from './notifications.service';
+import { RolesGuard } from 'src/guards/auth/roles.guard';
 import {
   NotificationDeviceToken,
   NotificationDeviceTokenSchema,
@@ -45,7 +46,7 @@ import {
     ProjectAlertConfigController,
     ProjectAlertHistoryController,
   ],
-  providers: [NotificationsService],
+  providers: [NotificationsService, RolesGuard],
   exports: [MongooseModule, NotificationsService],
 })
 export class NotificationsModule {}

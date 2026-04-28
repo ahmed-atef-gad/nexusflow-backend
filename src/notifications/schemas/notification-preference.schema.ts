@@ -4,39 +4,23 @@ import { HydratedDocument } from 'mongoose';
 export type NotificationPreferenceDocument =
   HydratedDocument<NotificationPreference>;
 
-@Schema({ _id: false })
-export class SensorNotificationPreference {
-  @Prop({ required: true })
-  sensorType!: string;
-
-  @Prop({ required: true, default: true })
-  enabled!: boolean;
-
-  @Prop()
-  threshold?: number;
-}
-
-const SensorNotificationPreferenceSchema = SchemaFactory.createForClass(
-  SensorNotificationPreference
-);
-
 @Schema({ collection: 'notification_preferences', timestamps: true })
 export class NotificationPreference {
   @Prop({ required: true, index: true })
-  projectId!: string;
+  flowId!: string;
 
   @Prop({ required: true, index: true })
   userId!: string;
 
-  @Prop({ type: [SensorNotificationPreferenceSchema], default: [] })
-  sensors!: SensorNotificationPreference[];
+  @Prop({ required: true, default: true })
+  notificationsEnabled!: boolean;
+
+  @Prop({ type: [String], default: ['push'] })
+  channels!: string[];
 }
 
 export const NotificationPreferenceSchema = SchemaFactory.createForClass(
   NotificationPreference
 );
 
-NotificationPreferenceSchema.index(
-  { projectId: 1, userId: 1 },
-  { unique: true }
-);
+NotificationPreferenceSchema.index({ flowId: 1, userId: 1 }, { unique: true });

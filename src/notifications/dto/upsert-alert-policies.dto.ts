@@ -10,52 +10,68 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
+export type AlertComparisonOperator =
+  | '>'
+  | '<'
+  | '>='
+  | '<='
+  | 'between'
+  | 'outside';
+
 export class AlertPolicyInputDto {
-  @ApiProperty({
-    description: 'Sensor type for this policy',
-    example: 'MQ',
-  })
+  @ApiProperty({ example: 'MQ2-Sensor' })
   @IsString()
   @IsNotEmpty()
-  @Length(1, 100)
-  sensorType!: string;
+  @Length(1, 120)
+  moduleId!: string;
 
-  @ApiProperty({
-    description:
-      'If true, this policy cannot be turned off by user preferences',
-    example: true,
-  })
+  @ApiProperty({ example: 'analog' })
+  @IsString()
+  @IsNotEmpty()
+  @Length(1, 120)
+  readingKey!: string;
+
+  @ApiProperty({ example: 'MQ2 Gas Level (Analog)' })
+  @IsString()
+  @IsNotEmpty()
+  @Length(1, 160)
+  label!: string;
+
+  @ApiProperty({ example: true })
   @IsBoolean()
   required!: boolean;
 
-  @ApiProperty({
-    description: 'If true, threshold must be provided for rule creation',
-    example: true,
-  })
+  @ApiProperty({ example: true })
   @IsBoolean()
   thresholdRequired!: boolean;
 
-  @ApiProperty({
-    description: 'Default enabled state for optional notifications',
-    example: true,
-  })
+  @ApiProperty({ example: true })
   @IsBoolean()
   defaultEnabled!: boolean;
 
   @ApiProperty({
-    description: 'Default severity for this sensor policy',
     enum: ['critical', 'warning', 'info'],
     example: 'critical',
   })
   @IsEnum(['critical', 'warning', 'info'])
   defaultSeverity!: 'critical' | 'warning' | 'info';
+
+  @ApiProperty({
+    type: [String],
+    enum: ['>', '<', '>=', '<=', 'between', 'outside'],
+    example: ['>', '<', '>=', '<='],
+  })
+  @IsArray()
+  @IsEnum(['>', '<', '>=', '<=', 'between', 'outside'], { each: true })
+  supportedOperators!: AlertComparisonOperator[];
+
+  @ApiProperty({ example: true })
+  @IsBoolean()
+  isActive!: boolean;
 }
 
 export class UpsertAlertPoliciesDto {
-  @ApiProperty({
-    type: [AlertPolicyInputDto],
-    description: 'Alert policies to upsert',
-  })
+  @ApiProperty({ type: [AlertPolicyInputDto] })
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => AlertPolicyInputDto)

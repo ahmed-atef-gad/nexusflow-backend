@@ -1,5 +1,11 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+import {
+  IsEnum,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+} from 'class-validator';
 
 export class AlertHistoryQueryDto {
   @ApiPropertyOptional({
@@ -13,11 +19,27 @@ export class AlertHistoryQueryDto {
 
   @ApiPropertyOptional({
     description: 'Cursor from previous response for next page',
-    example:
-      'eyJvY2N1cnJlZEF0IjoiMjAyNi0wNC0xOVQwOToxMDowMC4wMDBaIiwiaWQiOiI2ODAyZWMzZjdmZDRkYjhhZjE0M2RjZjEifQ==',
+    example: '69e7d01de463e7c6e48fb552',
   })
   @IsOptional()
   @IsString()
-  @MaxLength(500)
+  @MaxLength(120)
   cursor?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filter by node instance id',
+    example: 'MQ2-Sensor-1777061998955-55w',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  nodeId?: string;
+
+  @ApiPropertyOptional({
+    enum: ['critical', 'warning', 'info'],
+    example: 'critical',
+  })
+  @IsOptional()
+  @IsEnum(['critical', 'warning', 'info'])
+  severity?: 'critical' | 'warning' | 'info';
 }
