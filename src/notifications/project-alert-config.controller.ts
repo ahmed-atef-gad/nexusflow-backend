@@ -19,7 +19,10 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { getUserIdFromRequest, type AuthenticatedRequest } from 'src/auth/utils/auth.util';
+import {
+  getUserIdFromRequest,
+  type AuthenticatedRequest,
+} from 'src/auth/utils/auth.util';
 import { AuthGuard } from 'src/guards/auth/auth.guard';
 import { CreateAlertRuleDto } from './dto/create-alert-rule.dto';
 import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
@@ -45,10 +48,13 @@ export class ProjectAlertConfigController {
   @Get('notification-preferences')
   async getNotificationPreferences(
     @Req() req: AuthenticatedRequest,
-    @Param('projectId') projectId: string,
+    @Param('projectId') projectId: string
   ) {
     const userId = getUserIdFromRequest(req);
-    return this.notificationsService.getNotificationPreferences(userId, projectId);
+    return this.notificationsService.getNotificationPreferences(
+      userId,
+      projectId
+    );
   }
 
   @ApiOperation({
@@ -67,13 +73,13 @@ export class ProjectAlertConfigController {
   async updateNotificationPreferences(
     @Req() req: AuthenticatedRequest,
     @Param('projectId') projectId: string,
-    @Body() body: UpdateNotificationPreferencesDto,
+    @Body() body: UpdateNotificationPreferencesDto
   ) {
     const userId = getUserIdFromRequest(req);
     return this.notificationsService.updateNotificationPreferences(
       userId,
       projectId,
-      body,
+      body
     );
   }
 
@@ -88,7 +94,7 @@ export class ProjectAlertConfigController {
   @Get('alert-policies')
   async getAlertPolicies(
     @Req() req: AuthenticatedRequest,
-    @Param('projectId') projectId: string,
+    @Param('projectId') projectId: string
   ) {
     const userId = getUserIdFromRequest(req);
     return this.notificationsService.getAlertPolicies(userId, projectId);
@@ -110,10 +116,14 @@ export class ProjectAlertConfigController {
   async upsertAlertPolicies(
     @Req() req: AuthenticatedRequest,
     @Param('projectId') projectId: string,
-    @Body() body: UpsertAlertPoliciesDto,
+    @Body() body: UpsertAlertPoliciesDto
   ) {
     const userId = getUserIdFromRequest(req);
-    return this.notificationsService.upsertAlertPolicies(userId, projectId, body);
+    return this.notificationsService.upsertAlertPolicies(
+      userId,
+      projectId,
+      body
+    );
   }
 
   @ApiOperation({
@@ -124,7 +134,7 @@ export class ProjectAlertConfigController {
   @Get('alert-rules')
   async getAlertRules(
     @Req() req: AuthenticatedRequest,
-    @Param('projectId') projectId: string,
+    @Param('projectId') projectId: string
   ) {
     const userId = getUserIdFromRequest(req);
     return this.notificationsService.getAlertRules(userId, projectId);
@@ -140,7 +150,7 @@ export class ProjectAlertConfigController {
   async createAlertRule(
     @Req() req: AuthenticatedRequest,
     @Param('projectId') projectId: string,
-    @Body() body: CreateAlertRuleDto,
+    @Body() body: CreateAlertRuleDto
   ) {
     const userId = getUserIdFromRequest(req);
     return this.notificationsService.createAlertRule(userId, projectId, body);
@@ -158,14 +168,14 @@ export class ProjectAlertConfigController {
     @Req() req: AuthenticatedRequest,
     @Param('projectId') projectId: string,
     @Param('ruleId') ruleId: string,
-    @Body() body: UpdateAlertRuleDto,
+    @Body() body: UpdateAlertRuleDto
   ) {
     const userId = getUserIdFromRequest(req);
     return this.notificationsService.updateAlertRule(
       userId,
       projectId,
       ruleId,
-      body,
+      body
     );
   }
 
@@ -178,14 +188,17 @@ export class ProjectAlertConfigController {
     status: 200,
     description: 'Alert rule deleted',
     schema: {
-      example: { acknowledged: true, deletedRuleId: '6802ec3f7fd4db8af143dcf1' },
+      example: {
+        acknowledged: true,
+        deletedRuleId: '6802ec3f7fd4db8af143dcf1',
+      },
     },
   })
   @Delete('alert-rules/:ruleId')
   async deleteAlertRule(
     @Req() req: AuthenticatedRequest,
     @Param('projectId') projectId: string,
-    @Param('ruleId') ruleId: string,
+    @Param('ruleId') ruleId: string
   ) {
     const userId = getUserIdFromRequest(req);
     return this.notificationsService.deleteAlertRule(userId, projectId, ruleId);

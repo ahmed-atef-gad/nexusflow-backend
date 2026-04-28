@@ -1,6 +1,9 @@
 import { DynamicModule, Global, Module } from '@nestjs/common';
-import { DiscoveryModule } from '@nestjs/core'; 
-import { PigeonModuleAsyncOptions, PigeonModuleOptions } from './pigeon.interface';
+import { DiscoveryModule } from '@nestjs/core';
+import {
+  PigeonModuleAsyncOptions,
+  PigeonModuleOptions,
+} from './pigeon.interface';
 import { PIGEON_OPTION_PROVIDER } from './pigeon.constant';
 import { createClientProvider } from './pigeon.provider';
 import { PigeonService } from './pigeon.service';
@@ -9,7 +12,7 @@ import { PigeonExplorer } from './pigeon.explorer';
 
 @Global()
 @Module({
-  imports: [DiscoveryModule], 
+  imports: [DiscoveryModule],
   exports: [PigeonService],
 })
 export class PigeonModule {
@@ -18,7 +21,7 @@ export class PigeonModule {
       module: PigeonModule,
       providers: [
         ...createOptionProviders(options),
-        createLoggerProvider(options),
+        createLoggerProvider(),
         createClientProvider(),
         PigeonExplorer,
         PigeonService,
@@ -34,7 +37,7 @@ export class PigeonModule {
           provide: PIGEON_OPTION_PROVIDER,
           useValue: options,
         },
-        createLoggerProvider(options),
+        createLoggerProvider(),
         createClientProvider(),
         PigeonExplorer,
         PigeonService,

@@ -9,7 +9,7 @@ function getAllowedCorsOrigins(): string[] {
 
   if (!corsOrigins) {
     throw new Error(
-      'CORS_ORIGINS environment variable is not set. Provide a comma-separated list of allowed origins.',
+      'CORS_ORIGINS environment variable is not set. Provide a comma-separated list of allowed origins.'
     );
   }
 
@@ -20,7 +20,7 @@ function getAllowedCorsOrigins(): string[] {
 
   if (origins.length === 0) {
     throw new Error(
-      'CORS_ORIGINS environment variable is empty. Provide at least one allowed origin.',
+      'CORS_ORIGINS environment variable is empty. Provide at least one allowed origin.'
     );
   }
 
@@ -35,7 +35,7 @@ function getAllowedCorsOrigins(): string[] {
 
   if (invalidOrigins.length > 0) {
     throw new Error(
-      `Invalid URL(s) found in CORS_ORIGINS: ${invalidOrigins.join(', ')}`,
+      `Invalid URL(s) found in CORS_ORIGINS: ${invalidOrigins.join(', ')}`
     );
   }
 
@@ -72,4 +72,4 @@ async function bootstrap() {
   await app.startAllMicroservices();
   await app.listen(process.env.PORT ?? 3000);
 }
-bootstrap();
+void bootstrap();

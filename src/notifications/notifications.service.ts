@@ -6,9 +6,8 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
-import { FilterQuery, Model, Types } from 'mongoose';
+import { ConfigService } from '@nestjs/config';
 import { App, cert, getApps, initializeApp } from 'firebase-admin/app';
 import {
   BatchResponse,
@@ -16,6 +15,7 @@ import {
   Messaging,
   MulticastMessage,
 } from 'firebase-admin/messaging';
+import { FilterQuery, Model, Types } from 'mongoose';
 import { RegisterNotificationDeviceDto } from './dto/register-notification-device.dto';
 import { TriggerAlertDto } from './dto/trigger-alert.dto';
 import { AlertEvent, AlertEventDocument } from './schemas/alert-event.schema';
@@ -24,10 +24,7 @@ import {
   AlertPolicy,
   AlertPolicyDocument,
 } from './schemas/alert-policy.schema';
-import {
-  AlertRule,
-  AlertRuleDocument,
-} from './schemas/alert-rule.schema';
+import { AlertRule, AlertRuleDocument } from './schemas/alert-rule.schema';
 import { Flow, FlowDocument } from 'src/flows/schemas/flow.schema';
 import {
   NotificationPreference,
@@ -133,17 +130,17 @@ export class NotificationsService {
     private readonly alertRuleModel: Model<AlertRuleDocument>,
     @InjectModel(Flow.name)
     private readonly flowModel: Model<FlowDocument>,
-    private readonly configService: ConfigService,
+    private readonly configService: ConfigService
   ) {
     this.ruleCooldownMs = this.readPositiveConfigNumber(
       'ALERT_RULE_COOLDOWN_MS',
-      60000,
+      60000
     );
   }
 
   async registerDeviceToken(
     userId: string,
-    dto: RegisterNotificationDeviceDto,
+    dto: RegisterNotificationDeviceDto
   ): Promise<{
     id: string;
     userId: string;
@@ -179,23 +176,36 @@ export class NotificationsService {
         upsert: true,
         new: true,
         setDefaultsOnInsert: true,
-      },
+      }
     );
 
+    const doc = document as unknown as {
+      id: string;
+      userId: string;
+      deviceId: string;
+      platform: 'android' | 'ios';
+      isActive: boolean;
+      lastSeenAt?: Date;
+      updatedAt?: Date;
+      createdAt?: Date;
+    };
+
     return {
-      id: document.id,
-      userId: document.userId,
-      deviceId: document.deviceId,
-      platform: document.platform,
-      isActive: document.isActive,
-      lastSeenAt: document.lastSeenAt,
-      updatedAt: document.updatedAt,
-      createdAt: document.createdAt,
+      id: doc.id,
+      userId: doc.userId,
+      deviceId: doc.deviceId,
+      platform: doc.platform,
+      isActive: doc.isActive,
+      lastSeenAt: doc.lastSeenAt ?? new Date(),
+      updatedAt: doc.updatedAt,
+      createdAt: doc.createdAt,
     };
   }
 
   async triggerAlert(input: TriggerAlertDto): Promise<TriggerAlertResult> {
-    const occurredAt = input.occurredAt ? new Date(input.occurredAt) : new Date();
+    const occurredAt = input.occurredAt
+      ? new Date(input.occurredAt)
+      : new Date();
     const title = input.title?.trim() || this.buildDefaultAlertTitle(input);
     const body = input.body?.trim() || this.buildDefaultAlertBody(input);
 
@@ -210,6 +220,19 @@ export class NotificationsService {
       ruleId: input.ruleId,
       occurredAt,
     });
+    const createdEventSafe = createdEvent as unknown as {
+      id: string;
+      projectId: string;
+      sensorType: string;
+      severity: AlertSeverity;
+      title: string;
+      body: string;
+      value?: number;
+      threshold?: number;
+      ruleId?: string;
+      occurredAt: Date;
+      createdAt: Date;
+    };
 
     let delivery: TriggerAlertResult['delivery'];
     try {
@@ -217,9 +240,8 @@ export class NotificationsService {
         projectId: input.projectId,
         title,
         body,
-        severity: input.severity,
+        severity: createdEventSafe.severity,
         data: {
-          ...input.data,
           type: 'ALERT_TRIGGERED',
           sensorType: input.sensorType,
           ruleId: input.ruleId ?? '',
@@ -232,7 +254,7 @@ export class NotificationsService {
       const message =
         error instanceof Error ? error.message : 'Unknown push delivery error';
       this.logger.error(
-        `Alert event ${createdEvent.id} saved but push delivery failed: ${message}`,
+        `Alert event ${createdEventSafe.id} saved but push delivery failed: ${message}`
       );
 
       delivery = {
@@ -246,17 +268,23 @@ export class NotificationsService {
 
     return {
       event: {
-        id: createdEvent.id,
-        projectId: createdEvent.projectId,
-        sensorType: createdEvent.sensorType,
-        severity: createdEvent.severity,
-        title: createdEvent.title,
-        body: createdEvent.body,
-        value: createdEvent.value,
-        threshold: createdEvent.threshold,
-        ruleId: createdEvent.ruleId,
-        occurredAt: createdEvent.occurredAt,
-        createdAt: createdEvent.createdAt,
+        id: createdEventSafe.id,
+        projectId: createdEventSafe.projectId,
+        sensorType: createdEventSafe.sensorType,
+        severity: createdEventSafe.severity,
+        title: createdEventSafe.title,
+        body: createdEventSafe.body,
+        value:
+          typeof createdEventSafe.value === 'number'
+            ? createdEventSafe.value
+            : undefined,
+        threshold:
+          typeof createdEventSafe.threshold === 'number'
+            ? createdEventSafe.threshold
+            : undefined,
+        ruleId: createdEventSafe.ruleId,
+        occurredAt: createdEventSafe.occurredAt,
+        createdAt: createdEventSafe.createdAt,
       },
       delivery,
     };
@@ -265,7 +293,7 @@ export class NotificationsService {
   async getAlertHistory(
     userId: string,
     projectId: string,
-    query: AlertHistoryQueryDto,
+    query: AlertHistoryQueryDto
   ): Promise<{ items: AlertHistoryItem[]; nextCursor: string | null }> {
     await this.assertUserCanAccessProject(userId, projectId);
 
@@ -316,7 +344,10 @@ export class NotificationsService {
     };
   }
 
-  async getNotificationPreferences(userId: string, projectId: string): Promise<{
+  async getNotificationPreferences(
+    userId: string,
+    projectId: string
+  ): Promise<{
     items: Array<{
       sensorType: string;
       enabled: boolean;
@@ -335,7 +366,10 @@ export class NotificationsService {
         .sort({ sensorType: 1 })
         .lean()
         .exec(),
-      this.notificationPreferenceModel.findOne({ projectId, userId }).lean().exec(),
+      this.notificationPreferenceModel
+        .findOne({ projectId, userId })
+        .lean()
+        .exec(),
     ]);
 
     const preferenceMap = new Map<
@@ -359,7 +393,7 @@ export class NotificationsService {
         const preference = preferenceMap.get(sensorType);
         const enabled = policy.required
           ? true
-          : preference?.enabled ?? policy.defaultEnabled;
+          : (preference?.enabled ?? policy.defaultEnabled);
 
         return {
           sensorType,
@@ -377,7 +411,7 @@ export class NotificationsService {
   async updateNotificationPreferences(
     userId: string,
     projectId: string,
-    dto: UpdateNotificationPreferencesDto,
+    dto: UpdateNotificationPreferencesDto
   ): Promise<{
     items: Array<{
       sensorType: string;
@@ -397,17 +431,33 @@ export class NotificationsService {
         .sort({ sensorType: 1 })
         .lean()
         .exec(),
-      this.notificationPreferenceModel.findOne({ projectId, userId }).lean().exec(),
+      this.notificationPreferenceModel
+        .findOne({ projectId, userId })
+        .lean()
+        .exec(),
     ]);
 
     if (!policies.length) {
       throw new BadRequestException(
-        'No alert policies configured for this project.',
+        'No alert policies configured for this project.'
       );
     }
 
+    const typedPolicies = policies as unknown as Array<{
+      sensorType: string;
+      enabled: boolean;
+      threshold?: number;
+      required: boolean;
+      thresholdRequired: boolean;
+      defaultEnabled: boolean;
+      defaultSeverity: AlertSeverity;
+    }>;
+
     const policyMap = new Map(
-      policies.map((policy) => [this.normalizeSensorType(policy.sensorType), policy]),
+      typedPolicies.map((policy) => [
+        this.normalizeSensorType(policy.sensorType),
+        policy,
+      ])
     );
     const existingPreferenceMap = new Map<
       string,
@@ -437,7 +487,7 @@ export class NotificationsService {
       const policy = policyMap.get(sensorType);
       if (!policy) {
         throw new BadRequestException(
-          `Unknown sensorType "${sensorPreference.sensorType}" for this project.`,
+          `Unknown sensorType "${sensorPreference.sensorType}" for this project.`
         );
       }
 
@@ -447,7 +497,7 @@ export class NotificationsService {
         existingPreferenceMap.get(sensorType)?.threshold === undefined
       ) {
         throw new BadRequestException(
-          `threshold is required for sensorType "${sensorType}".`,
+          `threshold is required for sensorType "${sensorType}".`
         );
       }
 
@@ -485,13 +535,16 @@ export class NotificationsService {
     await this.notificationPreferenceModel.findOneAndUpdate(
       { projectId, userId },
       { $set: { sensors: mergedSensors } },
-      { upsert: true, new: true, setDefaultsOnInsert: true },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
     );
 
     return this.getNotificationPreferences(userId, projectId);
   }
 
-  async getAlertPolicies(userId: string, projectId: string): Promise<{
+  async getAlertPolicies(
+    userId: string,
+    projectId: string
+  ): Promise<{
     items: Array<{
       id: string;
       projectId: string;
@@ -528,8 +581,11 @@ export class NotificationsService {
   async upsertAlertPolicies(
     userId: string,
     projectId: string,
-    dto: UpsertAlertPoliciesDto,
-  ): Promise<{ updatedCount: number; items: Array<{ id: string; sensorType: string }> }> {
+    dto: UpsertAlertPoliciesDto
+  ): Promise<{
+    updatedCount: number;
+    items: Array<{ id: string; sensorType: string }>;
+  }> {
     await this.assertUserCanAccessProject(userId, projectId);
 
     const normalizedPolicies = this.deduplicatePolicies(dto.policies ?? []);
@@ -558,7 +614,9 @@ export class NotificationsService {
     const items = await this.alertPolicyModel
       .find({
         projectId,
-        sensorType: { $in: normalizedPolicies.map((entry) => entry.sensorType) },
+        sensorType: {
+          $in: normalizedPolicies.map((entry) => entry.sensorType),
+        },
       })
       .select({ sensorType: 1 })
       .lean()
@@ -573,7 +631,10 @@ export class NotificationsService {
     };
   }
 
-  async getAlertRules(userId: string, projectId: string): Promise<{
+  async getAlertRules(
+    userId: string,
+    projectId: string
+  ): Promise<{
     items: Array<{
       id: string;
       projectId: string;
@@ -590,11 +651,23 @@ export class NotificationsService {
   }> {
     await this.assertUserCanAccessProject(userId, projectId);
 
-    const rules = await this.alertRuleModel
+    const rules = (await this.alertRuleModel
       .find({ projectId, userId })
       .sort({ updatedAt: -1, createdAt: -1 })
       .lean()
-      .exec();
+      .exec()) as Array<{
+      _id: unknown;
+      projectId: string;
+      userId: string;
+      sensorType: string;
+      operator?: string;
+      threshold?: number;
+      enabled?: boolean;
+      severity?: AlertSeverity;
+      actions?: unknown[];
+      createdAt?: Date;
+      updatedAt?: Date;
+    }>;
 
     return {
       items: rules.map((rule) => ({
@@ -602,10 +675,10 @@ export class NotificationsService {
         projectId: rule.projectId,
         userId: rule.userId,
         sensorType: rule.sensorType,
-        operator: rule.operator,
-        threshold: rule.threshold,
-        enabled: rule.enabled,
-        severity: rule.severity,
+        operator: this.normalizeComparisonOperator(rule.operator),
+        threshold: typeof rule.threshold === 'number' ? rule.threshold : 0,
+        enabled: Boolean(rule.enabled),
+        severity: (rule.severity as AlertSeverity) ?? 'info',
         actions: Array.isArray(rule.actions) ? rule.actions : [],
         createdAt: rule.createdAt,
         updatedAt: rule.updatedAt,
@@ -616,7 +689,7 @@ export class NotificationsService {
   async createAlertRule(
     userId: string,
     projectId: string,
-    dto: CreateAlertRuleDto,
+    dto: CreateAlertRuleDto
   ): Promise<{
     id: string;
     projectId: string;
@@ -642,19 +715,34 @@ export class NotificationsService {
       severity: dto.severity,
       actions: this.normalizeRuleActions(dto.actions),
     });
+    const createdRuleSafe = createdRule as unknown as {
+      id: string;
+      projectId: string;
+      userId: string;
+      sensorType: string;
+      operator: string;
+      threshold: number;
+      enabled: boolean;
+      severity: AlertSeverity;
+      actions?: unknown[];
+      createdAt?: Date;
+      updatedAt?: Date;
+    };
 
     return {
-      id: createdRule.id,
-      projectId: createdRule.projectId,
-      userId: createdRule.userId,
-      sensorType: createdRule.sensorType,
-      operator: createdRule.operator,
-      threshold: createdRule.threshold,
-      enabled: createdRule.enabled,
-      severity: createdRule.severity,
-      actions: Array.isArray(createdRule.actions) ? createdRule.actions : [],
-      createdAt: createdRule.createdAt,
-      updatedAt: createdRule.updatedAt,
+      id: createdRuleSafe.id,
+      projectId: createdRuleSafe.projectId,
+      userId: createdRuleSafe.userId,
+      sensorType: createdRuleSafe.sensorType,
+      operator: this.normalizeComparisonOperator(createdRuleSafe.operator),
+      threshold: createdRuleSafe.threshold,
+      enabled: createdRuleSafe.enabled,
+      severity: createdRuleSafe.severity,
+      actions: Array.isArray(createdRuleSafe.actions)
+        ? createdRuleSafe.actions
+        : [],
+      createdAt: createdRuleSafe.createdAt,
+      updatedAt: createdRuleSafe.updatedAt,
     };
   }
 
@@ -662,7 +750,7 @@ export class NotificationsService {
     userId: string,
     projectId: string,
     ruleId: string,
-    dto: UpdateAlertRuleDto,
+    dto: UpdateAlertRuleDto
   ): Promise<{
     id: string;
     projectId: string;
@@ -698,37 +786,63 @@ export class NotificationsService {
       updatePayload.actions = this.normalizeRuleActions(dto.actions);
     }
 
-    const updatedRule = await this.alertRuleModel
+    const updatedRule = (await this.alertRuleModel
       .findOneAndUpdate(
         { _id: ruleId, projectId, userId },
         { $set: updatePayload },
-        { new: true },
+        { new: true }
       )
-      .exec();
+      .exec()) as unknown as {
+      id: string;
+      projectId: string;
+      userId: string;
+      sensorType: string;
+      operator: string;
+      threshold: number;
+      enabled: boolean;
+      severity: AlertSeverity;
+      actions?: unknown[];
+      createdAt?: Date;
+      updatedAt?: Date;
+    } | null;
 
     if (!updatedRule) {
       throw new NotFoundException('Alert rule not found');
     }
 
     return {
-      id: updatedRule.id,
-      projectId: updatedRule.projectId,
-      userId: updatedRule.userId,
-      sensorType: updatedRule.sensorType,
-      operator: updatedRule.operator,
-      threshold: updatedRule.threshold,
-      enabled: updatedRule.enabled,
-      severity: updatedRule.severity,
-      actions: Array.isArray(updatedRule.actions) ? updatedRule.actions : [],
-      createdAt: updatedRule.createdAt,
-      updatedAt: updatedRule.updatedAt,
+      id: (updatedRule as unknown as { id: string }).id,
+      projectId: (updatedRule as unknown as { projectId: string }).projectId,
+      userId: (updatedRule as unknown as { userId: string }).userId,
+      sensorType: (updatedRule as unknown as { sensorType: string }).sensorType,
+      operator: this.normalizeComparisonOperator(
+        (updatedRule as unknown as { operator: string }).operator
+      ),
+      threshold:
+        typeof (updatedRule as unknown as { threshold?: number }).threshold ===
+        'number'
+          ? (updatedRule as unknown as { threshold: number }).threshold
+          : 0,
+      enabled: Boolean(
+        (updatedRule as unknown as { enabled?: boolean }).enabled
+      ),
+      severity:
+        (updatedRule as unknown as { severity?: AlertSeverity }).severity ??
+        'info',
+      actions: Array.isArray(
+        (updatedRule as unknown as { actions?: unknown[] }).actions
+      )
+        ? (updatedRule as unknown as { actions?: unknown[] }).actions!
+        : [],
+      createdAt: (updatedRule as unknown as { createdAt?: Date }).createdAt,
+      updatedAt: (updatedRule as unknown as { updatedAt?: Date }).updatedAt,
     };
   }
 
   async deleteAlertRule(
     userId: string,
     projectId: string,
-    ruleId: string,
+    ruleId: string
   ): Promise<{ acknowledged: boolean; deletedRuleId: string }> {
     await this.assertUserCanAccessProject(userId, projectId);
 
@@ -765,6 +879,7 @@ export class NotificationsService {
     const occurredAt = input.occurredAt ?? new Date();
 
     for (const rule of rules) {
+      const ruleIdStr = String(rule._id as unknown as string);
       if (
         this.normalizeSensorType(rule.sensorType) !== normalizedSensorType ||
         typeof rule.threshold !== 'number' ||
@@ -778,7 +893,7 @@ export class NotificationsService {
         continue;
       }
 
-      const cooldownKey = `${input.projectId}:${String(rule._id)}`;
+      const cooldownKey = `${input.projectId}:${ruleIdStr}`;
       if (!this.shouldTriggerRule(cooldownKey)) {
         continue;
       }
@@ -794,7 +909,7 @@ export class NotificationsService {
         body: pushPayload.body,
         value: input.value,
         threshold: rule.threshold,
-        ruleId: String(rule._id),
+        ruleId: ruleIdStr,
         occurredAt: occurredAt.toISOString(),
         data: {
           ...input.metadata,
@@ -813,10 +928,12 @@ export class NotificationsService {
     failureCount: number;
     invalidatedTokens: number;
   }> {
-    const recipientUserIds = await this.getProjectRecipientUserIds(input.projectId);
+    const recipientUserIds = await this.getProjectRecipientUserIds(
+      input.projectId
+    );
     if (!recipientUserIds.length) {
       this.logger.warn(
-        `Skipping push dispatch for project ${input.projectId}: no project recipients found.`,
+        `Skipping push dispatch for project ${input.projectId}: no project recipients found.`
       );
       return {
         requestedTokens: 0,
@@ -835,8 +952,8 @@ export class NotificationsService {
       new Set(
         activeTokens
           .map((entry) => entry.fcmToken)
-          .filter((token): token is string => Boolean(token)),
-      ),
+          .filter((token): token is string => Boolean(token))
+      )
     );
 
     if (tokens.length === 0) {
@@ -914,12 +1031,14 @@ export class NotificationsService {
 
     const projectId = this.configService.get<string>('FIREBASE_PROJECT_ID');
     const clientEmail = this.configService.get<string>('FIREBASE_CLIENT_EMAIL');
-    const rawPrivateKey = this.configService.get<string>('FIREBASE_PRIVATE_KEY');
+    const rawPrivateKey = this.configService.get<string>(
+      'FIREBASE_PRIVATE_KEY'
+    );
     const privateKey = rawPrivateKey?.replace(/\\n/g, '\n');
 
     if (!projectId || !clientEmail || !privateKey) {
       throw new InternalServerErrorException(
-        'Firebase credentials are missing. Set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY.',
+        'Firebase credentials are missing. Set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY.'
       );
     }
 
@@ -934,7 +1053,7 @@ export class NotificationsService {
             privateKey,
           }),
         },
-        appName,
+        appName
       );
 
     this.messagingClient = getMessaging(this.firebaseApp);
@@ -950,7 +1069,7 @@ export class NotificationsService {
   }
 
   private normalizeDataPayload(
-    data: Record<string, string | number | boolean | undefined>,
+    data: Record<string, string | number | boolean | undefined>
   ): Record<string, string> {
     const normalized: Record<string, string> = {};
     for (const [key, value] of Object.entries(data)) {
@@ -965,7 +1084,7 @@ export class NotificationsService {
   private collectDeadTokens(
     tokenBatch: string[],
     result: BatchResponse,
-    accumulator: string[],
+    accumulator: string[]
   ): void {
     result.responses.forEach((response, index) => {
       if (response.success || !response.error) {
@@ -991,7 +1110,7 @@ export class NotificationsService {
 
   private async invalidateDeviceTokens(
     tokens: string[],
-    errorCode: string,
+    errorCode: string
   ): Promise<void> {
     const now = new Date();
     await this.notificationDeviceTokenModel.updateMany(
@@ -1002,15 +1121,17 @@ export class NotificationsService {
           lastError: errorCode,
           invalidatedAt: now,
         },
-      },
+      }
     );
 
     this.logger.warn(
-      `Marked ${tokens.length} FCM tokens inactive due to Firebase error: ${errorCode}`,
+      `Marked ${tokens.length} FCM tokens inactive due to Firebase error: ${errorCode}`
     );
   }
 
-  private async getProjectRecipientUserIds(projectId: string): Promise<string[]> {
+  private async getProjectRecipientUserIds(
+    projectId: string
+  ): Promise<string[]> {
     if (!Types.ObjectId.isValid(projectId)) {
       return [];
     }
@@ -1033,11 +1154,11 @@ export class NotificationsService {
 
   private async assertUserCanAccessProject(
     userId: string,
-    projectId: string,
+    projectId: string
   ): Promise<void> {
     if (!Types.ObjectId.isValid(projectId)) {
       throw new ForbiddenException(
-        'You are not allowed to access this project alerts.',
+        'You are not allowed to access this project alerts.'
       );
     }
 
@@ -1049,14 +1170,14 @@ export class NotificationsService {
 
     if (!ownedFlow) {
       throw new ForbiddenException(
-        'You are not allowed to access this project alerts.',
+        'You are not allowed to access this project alerts.'
       );
     }
   }
 
   private buildHistoryFilter(
     projectId: string,
-    cursor: AlertHistoryCursor | null,
+    cursor: AlertHistoryCursor | null
   ): FilterQuery<AlertEventDocument> {
     if (!cursor) {
       return { projectId };
@@ -1118,9 +1239,12 @@ export class NotificationsService {
   }
 
   private deduplicatePolicies(
-    policies: UpsertAlertPoliciesDto['policies'],
+    policies: UpsertAlertPoliciesDto['policies']
   ): UpsertAlertPoliciesDto['policies'] {
-    const deduped = new Map<string, UpsertAlertPoliciesDto['policies'][number]>();
+    const deduped = new Map<
+      string,
+      UpsertAlertPoliciesDto['policies'][number]
+    >();
     for (const policy of policies) {
       if (!policy?.sensorType) {
         continue;
@@ -1134,7 +1258,7 @@ export class NotificationsService {
   }
 
   private normalizeRuleActions(
-    actions?: CreateAlertRuleDto['actions'],
+    actions?: CreateAlertRuleDto['actions']
   ): AlertRuleDocument['actions'] {
     if (!Array.isArray(actions)) {
       return [];
@@ -1174,7 +1298,24 @@ export class NotificationsService {
     return (value ?? '').trim().toUpperCase();
   }
 
-  private matchesOperator(value: number, operator: string, threshold: number): boolean {
+  private normalizeComparisonOperator(
+    operator: string | null | undefined
+  ): '>' | '<' | '>=' | '<=' | '==' | '!=' {
+    return operator === '>' ||
+      operator === '<' ||
+      operator === '>=' ||
+      operator === '<=' ||
+      operator === '==' ||
+      operator === '!='
+      ? operator
+      : '==';
+  }
+
+  private matchesOperator(
+    value: number,
+    operator: string,
+    threshold: number
+  ): boolean {
     switch (operator) {
       case '>':
         return value > threshold;
@@ -1218,7 +1359,7 @@ export class NotificationsService {
   }
 
   private extractPushAction(
-    actions: unknown,
+    actions: unknown
   ): { type: 'send_push'; payload?: unknown } | null {
     if (!Array.isArray(actions)) {
       return null;
@@ -1228,8 +1369,8 @@ export class NotificationsService {
       (candidate) =>
         candidate &&
         typeof candidate === 'object' &&
-        (candidate as { type?: string }).type === 'send_push',
-    );
+        (candidate as { type?: string }).type === 'send_push'
+    ) as unknown;
 
     if (!action || typeof action !== 'object') {
       return null;

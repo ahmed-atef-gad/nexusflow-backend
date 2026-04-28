@@ -25,9 +25,15 @@ import {
     AuthModule,
     UsersModule,
     MongooseModule.forFeature([
-      { name: NotificationDeviceToken.name, schema: NotificationDeviceTokenSchema },
+      {
+        name: NotificationDeviceToken.name,
+        schema: NotificationDeviceTokenSchema,
+      },
       { name: AlertEvent.name, schema: AlertEventSchema },
-      { name: NotificationPreference.name, schema: NotificationPreferenceSchema },
+      {
+        name: NotificationPreference.name,
+        schema: NotificationPreferenceSchema,
+      },
       { name: AlertPolicy.name, schema: AlertPolicySchema },
       { name: AlertRule.name, schema: AlertRuleSchema },
       { name: Flow.name, schema: FlowSchema },

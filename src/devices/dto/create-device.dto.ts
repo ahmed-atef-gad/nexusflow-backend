@@ -5,9 +5,6 @@ import {
   IsString,
   Length,
   Matches,
-  Validate,
-  
-  
 } from 'class-validator';
 
 export class CreateDeviceDto {
@@ -18,10 +15,10 @@ export class CreateDeviceDto {
   @IsString()
   @IsNotEmpty()
   @Matches(/^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/, {
-    message: 'macAddress must be a valid MAC address in format XX:XX:XX:XX:XX:XX',
+    message:
+      'macAddress must be a valid MAC address in format XX:XX:XX:XX:XX:XX',
   })
- 
-  macAddress: string;
+  macAddress!: string;
 
   @ApiProperty({
     description:
@@ -34,7 +31,7 @@ export class CreateDeviceDto {
     message:
       'mqtt_pass must be at least 8 characters and include uppercase, lowercase, number, and special character',
   })
-  mqtt_pass: string;
+  mqtt_pass!: string;
 
   @ApiPropertyOptional({
     description: 'Optional friendly name for the device',

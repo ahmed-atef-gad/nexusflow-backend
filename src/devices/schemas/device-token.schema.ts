@@ -1,8 +1,8 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document, Types } from 'mongoose';
+import { HydratedDocument, Types } from 'mongoose';
 
 // Type definition for DeviceToken document with Mongoose Document
-export type DeviceTokenDocument = DeviceToken & Document;
+export type DeviceTokenDocument = HydratedDocument<DeviceToken>;
 
 // DeviceToken schema with automatic timestamps (createdAt, updatedAt)
 @Schema({ timestamps: true })

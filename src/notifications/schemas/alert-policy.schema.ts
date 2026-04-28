@@ -1,30 +1,30 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { HydratedDocument } from 'mongoose';
 
-export type AlertPolicyDocument = AlertPolicy & Document;
+export type AlertPolicyDocument = HydratedDocument<AlertPolicy>;
 
 @Schema({ collection: 'alert_policies', timestamps: true })
 export class AlertPolicy {
   @Prop({ required: true, index: true })
-  projectId: string;
+  projectId!: string;
 
   @Prop({ required: true })
-  sensorType: string;
+  sensorType!: string;
 
   @Prop({ required: true, default: false })
-  required: boolean;
+  required!: boolean;
 
   @Prop({ required: true, default: false })
-  thresholdRequired: boolean;
+  thresholdRequired!: boolean;
 
   @Prop({ required: true, default: true })
-  defaultEnabled: boolean;
+  defaultEnabled!: boolean;
 
   @Prop({ required: true, enum: ['critical', 'warning', 'info'] })
-  defaultSeverity: 'critical' | 'warning' | 'info';
+  defaultSeverity!: 'critical' | 'warning' | 'info';
 
   @Prop({ required: true, default: true, index: true })
-  isActive: boolean;
+  isActive!: boolean;
 }
 
 export const AlertPolicySchema = SchemaFactory.createForClass(AlertPolicy);

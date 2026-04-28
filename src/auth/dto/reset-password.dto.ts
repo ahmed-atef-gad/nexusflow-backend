@@ -7,7 +7,7 @@ export class ResetPasswordDto {
     description: 'Email address associated with the account',
   })
   @IsEmail()
-  email: string;
+  email!: string;
 
   @ApiProperty({
     example: '123456',
@@ -16,7 +16,7 @@ export class ResetPasswordDto {
   @IsString()
   @Length(6, 6)
   @Matches(/^\d{6}$/)
-  otp: string;
+  otp!: string;
 
   @ApiProperty({
     example: 'NewStrongPassword123!',
@@ -28,5 +28,5 @@ export class ResetPasswordDto {
     message:
       'Password must contain at least one uppercase letter, one lowercase letter, and one number or special character.',
   })
-  newPassword: string;
+  newPassword!: string;
 }

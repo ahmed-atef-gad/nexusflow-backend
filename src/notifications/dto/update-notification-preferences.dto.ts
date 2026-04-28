@@ -19,14 +19,14 @@ export class SensorNotificationPreferenceInputDto {
   @IsString()
   @IsNotEmpty()
   @Length(1, 100)
-  sensorType: string;
+  sensorType!: string;
 
   @ApiProperty({
     description: 'Whether notifications are enabled for this sensor',
     example: true,
   })
   @IsBoolean()
-  enabled: boolean;
+  enabled!: boolean;
 
   @ApiProperty({
     required: false,
@@ -47,5 +47,5 @@ export class UpdateNotificationPreferencesDto {
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => SensorNotificationPreferenceInputDto)
-  sensors: SensorNotificationPreferenceInputDto[];
+  sensors!: SensorNotificationPreferenceInputDto[];
 }

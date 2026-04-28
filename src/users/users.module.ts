@@ -13,7 +13,13 @@ import { DefaultOwnerSeed } from './default-owner.seed';
     MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
   ],
   controllers: [UsersController],
-  providers: [UsersService, JwtService, RolesGuard, OwnerGuard, DefaultOwnerSeed],
+  providers: [
+    UsersService,
+    JwtService,
+    RolesGuard,
+    OwnerGuard,
+    DefaultOwnerSeed,
+  ],
   exports: [UsersService],
 })
 export class UsersModule {}

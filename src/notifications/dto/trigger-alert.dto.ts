@@ -19,7 +19,7 @@ export class TriggerAlertDto {
   @IsString()
   @IsNotEmpty()
   @Length(1, 120)
-  projectId: string;
+  projectId!: string;
 
   @ApiProperty({
     description: 'Sensor type that triggered the alert',
@@ -28,7 +28,7 @@ export class TriggerAlertDto {
   @IsString()
   @IsNotEmpty()
   @Length(1, 100)
-  sensorType: string;
+  sensorType!: string;
 
   @ApiProperty({
     description: 'Alert severity level',
@@ -36,7 +36,7 @@ export class TriggerAlertDto {
     example: 'critical',
   })
   @IsEnum(['critical', 'warning', 'info'])
-  severity: 'critical' | 'warning' | 'info';
+  severity!: 'critical' | 'warning' | 'info';
 
   @ApiPropertyOptional({
     description: 'Optional custom title for push and history entry',

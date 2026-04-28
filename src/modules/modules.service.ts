@@ -58,7 +58,9 @@ export class ModulesService {
   }
 
   async update(id: string, dto: UpdateModuleDto) {
-    const updated = await this.moduleModel.findByIdAndUpdate(id, dto, { new: true }).exec();
+    const updated = await this.moduleModel
+      .findByIdAndUpdate(id, dto, { new: true })
+      .exec();
     if (!updated) throw new NotFoundException(`Module with id ${id} not found`);
     return updated;
   }

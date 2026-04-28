@@ -1,24 +1,24 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { HydratedDocument } from 'mongoose';
 
-export type AlertEventDocument = AlertEvent & Document;
+export type AlertEventDocument = HydratedDocument<AlertEvent>;
 
 @Schema({ collection: 'alert_events', timestamps: true })
 export class AlertEvent {
   @Prop({ required: true, index: true })
-  projectId: string;
+  projectId!: string;
 
   @Prop({ required: true, index: true })
-  sensorType: string;
+  sensorType!: string;
 
   @Prop({ required: true, enum: ['critical', 'warning', 'info'], index: true })
-  severity: 'critical' | 'warning' | 'info';
+  severity!: 'critical' | 'warning' | 'info';
 
   @Prop({ required: true })
-  title: string;
+  title!: string;
 
   @Prop({ required: true })
-  body: string;
+  body!: string;
 
   @Prop()
   value?: number;
@@ -30,7 +30,7 @@ export class AlertEvent {
   ruleId?: string;
 
   @Prop({ required: true, index: true })
-  occurredAt: Date;
+  occurredAt!: Date;
 
   createdAt?: Date;
   updatedAt?: Date;

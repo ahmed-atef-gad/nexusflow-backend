@@ -12,6 +12,20 @@ import { MqttService } from './mqtt.service';
 import { LogicService } from '../flows/logic.service';
 import { NotificationsService } from 'src/notifications/notifications.service';
 import * as vm from 'node:vm';
+import type { PigeonBroker } from '../pigeon-mqtt/pigeon.interface';
+
+type RuntimeBroker = PigeonBroker & {
+  authenticate?: (
+    client: unknown,
+    username: string,
+    password: Buffer,
+    callback: (...args: unknown[]) => void
+  ) => void;
+  authorizePublish?: (...args: unknown[]) => void;
+  authorizeSubscribe?: (...args: unknown[]) => void;
+  authorizeForward?: (...args: unknown[]) => void;
+  on: PigeonBroker['on'];
+};
 
 type OutputModuleType = 'pwm' | 'digital' | 'dac' | 'servo' | 'other';
 
@@ -116,13 +130,27 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
   }
 
   onModuleInit() {
-    const broker = this.pigeonService.getBrokerInstance();
-    broker.authenticate = this.onAuthenticate.bind(this);
-    broker.authorizePublish = this.onAuthorizePublish.bind(this);
-    broker.authorizeSubscribe = this.onAuthorizeSubscribe.bind(this);
-    broker.authorizeForward = this.onAuthorizeForward.bind(this);
-    broker.on('clientDisconnect', this.onClientDisconnect.bind(this));
-    broker.on('publish', this.onClientPublish.bind(this));
+    const broker = this.pigeonService.getBrokerInstance() as RuntimeBroker;
+    broker.authenticate = this.onAuthenticate.bind(
+      this
+    ) as RuntimeBroker['authenticate'];
+    broker.authorizePublish = this.onAuthorizePublish.bind(
+      this
+    ) as RuntimeBroker['authorizePublish'];
+    broker.authorizeSubscribe = this.onAuthorizeSubscribe.bind(
+      this
+    ) as RuntimeBroker['authorizeSubscribe'];
+    broker.authorizeForward = this.onAuthorizeForward.bind(
+      this
+    ) as RuntimeBroker['authorizeForward'];
+    broker.on(
+      'clientDisconnect',
+      this.onClientDisconnect.bind(this) as (...args: unknown[]) => void
+    );
+    broker.on(
+      'publish',
+      this.onClientPublish.bind(this) as (...args: unknown[]) => void
+    );
 
     // start logic cache sweeper in LogicService
     this.logicService.startLogicCacheSweeper();
@@ -911,6 +939,7 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  /* eslint-disable @typescript-eslint/no-unsafe-assignment */
   private normalizeFunctionResult(
     result: unknown,
     currentMessage: RuntimeMessage
@@ -931,6 +960,8 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       };
     }
 
+    // result comes from untyped sandbox execution; suppress narrow assignment lint here
+
     const candidate = result as Partial<RuntimeMessage> & { payload?: unknown };
     const hasPayload = Object.prototype.hasOwnProperty.call(
       candidate,
@@ -938,21 +969,32 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     );
     const hasValue = Object.prototype.hasOwnProperty.call(candidate, 'value');
 
-    const payload = hasPayload ? candidate.payload : currentMessage.payload;
+    // candidate may originate from untyped runtime results — narrow with explicit casts
+
+    const candidatePayload: unknown = candidate.payload;
+
+    const currentPayload: unknown = currentMessage.payload;
+    const payload: unknown = hasPayload ? candidatePayload : currentPayload;
     if (!this.isPayloadSizeAllowed(payload)) {
       throw new Error('Function result payload exceeds allowed size');
     }
 
+    const candidateValue: unknown = candidate.value;
+
+    const currentValue: unknown = currentMessage.value;
+    const nextValue: unknown = hasPayload
+      ? candidatePayload
+      : hasValue
+        ? candidateValue
+        : currentValue;
+
     return {
       ...currentMessage,
       payload,
-      value: hasPayload
-        ? candidate.payload
-        : hasValue
-          ? candidate.value
-          : currentMessage.value,
+      value: nextValue,
     };
   }
+  /* eslint-enable @typescript-eslint/no-unsafe-assignment */
 
   private executeFunctionStep(
     step: RuntimeCommand,

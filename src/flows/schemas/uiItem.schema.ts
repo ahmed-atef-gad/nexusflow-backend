@@ -8,14 +8,14 @@ export class UiItem {
     description: 'Module ID associated with this UI item',
   })
   @Prop()
-  moduleId: string;
+  moduleId!: string;
 
   @ApiProperty({
     type: String,
     description: 'Module name associated with this UI item',
   })
   @Prop()
-  moduleName: string;
+  moduleName!: string;
 
   @ApiProperty({
     required: false,
@@ -33,7 +33,7 @@ export class UiItem {
 
   @ApiProperty({ type: String, description: 'Topic for this UI item' })
   @Prop()
-  topic: string;
+  topic!: string;
 
   @ApiProperty({
     required: false,
@@ -47,7 +47,7 @@ export class UiItem {
     description: 'Type of module (input, output, etc.)',
   })
   @Prop()
-  moduleType: 'input' | 'output' | 'other';
+  moduleType!: 'input' | 'output' | 'other';
 
   @ApiProperty({
     required: false,

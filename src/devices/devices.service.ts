@@ -30,6 +30,7 @@ import {
 } from './schemas/device-registration-code.schema';
 import { UsersService } from 'src/users/users.service';
 import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
+import { FlowDocument } from 'src/flows/schemas/flow.schema';
 
 @Injectable()
 export class DevicesService {
@@ -137,12 +138,12 @@ export class DevicesService {
       );
     }
 
-    let device;
-    // cheack if device with same mac address already exists    const existingDevice = await this.deviceModel.findOne({
     const normalizedMac = this.normalizeMacAddress(macAddress);
     const existingDevice = await this.deviceModel.findOne({
       macAddress: normalizedMac,
     });
+
+    let device: DeviceDocument;
 
     if (existingDevice) {
       if (
@@ -172,11 +173,13 @@ export class DevicesService {
       { $set: { consumedAt: new Date() } }
     );
     //generate access token for the device
-    const token = await this.generateDeviceToken(
-      device?._id?.toString() as string
-    );
+    const token = await this.generateDeviceToken(device._id.toString());
 
-    return { ...device.toObject(), token };
+    const deviceObject = device.toObject() as unknown as Record<
+      string,
+      unknown
+    >;
+    return { ...deviceObject, token };
   }
 
   // Register a new device
@@ -185,7 +188,7 @@ export class DevicesService {
     macAddress: string,
     name?: string,
     mqttPass?: string
-  ) {
+  ): Promise<DeviceDocument> {
     // Normalize MAC address
     const normalizedMac = macAddress.trim().toUpperCase();
 
@@ -222,7 +225,10 @@ export class DevicesService {
   }
 
   // Authenticate device over MQTT credentials (mac + password)
-  async authenticateByMacAndPassword(macAddress: string, mqttPass: string) {
+  async authenticateByMacAndPassword(
+    macAddress: string,
+    mqttPass: string
+  ): Promise<DeviceDocument | null> {
     const normalizedMac = this.normalizeMacAddress(macAddress);
 
     const device = await this.deviceModel
@@ -252,7 +258,11 @@ export class DevicesService {
   }
 
   // Generate a token for device authentication (format: tokenId.secret)
-  async generateDeviceToken(deviceId: string) {
+  async generateDeviceToken(deviceId: string): Promise<{
+    accessToken: string;
+    deviceId: string;
+    macAddress: string;
+  }> {
     // Verify device exists
     const device = await this.deviceModel.findById(deviceId);
     if (!device) throw new NotFoundException('Device not found');
@@ -270,7 +280,7 @@ export class DevicesService {
     await this.tokenModel.create({
       tokenId,
       tokenHash,
-      deviceId: device._id,
+      deviceId: device._id.toString(),
       scopes: ['flow:read', 'setup:read'],
       expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 year
     });
@@ -278,13 +288,13 @@ export class DevicesService {
     // Return token (only returned once)
     return {
       accessToken: fullToken,
-      deviceId: device._id,
+      deviceId: device._id.toString(),
       macAddress: device.macAddress,
     };
   }
 
   // Validate device token
-  async validateToken(fullToken: string) {
+  async validateToken(fullToken: string): Promise<DeviceDocument | null> {
     // Parse token
     const [tokenId, secret] = fullToken.split('.');
     if (!tokenId || !secret) return null;
@@ -314,7 +324,7 @@ export class DevicesService {
     }
 
     // Return device info
-    return this.deviceModel.findById(tokenDoc.deviceId);
+    return this.deviceModel.findById(tokenDoc.deviceId).exec();
   }
 
   // Revoke a device token
@@ -366,9 +376,9 @@ export class DevicesService {
   }
 
   async updateDeviceFlow(deviceId: string, flowId: string, userId: string) {
-    let flow;
+    let flow: FlowDocument;
     try {
-      flow = await this.flowsService.findFlowById(flowId);
+      flow = (await this.flowsService.findFlowById(flowId)) as FlowDocument;
     } catch (error) {
       if (error instanceof NotFoundException) {
         throw new NotFoundException(`Flow with ID ${flowId} not found`);
@@ -397,11 +407,13 @@ export class DevicesService {
       { $unset: { activeFlowId: 1 } }
     );
 
-    const updatedDevice = await this.deviceModel.findByIdAndUpdate(
-      deviceObjectId,
-      { activeFlowId: flowObjectId },
-      { new: true }
-    );
+    const updatedDevice = await this.deviceModel
+      .findByIdAndUpdate(
+        deviceObjectId,
+        { activeFlowId: flowObjectId },
+        { new: true }
+      )
+      .exec();
 
     if (!updatedDevice) {
       throw new NotFoundException(`Device with ID ${deviceId} not found`);

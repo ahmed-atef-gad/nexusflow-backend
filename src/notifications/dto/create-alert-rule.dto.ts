@@ -19,7 +19,7 @@ export class AlertRuleActionDto {
     example: 'send_push',
   })
   @IsEnum(['device_action', 'send_push'])
-  type: 'device_action' | 'send_push';
+  type!: 'device_action' | 'send_push';
 
   @ApiPropertyOptional({
     description: 'Optional topic override for push action',
@@ -59,14 +59,14 @@ export class CreateAlertRuleDto {
   @IsString()
   @IsNotEmpty()
   @Length(1, 100)
-  sensorType: string;
+  sensorType!: string;
 
   @ApiProperty({
     enum: ['>', '<', '>=', '<=', '==', '!='],
     example: '>',
   })
   @IsEnum(['>', '<', '>=', '<=', '==', '!='])
-  operator: '>' | '<' | '>=' | '<=' | '==' | '!=';
+  operator!: '>' | '<' | '>=' | '<=' | '==' | '!=';
 
   @ApiProperty({
     description: 'Threshold value for rule trigger',
@@ -74,7 +74,7 @@ export class CreateAlertRuleDto {
   })
   @Type(() => Number)
   @IsNumber()
-  threshold: number;
+  threshold!: number;
 
   @ApiProperty({
     description: 'Severity when rule is triggered',
@@ -82,7 +82,7 @@ export class CreateAlertRuleDto {
     example: 'critical',
   })
   @IsEnum(['critical', 'warning', 'info'])
-  severity: 'critical' | 'warning' | 'info';
+  severity!: 'critical' | 'warning' | 'info';
 
   @ApiPropertyOptional({
     description: 'Whether rule is active',

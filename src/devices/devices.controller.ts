@@ -15,7 +15,6 @@ import {
 import { DevicesService } from './devices.service';
 import { AuthGuard } from '../guards/auth/auth.guard';
 import { OwnerGuard } from '../guards/auth/owner.guard';
-import { CreateDeviceDto } from './dto/create-device.dto';
 import {
   ApiTags,
   ApiOperation,
@@ -392,7 +391,7 @@ export class DevicesController {
   async findByFlowId(@Param('flowId') flowId: string) {
     const device = await this.devicesService.findByActiveFlowId(flowId);
     return {
-      ...(device.toObject() as Record<string, unknown>),
+      ...(device.toObject() as unknown as Record<string, unknown>),
       resetWifiTopic: `esp/${device.macAddress}/resetwifi`,
       deviceOnlineStatusTopic: `client/${device.macAddress}/online`,
       deviceMetricsTopic: `client/${device.macAddress}/metrics`,
@@ -431,7 +430,7 @@ export class DevicesController {
       throw new UnauthorizedException('You do not own this device');
     }
     return {
-      ...(device.toObject() as Record<string, unknown>),
+      ...(device.toObject() as unknown as Record<string, unknown>),
       resetWifiTopic: `esp/${device.macAddress}/resetwifi`,
       deviceOnlineStatusTopic: `client/${device.macAddress}/online`,
       deviceMetricsTopic: `client/${device.macAddress}/metrics`,
@@ -541,7 +540,7 @@ export class DevicesController {
     return {
       ...paginatedDevices,
       data: paginatedDevices.data.map((device) => ({
-        ...(device.toObject() as Record<string, unknown>),
+        ...(device.toObject() as unknown as Record<string, unknown>),
         resetWifiTopic: `esp/${device.macAddress}/resetwifi`,
         deviceOnlineStatusTopic: `client/${device.macAddress}/online`,
         deviceMetricsTopic: `client/${device.macAddress}/metrics`,

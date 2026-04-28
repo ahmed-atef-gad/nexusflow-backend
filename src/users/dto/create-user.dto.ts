@@ -21,11 +21,11 @@ export class CreateUserDto {
   @IsString()
   @IsNotEmpty()
   @Length(4, 30, { message: 'Username must be between 4 and 30 characters.' })
-  username: string;
+  username: string = '';
 
   @IsEmail({}, { message: 'Invalid email format.' })
   @IsNotEmpty()
-  email: string;
+  email: string = '';
 
   @IsString()
   @IsNotEmpty()
@@ -34,7 +34,7 @@ export class CreateUserDto {
     message:
       'Password must contain at least one uppercase letter, one lowercase letter, and one number or special character.',
   })
-  password: string;
+  password: string = '';
 
   @IsOptional()
   @IsString()
@@ -53,6 +53,9 @@ export class CreateUserDto {
 
   @IsOptional()
   @IsArray()
-  @IsEnum(Role, { each: true, message: 'Each role must be a valid Role enum value.' })
+  @IsEnum(Role, {
+    each: true,
+    message: 'Each role must be a valid Role enum value.',
+  })
   roles?: Role[];
 }

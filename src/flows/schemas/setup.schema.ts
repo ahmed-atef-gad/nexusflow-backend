@@ -15,11 +15,11 @@ export class Setup {
     required: true,
     unique: true,
   })
-  flowId: Flow;
+  flowId!: Flow;
 
   @ApiProperty({ description: 'Device setup instructions' })
   @Prop({ type: MongooseSchema.Types.Mixed })
-  elements: SetupObject;
+  elements!: SetupObject;
 }
 
 export const SetupSchema = SchemaFactory.createForClass(Setup);

@@ -1,12 +1,17 @@
+/* eslint-disable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument */
 import { Provider, Logger } from '@nestjs/common';
-import Aedes from 'aedes';
-import { createServer } from 'net';
+import { Aedes } from 'aedes';
+import * as net from 'net';
 import { createServer as createTlsServer } from 'tls';
 import { createServer as createHttpServer } from 'http';
 import { createServer as createHttpsServer } from 'https';
-import { readFileSync } from 'fs';
+import { readFileSync, statSync } from 'fs';
 import websocketStream from 'websocket-stream';
-import { PigeonModuleOptions } from './pigeon.interface';
+import {
+  PigeonBroker,
+  PigeonModuleOptions,
+  PigeonTlsOptions,
+} from './pigeon.interface';
 import { INSTANCE_BROKER, PIGEON_OPTION_PROVIDER } from './pigeon.constant';
 import { Transport } from './enum/pigeon.transport.enum';
 
@@ -16,10 +21,17 @@ export function createClientProvider(): Provider {
     useFactory: async (options: PigeonModuleOptions) => {
       const logger = new Logger('PigeonMqtt');
 
-      const broker = new (Aedes as any)(options);
-      const fs = require('fs');
+      const broker = (await Aedes.createBroker(
+        options as unknown as PigeonModuleOptions
+      )) as unknown as PigeonBroker;
+      const brokerHandle = broker.handle.bind(broker) as (
+        ...args: unknown[]
+      ) => void;
 
-      const loadPem = (value?: string | Buffer, label?: string) => {
+      const loadPem = (
+        value?: string | Buffer,
+        label?: string
+      ): Buffer | string | undefined => {
         if (!value) return undefined;
         if (Buffer.isBuffer(value)) return value;
         if (typeof value === 'string' && value.includes('-----BEGIN'))
@@ -31,7 +43,7 @@ export function createClientProvider(): Provider {
             );
             return value;
           }
-          const stats = fs.statSync(value);
+          const stats = statSync(value);
           if (!stats.isFile()) {
             logger.warn(
               `Pigeon MQTT TLS: ${label} path ${value} is not a file`
@@ -39,10 +51,12 @@ export function createClientProvider(): Provider {
             return undefined;
           }
           return readFileSync(value);
-        } catch (error) {
+        } catch (error: unknown) {
           if (label) {
+            const message =
+              error instanceof Error ? error.message : String(error);
             logger.warn(
-              `Pigeon MQTT TLS: failed to read ${label} from ${value}: ${(error as any).message}`
+              `Pigeon MQTT TLS: failed to read ${label} from ${value}: ${message}`
             );
           }
           return undefined;
@@ -51,30 +65,37 @@ export function createClientProvider(): Provider {
 
       if (options.transport === Transport.TCP) {
         const port = options.port || 1883;
-        const tls = options.tls ?? {};
+        const tlsConfig: PigeonTlsOptions = options.tls ?? {};
         const tlsOptions = {
-          key: loadPem(tls.key, 'key'),
-          cert: loadPem(tls.cert, 'cert'),
-          ca: loadPem(tls.ca, 'ca'),
-          passphrase: tls.passphrase,
+          key: loadPem(tlsConfig.key, 'key'),
+          cert: loadPem(tlsConfig.cert, 'cert'),
+          ca: loadPem(tlsConfig.ca, 'ca'),
+          passphrase: tlsConfig.passphrase,
         };
 
         logger.log(
-          `Pigeon MQTT TLS config: key=${!!tls.key} cert=${!!tls.cert} ca=${!!tls.ca} passphrase=${!!tls.passphrase}`
+          `Pigeon MQTT TLS config: key=${!!tlsConfig.key} cert=${!!tlsConfig.cert} ca=${!!tlsConfig.ca} passphrase=${!!tlsConfig.passphrase}`
         );
 
         if (tlsOptions.key && tlsOptions.cert) {
-          const tlsServer = createTlsServer(tlsOptions, broker.handle);
+          // createTlsServer typing can be tricky here due to runtime-loaded PEMs
+
+          const tlsServer = createTlsServer(tlsOptions as any, brokerHandle);
           tlsServer.listen(port, () => {
             logger.log('Pigeon MQTT TLS Server listening on port ' + port);
           });
         } else {
-          if (tls.key || tls.cert || tls.ca || tls.passphrase) {
+          if (
+            tlsConfig.key ||
+            tlsConfig.cert ||
+            tlsConfig.ca ||
+            tlsConfig.passphrase
+          ) {
             logger.warn(
               'Pigeon MQTT TLS disabled: missing TLS key or cert (check file paths and permissions)'
             );
           }
-          const server = createServer(broker.handle);
+          const server = net.createServer(brokerHandle);
           server.listen(port, () => {
             logger.log('Pigeon MQTT Server listening on port ' + port);
           });
@@ -86,9 +107,11 @@ export function createClientProvider(): Provider {
         const wsPath = options.ws.path ?? '/mqtt';
         const wsServer = createHttpServer();
 
+        // websocket-stream accepts a server and a handler; brokerHandle is untyped at runtime
+
         websocketStream.createServer(
           { server: wsServer, path: wsPath },
-          broker.handle
+          brokerHandle
         );
         wsServer.listen(wsPort, () => {
           logger.log(
@@ -100,21 +123,22 @@ export function createClientProvider(): Provider {
       if (options.wss?.enabled) {
         const wssPort = options.wss.port ?? 8883;
         const wssPath = options.wss.path ?? '/mqtt';
-        const tls = options.wss.tls ?? {};
+        const wssTlsConfig: PigeonTlsOptions = options.wss.tls ?? {};
         const tlsOptions = {
-          key: loadPem(tls.key, 'wss key'),
-          cert: loadPem(tls.cert, 'wss cert'),
-          ca: loadPem(tls.ca, 'wss ca'),
-          passphrase: tls.passphrase,
+          key: loadPem(wssTlsConfig.key, 'wss key'),
+          cert: loadPem(wssTlsConfig.cert, 'wss cert'),
+          ca: loadPem(wssTlsConfig.ca, 'wss ca'),
+          passphrase: wssTlsConfig.passphrase,
         };
 
         if (!tlsOptions.key || !tlsOptions.cert) {
           logger.warn('Pigeon MQTT WSS disabled: missing TLS key or cert');
         } else {
-          const wssServer = createHttpsServer(tlsOptions);
+          const wssServer = createHttpsServer(tlsOptions as any);
+
           websocketStream.createServer(
             { server: wssServer, path: wssPath },
-            broker.handle
+            brokerHandle
           );
           wssServer.listen(wssPort, () => {
             logger.log(

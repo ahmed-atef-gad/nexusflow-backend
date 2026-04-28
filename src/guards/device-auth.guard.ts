@@ -12,6 +12,15 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { DevicesService } from '../devices/devices.service';
+import type { Request } from 'express';
+import { DeviceDocument } from '../devices/schemas/device.schema';
+
+interface DeviceAuthRequest extends Request {
+  headers: Request['headers'] & { authorization?: string };
+  query: Request['query'] & { token?: string | string[] };
+  device?: DeviceDocument;
+  deviceToken?: string;
+}
 
 @Injectable()
 export class DeviceAuthGuard implements CanActivate {
@@ -25,7 +34,7 @@ export class DeviceAuthGuard implements CanActivate {
    */
   async canActivate(context: ExecutionContext): Promise<boolean> {
     // Extract the HTTP request object from the execution context
-    const request = context.switchToHttp().getRequest();
+    const request = context.switchToHttp().getRequest<DeviceAuthRequest>();
 
     // Retrieve the Authorization header
     const authHeader = request.headers.authorization;

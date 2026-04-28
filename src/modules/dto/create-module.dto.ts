@@ -4,7 +4,7 @@ import { IsString, IsOptional, IsEnum, IsObject } from 'class-validator';
 export class CreateModuleDto {
   @ApiProperty({ example: 'ESP32 GPIO' })
   @IsString()
-  name: string;
+  name!: string;
 
   @ApiProperty({ example: 'chip', required: false })
   @IsOptional()
@@ -18,9 +18,13 @@ export class CreateModuleDto {
 
   @ApiProperty({ example: 'Hardware' })
   @IsString()
-  category: string;
+  category!: string;
 
-  @ApiProperty({ enum: ['source', 'target', 'both'], default: 'both', required: false })
+  @ApiProperty({
+    enum: ['source', 'target', 'both'],
+    default: 'both',
+    required: false,
+  })
   @IsOptional()
   @IsEnum(['source', 'target', 'both'])
   ports?: 'source' | 'target' | 'both';

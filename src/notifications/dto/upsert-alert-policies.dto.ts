@@ -18,28 +18,29 @@ export class AlertPolicyInputDto {
   @IsString()
   @IsNotEmpty()
   @Length(1, 100)
-  sensorType: string;
+  sensorType!: string;
 
   @ApiProperty({
-    description: 'If true, this policy cannot be turned off by user preferences',
+    description:
+      'If true, this policy cannot be turned off by user preferences',
     example: true,
   })
   @IsBoolean()
-  required: boolean;
+  required!: boolean;
 
   @ApiProperty({
     description: 'If true, threshold must be provided for rule creation',
     example: true,
   })
   @IsBoolean()
-  thresholdRequired: boolean;
+  thresholdRequired!: boolean;
 
   @ApiProperty({
     description: 'Default enabled state for optional notifications',
     example: true,
   })
   @IsBoolean()
-  defaultEnabled: boolean;
+  defaultEnabled!: boolean;
 
   @ApiProperty({
     description: 'Default severity for this sensor policy',
@@ -47,7 +48,7 @@ export class AlertPolicyInputDto {
     example: 'critical',
   })
   @IsEnum(['critical', 'warning', 'info'])
-  defaultSeverity: 'critical' | 'warning' | 'info';
+  defaultSeverity!: 'critical' | 'warning' | 'info';
 }
 
 export class UpsertAlertPoliciesDto {
@@ -58,5 +59,5 @@ export class UpsertAlertPoliciesDto {
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => AlertPolicyInputDto)
-  policies: AlertPolicyInputDto[];
+  policies!: AlertPolicyInputDto[];
 }

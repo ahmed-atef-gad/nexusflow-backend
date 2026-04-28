@@ -8,6 +8,14 @@ import { VerificationService } from 'src/verification/verification.service';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 
+interface AuthenticatedUser {
+  _id: string;
+  email: string;
+  roles: string[];
+  username: string;
+  token_version?: number;
+}
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -24,12 +32,16 @@ export class AuthService {
    * Validates a user by email and password.
    * Called by LocalStrategy (which we'll make).
    */
-  async validateUser(email: string, pass: string): Promise<any> {
+  async validateUser(
+    email: string,
+    pass: string
+  ): Promise<AuthenticatedUser | null> {
     const normalizedEmail = this.normalizeEmail(email);
     const user = await this.usersService.findOneByEmail(normalizedEmail);
     if (user && (await bcrypt.compare(pass, user.password))) {
-      const { password, ...result } = user.toObject(); // Don't return hash
-      return result;
+      const userObject = user.toObject() as unknown as Record<string, unknown>;
+      delete userObject.password;
+      return userObject as unknown as AuthenticatedUser;
     }
     return null;
   }
@@ -38,20 +50,22 @@ export class AuthService {
    * Handles the login request and returns a JWT.
    * Called by the AuthController.
    */
-  async login(user: any) {
-    await this.usersService.updateLastLogin(user._id);
+  async login(user: AuthenticatedUser) {
+    const userId = String(user._id);
+
+    await this.usersService.updateLastLogin(userId);
 
     const plainMqttPass = crypto.randomBytes(8).toString('hex');
     const salt = await bcrypt.genSalt();
     const hashedMqttPass = await bcrypt.hash(plainMqttPass, salt);
-    await this.usersService.updateMqttPasswordHash(user._id, hashedMqttPass);
+    await this.usersService.updateMqttPasswordHash(userId, hashedMqttPass);
     const tokenVersion =
       typeof user.token_version === 'number'
         ? user.token_version
-        : await this.usersService.getTokenVersionById(user._id);
+        : await this.usersService.getTokenVersionById(userId);
     const payload = {
       email: user.email,
-      sub: user._id,
+      sub: userId,
       roles: user.roles,
       username: user.username,
       token_version: tokenVersion ?? 0,
@@ -96,7 +110,7 @@ export class AuthService {
   async logout(token?: string) {
     if (!token) return;
     try {
-      const decoded = this.jwtService.verify(token);
+      const decoded: { sub?: string } = this.jwtService.verify(token);
       if (!decoded?.sub) return;
       await this.usersService.incrementTokenVersion(decoded.sub);
     } catch {
@@ -128,16 +142,25 @@ export class AuthService {
     try {
       const createdUser = await this.usersService.register(userCreationData);
       // Don't return the password hash
-      const { password, ...result } = createdUser.toObject();
+      const createdUserObject = createdUser.toObject() as unknown as Record<
+        string,
+        unknown
+      >;
+      delete createdUserObject.password;
 
       await this.verificationService.generateOtpForEmail({
         email: normalizedEmail,
       });
 
-      return result;
-    } catch (error) {
+      return createdUserObject as unknown as AuthenticatedUser;
+    } catch (error: unknown) {
       // Handle errors (e.g., unique email constraint)
-      if (error.code === 11000) {
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        (error as { code?: number }).code === 11000
+      ) {
         throw new UnauthorizedException('Email or username already exists');
       }
       throw error;

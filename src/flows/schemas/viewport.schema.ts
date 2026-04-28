@@ -5,12 +5,15 @@ import { Document } from 'mongoose';
 @Schema({ _id: false })
 export class Viewport {
   @ApiProperty({ example: 0 })
-  @Prop() x: number;
+  @Prop()
+  x!: number;
 
   @ApiProperty({ example: 0 })
-  @Prop() y: number;
+  @Prop()
+  y!: number;
 
   @ApiProperty({ example: 1.0 })
-  @Prop() zoom: number;
+  @Prop()
+  zoom!: number;
 }
 export const ViewportSchema = SchemaFactory.createForClass(Viewport);

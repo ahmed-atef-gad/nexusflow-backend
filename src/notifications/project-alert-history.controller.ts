@@ -8,7 +8,10 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { getUserIdFromRequest, type AuthenticatedRequest } from 'src/auth/utils/auth.util';
+import {
+  getUserIdFromRequest,
+  type AuthenticatedRequest,
+} from 'src/auth/utils/auth.util';
 import { AuthGuard } from 'src/guards/auth/auth.guard';
 import { AlertHistoryQueryDto } from './dto/alert-history-query.dto';
 import { NotificationsService } from './notifications.service';
@@ -73,7 +76,7 @@ export class ProjectAlertHistoryController {
   async getAlertHistory(
     @Req() req: AuthenticatedRequest,
     @Param('projectId') projectId: string,
-    @Query() query: AlertHistoryQueryDto,
+    @Query() query: AlertHistoryQueryDto
   ) {
     const userId = getUserIdFromRequest(req);
     return this.notificationsService.getAlertHistory(userId, projectId, query);

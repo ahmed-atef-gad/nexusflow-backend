@@ -18,7 +18,7 @@ export class RegisterDeviceWithCodeDto {
   @Matches(/^[A-Z0-9]{8}$/, {
     message: 'code must be 8 uppercase alphanumeric characters',
   })
-  code: string;
+  code!: string;
 
   @ApiProperty({
     description: 'MAC address of the device (e.g., AA:BB:CC:DD:EE:FF)',
@@ -30,7 +30,7 @@ export class RegisterDeviceWithCodeDto {
     message:
       'macAddress must be a valid MAC address in format XX:XX:XX:XX:XX:XX',
   })
-  macAddress: string;
+  macAddress!: string;
 
   @ApiPropertyOptional({
     description: 'Optional friendly name for the device',
@@ -52,5 +52,5 @@ export class RegisterDeviceWithCodeDto {
     message:
       'mqtt_pass must be at least 8 characters and include uppercase, lowercase, number, and special character',
   })
-  mqtt_pass: string;
+  mqtt_pass!: string;
 }

@@ -23,7 +23,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: async (configService: ConfigService) => {
+      useFactory: (configService: ConfigService) => {
         const uri = configService.get<string>('MONGO_URI');
         if (!uri) {
           throw new Error('MONGO_URI environment variable is not set');
@@ -46,4 +46,3 @@ import { NotificationsModule } from './notifications/notifications.module';
   providers: [AppService],
 })
 export class AppModule {}
-

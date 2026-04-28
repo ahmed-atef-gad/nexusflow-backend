@@ -7,7 +7,7 @@ const SEGMENT_PATTERN_REGEXP = /^((\w+\/)*):?\w+((\/:\w+)+)?$/g;
  * @param value - The value to be checked.
  * @returns `true` if the value is a regular expression, `false` otherwise.
  */
-export function isRegExp(value: any): boolean {
+export function isRegExp(value: unknown): boolean {
   return (
     value instanceof RegExp ||
     (typeof value === 'object' &&
@@ -16,7 +16,9 @@ export function isRegExp(value: any): boolean {
 }
 
 export function validateTopic(topic: string): boolean {
-  if (Object.values(SystemTopics).includes(topic as any)) {
+  if (
+    Object.values(SystemTopics).some((systemTopic) => systemTopic === topic)
+  ) {
     return true;
   }
   // تحقق بسيط
@@ -28,7 +30,7 @@ export function validateTopic(topic: string): boolean {
  * @param url - The URL to be checked.
  * @returns `true` if the URL matches the segment pattern, `false` otherwise.
  */
-export function isSegmentUrl(url: any): boolean {
+export function isSegmentUrl(url: unknown): boolean {
   return isString(url) && SEGMENT_PATTERN_REGEXP.test(url);
 }
 
@@ -50,12 +52,7 @@ export function isSystemTopicRegExp(topic: string): boolean {
   return SystemTopics.HEART_BEAT.toString() == topic.toString();
 }
 
-/**
- * Checks if a value is a string.
- * @param value - The value to be checked.
- * @returns `true` if the value is a string, `false` otherwise.
- */
-export function isString(value: any) {
+export function isString(value: unknown): value is string {
   return typeof value === 'string';
 }
 
@@ -64,7 +61,7 @@ export function isString(value: any) {
  * @param arr - The array to be checked.
  * @returns `true` if every element in the array is a string, `false` otherwise.
  */
-export function isEveryElementString(arr: any): boolean {
+export function isEveryElementString(arr: unknown): boolean {
   return Array.isArray(arr) && arr.every((elem) => typeof elem === 'string');
 }
 
@@ -73,12 +70,12 @@ export function isEveryElementString(arr: any): boolean {
  * @param arr - The array to be checked.
  * @returns `true` if every element in the array is a regular expression, `false` otherwise.
  */
-export function isEveryElementRegExp(arr: any): boolean {
+export function isEveryElementRegExp(arr: unknown): boolean {
   return (
     Array.isArray(arr) &&
     arr.every((elem) => {
       try {
-        new RegExp(elem);
+        new RegExp(String(elem));
         return true;
       } catch {
         return false;

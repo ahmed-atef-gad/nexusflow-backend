@@ -26,6 +26,11 @@ import {
 import { AuthGuard } from '../guards/auth/auth.guard';
 import { Setup } from './schemas/setup.schema';
 import { DeviceAuthGuard } from '../guards/device-auth.guard';
+import type { DeviceDocument } from '../devices/schemas/device.schema';
+
+type DeviceRequest = {
+  device: DeviceDocument;
+};
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RolesGuard } from '../guards/auth/roles.guard';
 import { Role } from '../users/enums/role.enum';
@@ -244,7 +249,7 @@ export class SetupController {
   })
   @UseGuards(DeviceAuthGuard)
   @Get('device/sync')
-  async syncDevice(@Req() req) {
+  async syncDevice(@Req() req: DeviceRequest) {
     // Extract device information attached by DeviceAuthGuard
     const device = req.device;
     const setupConfig = await this.setupService.findForDeviceContext(device);

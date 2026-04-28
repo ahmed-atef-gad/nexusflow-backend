@@ -8,7 +8,6 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthGuard } from 'src/guards/auth/auth.guard';
 import { VerificationModule } from 'src/verification/verification.module';
 
-
 @Module({
   imports: [
     UsersModule,
@@ -17,7 +16,7 @@ import { VerificationModule } from 'src/verification/verification.module';
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: async (configService: ConfigService) => ({
+      useFactory: (configService: ConfigService) => ({
         secret: configService.get<string>('JWT_SECRET'),
         signOptions: { expiresIn: '1d' },
       }),

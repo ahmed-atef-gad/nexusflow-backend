@@ -9,6 +9,12 @@ import { Reflector } from '@nestjs/core';
 import { ROLES_KEY } from '../../auth/decorators/roles.decorator';
 import { Role } from '../../users/enums/role.enum';
 
+interface RequestWithUser {
+  user?: {
+    roles?: Role[];
+  };
+}
+
 @Injectable()
 export class RolesGuard implements CanActivate {
   // Inject the Reflector service to read custom metadata
@@ -18,7 +24,7 @@ export class RolesGuard implements CanActivate {
     // 1. Get the required roles from the route handler/class
     const requiredRoles = this.reflector.getAllAndOverride<Role[]>(ROLES_KEY, [
       context.getHandler(), // Check method level
-      context.getClass(),   // Check class level
+      context.getClass(), // Check class level
     ]);
 
     // If no @Roles() decorator is present, access is granted by default
@@ -29,7 +35,7 @@ export class RolesGuard implements CanActivate {
     // 2. Get the user object from the request
     // This assumes an AuthGuard (like JWT/Passport) has already run
     // and attached the 'user' object to the request.
-    const { user } = context.switchToHttp().getRequest();
+    const { user } = context.switchToHttp().getRequest<RequestWithUser>();
     if (!user) {
       throw new UnauthorizedException('Authentication required');
     }

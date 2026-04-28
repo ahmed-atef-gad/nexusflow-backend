@@ -15,11 +15,11 @@ export class Logic {
     required: true,
     unique: true,
   })
-  flowId: Flow;
+  flowId!: Flow;
 
   @ApiProperty({ description: 'Compiled logic execution graph' })
   @Prop({ type: MongooseSchema.Types.Mixed })
-  program: CommandExtraction;
+  program!: CommandExtraction;
 }
 
 export const LogicSchema = SchemaFactory.createForClass(Logic);
