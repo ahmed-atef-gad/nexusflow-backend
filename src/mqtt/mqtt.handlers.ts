@@ -1012,6 +1012,36 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     return `nexusflow/ui/mqtt-in/${flowId}/${nodeId}`;
   }
 
+  private buildLogicInputTopic(nodeId: string): string {
+    return `logic/input/${nodeId}`;
+  }
+
+  private buildForwardedInputPacket(
+    packet: MqttPacketContext
+  ): MqttPacketContext | null {
+    const payload = packet?.payload;
+    if (!Buffer.isBuffer(payload)) {
+      return null;
+    }
+
+    try {
+      const parsed: unknown = JSON.parse(payload.toString('utf8'));
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return null;
+      }
+
+      const forwardedPayload = { ...(parsed as Record<string, unknown>) };
+      delete forwardedPayload._nexusflow;
+
+      return {
+        ...packet,
+        payload: Buffer.from(JSON.stringify(forwardedPayload), 'utf8'),
+      };
+    } catch {
+      return null;
+    }
+  }
+
   private parseInternalMqttTopic(topic: string): {
     ownerId: string;
     sourceDeviceMac: string;
@@ -1304,6 +1334,49 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       const parsed = Number(payload);
       if (Number.isFinite(parsed)) {
         return this.clampToByte(parsed);
+      }
+    }
+    // Accept object-shaped payloads coming from forwarded mqtt-in or function nodes
+    if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+      const obj = payload as Record<string, unknown>;
+
+      const numericFields: Array<string> = [
+        'value',
+        'result',
+        'raw',
+        'analog',
+        'percent',
+        'temperature',
+        'humidity',
+        'distance_cm',
+      ];
+
+      for (const field of numericFields) {
+        const v = obj[field];
+        if (typeof v === 'number' && Number.isFinite(v)) {
+          if (field === 'raw' || field === 'analog') {
+            return this.mapAnalogToByte(v);
+          }
+          if (field === 'percent') {
+            return this.mapPercentToByte(v);
+          }
+          return this.clampToByte(v);
+        }
+        if (typeof v === 'boolean') {
+          return v ? 1 : 0;
+        }
+        if (typeof v === 'string') {
+          const parsed = Number(v);
+          if (Number.isFinite(parsed)) {
+            if (field === 'raw' || field === 'analog') {
+              return this.mapAnalogToByte(parsed);
+            }
+            if (field === 'percent') {
+              return this.mapPercentToByte(parsed);
+            }
+            return this.clampToByte(parsed);
+          }
+        }
       }
     }
     return null;
@@ -1664,7 +1737,15 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       }
 
       const firstStep = flow[0] as RuntimeCommand | undefined;
-      if (firstStep?.id !== inputNodeId) {
+      if (!firstStep) {
+        continue;
+      }
+
+      const matchesInput =
+        firstStep.moduleId === 'mqtt-in'
+          ? this.normalizeMqttChannel(firstStep.channel) === inputNodeId
+          : firstStep.id === inputNodeId;
+      if (!matchesInput) {
         continue;
       }
 
@@ -1855,6 +1936,14 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     const bridge = this.parseInternalMqttTopic(topic);
     if (!bridge) return;
 
+    const forwardedPacket = this.buildForwardedInputPacket(packet);
+    if (!forwardedPacket) {
+      this.logger.debug(
+        `MQTT flow forward skipped. topic=${topic} could not normalize forwarded payload`
+      );
+      return;
+    }
+
     let targetDeviceMac: string | null = null;
     try {
       const targetDevice = await this.devicesService.findByActiveFlowId(
@@ -1908,6 +1997,21 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       }
     });
 
+    if (!matchedMqttInNodeIds.size) {
+      this.logger.debug(
+        `Skip MQTT In logic: no matching mqtt-in nodes for flowId=${bridge.targetFlowId} channel=${bridge.channel}`
+      );
+      return;
+    }
+
+    const forwardedClient: MqttClientContext = {
+      id: `internal-forward-${bridge.sourceFlowId}-${bridge.targetFlowId}`,
+      deviceMac: targetDeviceMac,
+      ownerId: bridge.ownerId,
+      linkedFlowId: bridge.targetFlowId,
+      isEsp: true,
+    };
+
     for (const nodeId of matchedMqttInNodeIds) {
       await this.mqttService.publish(
         this.buildMqttInUiTopic(bridge.targetFlowId, nodeId),
@@ -1925,24 +2029,14 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       );
     }
 
-    const { matchedSteps, publishedCommands } =
-      await this.executeRuntimeFlowsForInput({
-        flows,
-        inputNodeId: 'mqtt-in',
-        inputModuleId: 'mqtt-in',
-        inputValue,
-        rawPayload,
-        topic,
-        flowId: bridge.targetFlowId,
-        deviceMac: targetDeviceMac,
-        ownerId: bridge.ownerId,
-        matchFirstStep: (step) =>
-          step.moduleId === 'mqtt-in' &&
-          this.normalizeMqttChannel(step.channel) === bridge.channel,
-      });
+    await this.executeGpioLogicForInputTopic(
+      this.buildLogicInputTopic(bridge.channel),
+      forwardedPacket,
+      forwardedClient
+    );
 
     this.logger.debug(
-      `MQTT In processing finished. targetFlowId=${bridge.targetFlowId} channel=${bridge.channel} matchedSteps=${matchedSteps} publishedCommands=${publishedCommands}`
+      `MQTT In processing finished. targetFlowId=${bridge.targetFlowId} channel=${bridge.channel} matchedSteps=${matchedMqttInNodeIds.size}`
     );
   }
 
@@ -1952,55 +2046,59 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
   ) {
     const topic = packet?.topic ?? '';
     const clientId = client?.id?.toString?.() ?? '';
+    if (topic) {
+      if (clientId) {
+        this.logger.debug(
+          `MQTT message published. clientId=${clientId || 'broker'} topic=${topic}`
+        );
+      }
 
-      if (topic) {
-        if (clientId) {
-          this.logger.debug(
-            `MQTT message published. clientId=${clientId || 'broker'} topic=${topic}`
-          );
-        }
-
-        // Broker-originated publishes may not include a client id.
-        // Handle flow update/change topics regardless of publisher to keep cache coherent.
-        if (topic.includes('/flowupdated') || topic.includes('/flowchanged')) {
+      // Broker-originated publishes may not include a client id.
+      // Handle flow update/change topics regardless of publisher to keep cache coherent.
+      if (topic.includes('/flowupdated') || topic.includes('/flowchanged')) {
         const topicMac = this.extractDevicesTopicMac(topic);
         if (topicMac) {
           this.logger.log(
             `Flow update detected for device ${topicMac}, evicting logic cache.`
           );
           this.logicService.evictForDevice(topicMac);
-          }
         }
+      }
 
-        if (client?.isEsp && this.isVirtualEspResponseTopic(topic)) {
-          const responseNodeId = this.extractVirtualEspResponseNodeId(topic);
-          const flowId = client.linkedFlowId ?? null;
-          if (responseNodeId && flowId) {
-            try {
-              let mirroredPayload: Record<string, unknown> = {};
-              if (packet?.payload) {
-                const parsed = JSON.parse(packet.payload.toString('utf8'));
-                if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-                  mirroredPayload = parsed as Record<string, unknown>;
-                } else {
-                  mirroredPayload = { value: parsed };
-                }
-              }
-              await this.mqttService.publish(
-                `nexusflow/ui/output/${flowId}/${responseNodeId}`,
-                mirroredPayload
-              );
-            } catch (error) {
-              this.logger.warn(
-                `Failed to mirror output response topic=${topic}: ${(error as Error).message}`
-              );
-            }
-          }
-        }
-
-        if (this.parseInternalMqttTopic(topic)) {
+      if (client?.isEsp && this.isVirtualEspResponseTopic(topic)) {
+        const responseNodeId = this.extractVirtualEspResponseNodeId(topic);
+        const flowId = client.linkedFlowId ?? null;
+        if (responseNodeId && flowId) {
           try {
-            await this.executeInternalMqttForwardTopic(topic, packet);
+            let mirroredPayload: Record<string, unknown> = {};
+            if (packet?.payload) {
+              const payloadText = packet.payload.toString('utf8');
+              const parsed: unknown = JSON.parse(payloadText);
+              if (
+                parsed &&
+                typeof parsed === 'object' &&
+                !Array.isArray(parsed)
+              ) {
+                mirroredPayload = parsed as Record<string, unknown>;
+              } else {
+                mirroredPayload = { value: parsed };
+              }
+            }
+            await this.mqttService.publish(
+              `nexusflow/ui/output/${flowId}/${responseNodeId}`,
+              mirroredPayload
+            );
+          } catch (error) {
+            this.logger.warn(
+              `Failed to mirror output response topic=${topic}: ${(error as Error).message}`
+            );
+          }
+        }
+      }
+
+      if (this.parseInternalMqttTopic(topic)) {
+        try {
+          await this.executeInternalMqttForwardTopic(topic, packet);
         } catch (error) {
           this.logger.error(
             `Failed to execute MQTT flow forward for topic=${topic}: ${(error as Error).message}`
