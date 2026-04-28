@@ -32,13 +32,15 @@ type OutputModuleType = 'pwm' | 'digital' | 'dac' | 'servo' | 'other';
 type RuntimeCommand = {
   id?: string;
   moduleId?: string;
-  stepType?: 'input' | 'function' | 'output';
+  stepType?: 'input' | 'function' | 'output' | 'mqtt-out';
   code?: string;
   targetModuleType?: OutputModuleType;
   cmd?: number;
   pin?: number;
   value?: number | string;
   topic?: string;
+  channel?: string;
+  targetFlowIds?: string[];
 };
 
 type RuntimeMessage = {
@@ -98,12 +100,14 @@ type InputPayload = {
 };
 
 const INPUT_TOPIC_PATTERN = /^logic\/input\/([^/]+)$/;
-const LEGACY_INPUT_TOPIC_PATTERN = /^esp\/([^/]+)$/;
+const INTERNAL_MQTT_TOPIC_PATTERN =
+  /^nexusflow\/internal\/([^/]+)\/([^/]+)\/([^/]+)\/([^/]+)\/([^/]+)$/;
 const DEFAULT_FUNCTION_NODE_EXECUTION_TIMEOUT_MS = 100;
 const DEFAULT_FUNCTION_NODE_MAX_PAYLOAD_BYTES = 8192;
 const MAX_RUNTIME_STEPS_PER_PATH = 64;
 const MAX_RUNTIME_FUNCTION_STEPS_PER_PATH = 16;
 const MAX_USER_MQTT_SESSIONS = 5;
+const MAX_INTERNAL_MQTT_FORWARD_HOPS = 8;
 
 @Injectable()
 export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
@@ -720,9 +724,7 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
   }
 
   private isInputTopic(topic: string): boolean {
-    return (
-      INPUT_TOPIC_PATTERN.test(topic) || LEGACY_INPUT_TOPIC_PATTERN.test(topic)
-    );
+    return INPUT_TOPIC_PATTERN.test(topic);
   }
 
   private getInputNodeIdFromTopic(topic: string): string | null {
@@ -730,10 +732,6 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     if (prefixedMatch) {
       return prefixedMatch[1] || null;
     }
-
-    const legacyMatch = topic.match(LEGACY_INPUT_TOPIC_PATTERN);
-    if (!legacyMatch) return null;
-    return legacyMatch[1] || null;
   }
 
   private clampToByte(value: number): number {
@@ -918,6 +916,84 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
         command.targetModuleType === 'dac' ||
         command.targetModuleType === 'servo')
     );
+  }
+
+  private isMqttOutRuntimeCommand(command: RuntimeCommand): boolean {
+    return command.stepType === 'mqtt-out';
+  }
+
+  private normalizeMqttChannel(channel: unknown): string {
+    const normalized = String(channel ?? 'default')
+      .trim()
+      .replace(/[^a-zA-Z0-9_-]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '');
+
+    return normalized || 'default';
+  }
+
+  private buildInternalMqttTopic(params: {
+    ownerId: string;
+    sourceDeviceMac: string;
+    sourceFlowId: string;
+    targetFlowId: string;
+    channel: string;
+  }): string {
+    return [
+      'nexusflow',
+      'internal',
+      params.ownerId,
+      this.normalizeMacAddress(params.sourceDeviceMac),
+      params.sourceFlowId,
+      params.targetFlowId,
+      this.normalizeMqttChannel(params.channel),
+    ].join('/');
+  }
+
+  private parseInternalMqttTopic(topic: string): {
+    ownerId: string;
+    sourceDeviceMac: string;
+    sourceFlowId: string;
+    targetFlowId: string;
+    channel: string;
+  } | null {
+    const match = topic.match(INTERNAL_MQTT_TOPIC_PATTERN);
+    if (!match) return null;
+    return {
+      ownerId: match[1],
+      sourceDeviceMac: this.normalizeMacAddress(match[2]),
+      sourceFlowId: match[3],
+      targetFlowId: match[4],
+      channel: this.normalizeMqttChannel(match[5]),
+    };
+  }
+
+  private buildForwardPayload(
+    message: RuntimeMessage
+  ): Record<string, unknown> {
+    const payload = message.payload;
+    if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+      return payload as Record<string, unknown>;
+    }
+    return {
+      result: payload,
+      value: payload,
+    };
+  }
+
+  private getInternalForwardHopCount(message: RuntimeMessage): number {
+    const payload = message.payload;
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return 0;
+    }
+
+    const metadata = (payload as Record<string, unknown>)._nexusflow;
+    if (!metadata || typeof metadata !== 'object') {
+      return 0;
+    }
+
+    const hops = (metadata as Record<string, unknown>).hops;
+    return typeof hops === 'number' && Number.isFinite(hops) ? hops : 0;
   }
 
   private createRuntimeMessage(params: {
@@ -1215,6 +1291,214 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     return Math.round(Math.min(180, Math.max(0, angle)));
   }
 
+  private async executeRuntimeFlowsForInput(params: {
+    flows: unknown[][];
+    inputNodeId: string;
+    inputModuleId: string;
+    inputValue: number | null;
+    rawPayload: InputPayload | null;
+    topic: string;
+    flowId: string;
+    deviceMac: string;
+    ownerId?: string;
+    matchFirstStep?: (step: RuntimeCommand) => boolean;
+  }): Promise<{ matchedSteps: number; publishedCommands: number }> {
+    const commandTopic = `esp/${this.normalizeMacAddress(params.deviceMac)}/cmd`;
+    let matchedSteps = 0;
+    let publishedCommands = 0;
+
+    for (const flow of params.flows) {
+      if (!Array.isArray(flow) || !flow.length) {
+        continue;
+      }
+      if (flow.length > MAX_RUNTIME_STEPS_PER_PATH) {
+        this.logger.warn(
+          `Skipping runtime path due to excessive length (${flow.length} steps).`
+        );
+        continue;
+      }
+
+      const functionStepsInPath = flow.reduce<number>((count, step) => {
+        const runtimeStep = step as RuntimeCommand;
+        return runtimeStep?.stepType === 'function' ? count + 1 : count;
+      }, 0);
+      if (functionStepsInPath > MAX_RUNTIME_FUNCTION_STEPS_PER_PATH) {
+        this.logger.warn(
+          `Skipping runtime path due to excessive function node depth (${functionStepsInPath}).`
+        );
+        continue;
+      }
+
+      const firstStep = flow[0] as RuntimeCommand | undefined;
+      if (!firstStep) continue;
+      const matches = params.matchFirstStep
+        ? params.matchFirstStep(firstStep)
+        : firstStep.id === params.inputNodeId;
+      if (!matches) continue;
+
+      const effectiveInputNodeId = String(firstStep.id ?? params.inputNodeId);
+      const effectiveInputModuleId = String(
+        firstStep.moduleId ?? params.inputModuleId
+      );
+      matchedSteps++;
+      this.logger.debug(
+        `Matched runtime path for nodeId=${effectiveInputNodeId} with ${flow.length} steps`
+      );
+
+      const usesFunctionSteps = this.pathUsesFunctionSteps(flow);
+      const initialPayload = usesFunctionSteps
+        ? this.buildFunctionInitialPayload(params.rawPayload, params.inputValue)
+        : params.inputValue;
+
+      let currentMessage = this.createRuntimeMessage({
+        inputNodeId: effectiveInputNodeId,
+        inputModuleId: effectiveInputModuleId,
+        payload: initialPayload,
+        normalizedInput: params.inputValue,
+        topic: params.topic,
+        flowId: params.flowId,
+        deviceMac: this.normalizeMacAddress(params.deviceMac),
+      });
+
+      for (const rawStep of flow.slice(1)) {
+        const step = rawStep as RuntimeCommand;
+
+        if (step.stepType === 'function') {
+          const functionNodeId = String(step.id ?? 'unknown');
+          try {
+            const nextMessage = this.executeFunctionStep(step, currentMessage);
+            if (nextMessage === null) {
+              await this.mqttService.publish(
+                this.buildFunctionDebugTopic(params.deviceMac, functionNodeId),
+                {
+                  code: 'FUNCTION_RETURNED_NULL',
+                  severity: 'info',
+                  message:
+                    'Function node returned null/undefined, so this runtime path was stopped.',
+                  flowId: params.flowId,
+                  nodeId: functionNodeId,
+                  moduleId: step.moduleId,
+                  inputTopic: params.topic,
+                  timestamp: new Date().toISOString(),
+                }
+              );
+              break;
+            }
+            currentMessage = nextMessage;
+          } catch (error) {
+            this.logger.warn(
+              `Function node ${step.id ?? 'unknown'} failed: ${(error as Error).message}`
+            );
+
+            await this.mqttService.publish(
+              this.buildFunctionErrorTopic(params.deviceMac, functionNodeId),
+              {
+                code: 'FUNCTION_EXECUTION_FAILED',
+                message: (error as Error).message,
+                flowId: params.flowId,
+                nodeId: functionNodeId,
+                moduleId: step.moduleId,
+                inputTopic: params.topic,
+                timestamp: new Date().toISOString(),
+              }
+            );
+
+            await this.mqttService.publish(
+              this.buildFunctionDebugTopic(params.deviceMac, functionNodeId),
+              {
+                code: 'FUNCTION_EXECUTION_FAILED',
+                severity: 'error',
+                message: (error as Error).message,
+                flowId: params.flowId,
+                nodeId: functionNodeId,
+                moduleId: step.moduleId,
+                inputTopic: params.topic,
+                timestamp: new Date().toISOString(),
+              }
+            );
+            break;
+          }
+          continue;
+        }
+
+        if (this.isMqttOutRuntimeCommand(step)) {
+          const ownerId = params.ownerId;
+          const targetFlowIds = Array.isArray(step.targetFlowIds)
+            ? step.targetFlowIds
+            : [];
+          if (!ownerId || !targetFlowIds.length) continue;
+
+          const nextHopCount =
+            this.getInternalForwardHopCount(currentMessage) + 1;
+          if (nextHopCount > MAX_INTERNAL_MQTT_FORWARD_HOPS) {
+            this.logger.warn(
+              `MQTT flow forward stopped after ${MAX_INTERNAL_MQTT_FORWARD_HOPS} hops. flowId=${params.flowId}`
+            );
+            continue;
+          }
+
+          const channel = this.normalizeMqttChannel(step.channel);
+          for (const targetFlowId of targetFlowIds) {
+            const topic = this.buildInternalMqttTopic({
+              ownerId,
+              sourceDeviceMac: params.deviceMac,
+              sourceFlowId: params.flowId,
+              targetFlowId,
+              channel,
+            });
+            await this.mqttService.publish(topic, {
+              ...this.buildForwardPayload(currentMessage),
+              _nexusflow: {
+                kind: 'flow-forward',
+                sourceFlowId: params.flowId,
+                targetFlowId,
+                sourceNodeId: step.id,
+                sourceDeviceMac: this.normalizeMacAddress(params.deviceMac),
+                channel,
+                hops: nextHopCount,
+                timestamp: new Date().toISOString(),
+              },
+            });
+            publishedCommands++;
+          }
+          continue;
+        }
+
+        if (!this.isGpioRuntimeCommand(step)) continue;
+        if (typeof step.cmd !== 'number' || typeof step.pin !== 'number') {
+          continue;
+        }
+
+        const outputValue =
+          step.targetModuleType === 'servo'
+            ? this.coerceServoOutputValue(currentMessage, usesFunctionSteps)
+            : this.coerceRuntimeOutputValue(currentMessage);
+        if (outputValue === null) {
+          this.logger.warn(
+            `Output step ${step.id ?? 'unknown'} skipped because payload is not a numeric, boolean, or numeric string value.`
+          );
+          continue;
+        }
+
+        await this.mqttService.publish(commandTopic, {
+          command: {
+            cmd: step.cmd,
+            pin: step.pin,
+            value: outputValue,
+            topic: step.topic,
+          },
+        });
+        publishedCommands++;
+
+        this.logger.debug(
+          `Published GPIO logic command. cmd=${step.cmd} pin=${step.pin} value=${outputValue} topic=${commandTopic}`
+        );
+      }
+    }
+
+    return { matchedSteps, publishedCommands };
+  }
+
   private async executeGpioLogicForInputTopic(
     topic: string,
     packet: MqttPacketContext,
@@ -1407,6 +1691,51 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
           continue;
         }
 
+        if (this.isMqttOutRuntimeCommand(step)) {
+          const targetFlowIds = Array.isArray(step.targetFlowIds)
+            ? step.targetFlowIds
+            : [];
+          const ownerId = client.ownerId;
+          if (!ownerId || !targetFlowIds.length) {
+            continue;
+          }
+
+          const channel = this.normalizeMqttChannel(step.channel);
+          const nextHopCount =
+            this.getInternalForwardHopCount(currentMessage) + 1;
+          if (nextHopCount > MAX_INTERNAL_MQTT_FORWARD_HOPS) {
+            this.logger.warn(
+              `MQTT flow forward stopped after ${MAX_INTERNAL_MQTT_FORWARD_HOPS} hops. flowId=${flowId}`
+            );
+            continue;
+          }
+
+          for (const targetFlowId of targetFlowIds) {
+            const bridgeTopic = this.buildInternalMqttTopic({
+              ownerId,
+              sourceDeviceMac: deviceMac,
+              sourceFlowId: flowId,
+              targetFlowId,
+              channel,
+            });
+            await this.mqttService.publish(bridgeTopic, {
+              ...this.buildForwardPayload(currentMessage),
+              _nexusflow: {
+                kind: 'flow-forward',
+                sourceFlowId: flowId,
+                targetFlowId,
+                sourceNodeId: step.id,
+                sourceDeviceMac: this.normalizeMacAddress(deviceMac),
+                channel,
+                hops: nextHopCount,
+                timestamp: new Date().toISOString(),
+              },
+            });
+            publishedCommands++;
+          }
+          continue;
+        }
+
         if (!this.isGpioRuntimeCommand(step)) {
           continue;
         }
@@ -1457,6 +1786,73 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     );
   }
 
+  private async executeInternalMqttForwardTopic(
+    topic: string,
+    packet: MqttPacketContext
+  ): Promise<void> {
+    const bridge = this.parseInternalMqttTopic(topic);
+    if (!bridge) return;
+
+    let targetDeviceMac: string | null = null;
+    try {
+      const targetDevice = await this.devicesService.findByActiveFlowId(
+        bridge.targetFlowId
+      );
+      if (targetDevice.ownerId.toString() !== bridge.ownerId) {
+        this.logger.warn(
+          `Blocked MQTT flow forward across owners. targetFlowId=${bridge.targetFlowId}`
+        );
+        return;
+      }
+      targetDeviceMac = targetDevice.macAddress;
+    } catch (error) {
+      this.logger.warn(
+        `MQTT flow forward skipped. targetFlowId=${bridge.targetFlowId} has no active device: ${(error as Error).message}`
+      );
+      return;
+    }
+
+    const inputValue = this.extractNumericInputValue(packet);
+    const rawPayload = this.extractRawInputPayload(packet);
+    if (inputValue === null && rawPayload === null) {
+      this.logger.debug(
+        `Skip MQTT In logic: could not extract usable payload for topic ${topic}`
+      );
+      return;
+    }
+
+    const flows = await this.logicService.getLogicFlowsForFlowId(
+      bridge.targetFlowId,
+      targetDeviceMac
+    );
+    if (!flows.length) {
+      this.logger.debug(
+        `Skip MQTT In logic: no flows in logic program for flowId=${bridge.targetFlowId}`
+      );
+      return;
+    }
+
+    const { matchedSteps, publishedCommands } =
+      await this.executeRuntimeFlowsForInput({
+        flows,
+        inputNodeId: 'mqtt-in',
+        inputModuleId: 'mqtt-in',
+        inputValue,
+        rawPayload,
+        topic,
+        flowId: bridge.targetFlowId,
+        deviceMac: targetDeviceMac,
+        ownerId: bridge.ownerId,
+        matchFirstStep: (step) =>
+          step.moduleId === 'mqtt-in' &&
+          this.normalizeMqttChannel(step.channel) === bridge.channel,
+      });
+
+    this.logger.debug(
+      `MQTT In processing finished. targetFlowId=${bridge.targetFlowId} channel=${bridge.channel} matchedSteps=${matchedSteps} publishedCommands=${publishedCommands}`
+    );
+  }
+
   private async onClientPublish(
     packet: MqttPacketContext,
     client: MqttClientContext
@@ -1480,6 +1876,16 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
             `Flow update detected for device ${topicMac}, evicting logic cache.`
           );
           this.logicService.evictForDevice(topicMac);
+        }
+      }
+
+      if (this.parseInternalMqttTopic(topic)) {
+        try {
+          await this.executeInternalMqttForwardTopic(topic, packet);
+        } catch (error) {
+          this.logger.error(
+            `Failed to execute MQTT flow forward for topic=${topic}: ${(error as Error).message}`
+          );
         }
       }
 

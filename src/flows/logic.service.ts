@@ -253,7 +253,8 @@ export class LogicService {
     if (
       step.stepType !== 'input' &&
       step.stepType !== 'function' &&
-      step.stepType !== 'output'
+      step.stepType !== 'output' &&
+      step.stepType !== 'mqtt-out'
     ) {
       throw new BadRequestException(
         `Invalid stepType at path ${pathIndex}, index ${stepIndex}`
@@ -265,6 +266,11 @@ export class LogicService {
         id,
         moduleId,
         stepType: 'input',
+        variables:
+          step.variables && typeof step.variables === 'object'
+            ? step.variables
+            : undefined,
+        channel: typeof step.channel === 'string' ? step.channel : undefined,
       };
     }
 
@@ -274,6 +280,20 @@ export class LogicService {
         moduleId,
         stepType: 'function',
         code: this.sanitizeFunctionCode(step.code, pathIndex, stepIndex),
+      };
+    }
+
+    if (step.stepType === 'mqtt-out') {
+      return {
+        id,
+        moduleId,
+        stepType: 'mqtt-out',
+        channel: typeof step.channel === 'string' ? step.channel : 'default',
+        targetFlowIds: Array.isArray(step.targetFlowIds)
+          ? step.targetFlowIds
+              .map((flowId) => String(flowId).trim())
+              .filter(Boolean)
+          : [],
       };
     }
 
@@ -351,9 +371,11 @@ export class LogicService {
           `program.flows[${pathIndex}] must start with an input step`
         );
       }
-      if (sanitizedPath[sanitizedPath.length - 1]?.stepType !== 'output') {
+      const terminalStepType =
+        sanitizedPath[sanitizedPath.length - 1]?.stepType;
+      if (terminalStepType !== 'output' && terminalStepType !== 'mqtt-out') {
         throw new BadRequestException(
-          `program.flows[${pathIndex}] must end with an output step`
+          `program.flows[${pathIndex}] must end with an output step or mqtt-out step`
         );
       }
 
