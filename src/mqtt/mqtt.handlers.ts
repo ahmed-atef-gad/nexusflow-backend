@@ -228,6 +228,14 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     return segments[2] === 'response';
   }
 
+  private extractVirtualEspResponseNodeId(topic: string): string | null {
+    const segments = topic.split('/').filter(Boolean);
+    if (segments.length !== 3 || segments[0] !== 'esp') return null;
+    if (this.isMacAddress(segments[1])) return null;
+    if (segments[2] !== 'response') return null;
+    return segments[1];
+  }
+
   private isAuthorizedForDevicesTopic(
     clientMac: string,
     topic: string
@@ -1945,28 +1953,54 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     const topic = packet?.topic ?? '';
     const clientId = client?.id?.toString?.() ?? '';
 
-    if (topic) {
-      if (clientId) {
-        this.logger.debug(
-          `MQTT message published. clientId=${clientId || 'broker'} topic=${topic}`
-        );
-      }
+      if (topic) {
+        if (clientId) {
+          this.logger.debug(
+            `MQTT message published. clientId=${clientId || 'broker'} topic=${topic}`
+          );
+        }
 
-      // Broker-originated publishes may not include a client id.
-      // Handle flow update/change topics regardless of publisher to keep cache coherent.
-      if (topic.includes('/flowupdated') || topic.includes('/flowchanged')) {
+        // Broker-originated publishes may not include a client id.
+        // Handle flow update/change topics regardless of publisher to keep cache coherent.
+        if (topic.includes('/flowupdated') || topic.includes('/flowchanged')) {
         const topicMac = this.extractDevicesTopicMac(topic);
         if (topicMac) {
           this.logger.log(
             `Flow update detected for device ${topicMac}, evicting logic cache.`
           );
           this.logicService.evictForDevice(topicMac);
+          }
         }
-      }
 
-      if (this.parseInternalMqttTopic(topic)) {
-        try {
-          await this.executeInternalMqttForwardTopic(topic, packet);
+        if (client?.isEsp && this.isVirtualEspResponseTopic(topic)) {
+          const responseNodeId = this.extractVirtualEspResponseNodeId(topic);
+          const flowId = client.linkedFlowId ?? null;
+          if (responseNodeId && flowId) {
+            try {
+              let mirroredPayload: Record<string, unknown> = {};
+              if (packet?.payload) {
+                const parsed = JSON.parse(packet.payload.toString('utf8'));
+                if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                  mirroredPayload = parsed as Record<string, unknown>;
+                } else {
+                  mirroredPayload = { value: parsed };
+                }
+              }
+              await this.mqttService.publish(
+                `nexusflow/ui/output/${flowId}/${responseNodeId}`,
+                mirroredPayload
+              );
+            } catch (error) {
+              this.logger.warn(
+                `Failed to mirror output response topic=${topic}: ${(error as Error).message}`
+              );
+            }
+          }
+        }
+
+        if (this.parseInternalMqttTopic(topic)) {
+          try {
+            await this.executeInternalMqttForwardTopic(topic, packet);
         } catch (error) {
           this.logger.error(
             `Failed to execute MQTT flow forward for topic=${topic}: ${(error as Error).message}`

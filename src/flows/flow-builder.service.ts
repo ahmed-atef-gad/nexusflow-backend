@@ -1028,7 +1028,9 @@ export class FlowBuilderService {
             moduleName: module.name,
             alias: module.alias,
             pin: pinNumber,
-            responseTopic: `esp/${node.id}/response`,
+            responseTopic: flowId
+              ? `nexusflow/ui/output/${flowId}/${node.id}`
+              : `nexusflow/ui/output/${node.id}`,
             moduleType: 'output',
             topic: commandTopic,
             isFloating: !connectedOutputIds.has(node.id),
