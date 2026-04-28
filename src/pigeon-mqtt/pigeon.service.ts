@@ -1,31 +1,35 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { INSTANCE_BROKER } from './pigeon.constant';
-import { PubPacket } from './pigeon.interface';
+import { PigeonBroker, PubPacket } from './pigeon.interface';
 
 @Injectable()
 export class PigeonService {
-  constructor(@Inject(INSTANCE_BROKER) private readonly broker: any) {}
+  constructor(@Inject(INSTANCE_BROKER) private readonly broker: unknown) {}
 
   publish(packet: PubPacket): Promise<PubPacket> {
-    return new Promise<any>((resolve, reject) => {
-      this.broker.publish(packet, (error) => {
+    return new Promise<PubPacket>((resolve, reject) => {
+      const broker = this.broker as PigeonBroker;
+      broker.publish(packet, (error?: unknown) => {
         if (!error) {
           return resolve(packet);
         }
-        return reject(error);
+        return reject(
+          error instanceof Error ? error : new Error('Pigeon broker error')
+        );
       });
     });
   }
 
   close(): Promise<string> {
-    return new Promise<any>((resolve) => {
-      this.broker.close(() => {
+    return new Promise<string>((resolve) => {
+      const broker = this.broker as PigeonBroker;
+      broker.close(() => {
         resolve('success');
       });
     });
   }
 
-  getBrokerInstance(): any {
-    return this.broker;
+  getBrokerInstance(): PigeonBroker {
+    return this.broker as PigeonBroker;
   }
 }

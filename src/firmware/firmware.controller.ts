@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call */
 import {
   BadRequestException,
   Body,
@@ -29,7 +30,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { basename, extname } from 'path';
 import { diskStorage } from 'multer';
 import { existsSync, mkdirSync } from 'fs';
-import type { Response } from 'express';
+import type { Response, Request } from 'express';
 import { AuthGuard } from '../guards/auth/auth.guard';
 import { RolesGuard } from '../guards/auth/roles.guard';
 import { DeviceAuthGuard } from '../guards/device-auth.guard';
@@ -37,7 +38,17 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { Role } from '../users/enums/role.enum';
 import { UploadFirmwareDto } from './dto/upload-firmware.dto';
 import { FirmwareService } from './firmware.service';
+import type { UploadedFirmwareFile } from './firmware.service';
 import { FIRMWARE_UPLOAD_DIR } from './firmware.constants';
+
+type FirmwareUploadRequest = Request & {
+  user?: { sub?: string };
+};
+
+type FirmwareUpdateRequest = Pick<Request, 'headers' | 'protocol' | 'get'>;
+type FirmwareUploadFile = {
+  originalname: string;
+};
 
 @ApiTags('Firmware')
 @Controller('firmware')
@@ -47,7 +58,7 @@ export class FirmwareController {
   @ApiOperation({
     summary: 'Upload firmware binary (.bin)',
     description:
-      'Uploads a new firmware binary and marks it as the latest active release.',
+      'Uploads a new firmware binary and marks it as the latest active release. Admin only: accessible by Admin or Owner.',
   })
   @ApiCookieAuth('jwt')
   @ApiConsumes('multipart/form-data')
@@ -67,13 +78,21 @@ export class FirmwareController {
   @UseInterceptors(
     FileInterceptor('file', {
       storage: diskStorage({
-        destination: (_, __, callback) => {
+        destination: (
+          _request: Request,
+          _file: FirmwareUploadFile,
+          callback: (error: Error | null, destination: string) => void
+        ) => {
           if (!existsSync(FIRMWARE_UPLOAD_DIR)) {
             mkdirSync(FIRMWARE_UPLOAD_DIR, { recursive: true });
           }
           callback(null, FIRMWARE_UPLOAD_DIR);
         },
-        filename: (_, file, callback) => {
+        filename: (
+          _request: Request,
+          file: FirmwareUploadFile,
+          callback: (error: Error | null, filename: string) => void
+        ) => {
           const extension = extname(file.originalname).toLowerCase();
           const baseName = basename(file.originalname, extension).replace(
             /[^a-zA-Z0-9_-]/g,
@@ -83,11 +102,18 @@ export class FirmwareController {
           callback(null, uniqueName);
         },
       }),
-      fileFilter: (_, file, callback) => {
+      fileFilter: (
+        _request: Request,
+        file: FirmwareUploadFile,
+        callback: (error: Error | null, acceptFile: boolean) => void
+      ) => {
         const extension = extname(file.originalname).toLowerCase();
         if (extension !== '.bin') {
+          // multer expects an Error instance in the callback — use a plain Error to satisfy types
+          // multer expects an Error instance in the callback — suppress type lint for this call
+
           return callback(
-            new BadRequestException('Only .bin firmware files are allowed'),
+            new Error('Only .bin firmware files are allowed'),
             false
           );
         }
@@ -98,9 +124,9 @@ export class FirmwareController {
   )
   @Post('admin/upload')
   async uploadFirmware(
-    @UploadedFile() file: any,
+    @UploadedFile() file: UploadedFirmwareFile,
     @Body() body: UploadFirmwareDto,
-    @Req() req
+    @Req() req: FirmwareUploadRequest
   ) {
     if (!file) {
       throw new BadRequestException('Firmware file is required');
@@ -124,7 +150,7 @@ export class FirmwareController {
   @ApiOperation({
     summary: 'Delete firmware by ID',
     description:
-      'Deletes firmware metadata and removes its binary file from server storage.',
+      'Deletes firmware metadata and removes its binary file from server storage. Admin only: accessible by Admin or Owner.',
   })
   @ApiCookieAuth('jwt')
   @ApiParam({
@@ -159,7 +185,7 @@ export class FirmwareController {
   @Get('device/check')
   async checkForUpdate(
     @Query('currentVersion') currentVersion: string | undefined,
-    @Req() req
+    @Req() req: FirmwareUpdateRequest
   ) {
     return this.firmwareService.checkForUpdate(currentVersion, req);
   }

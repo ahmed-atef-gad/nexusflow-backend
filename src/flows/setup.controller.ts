@@ -26,6 +26,11 @@ import {
 import { AuthGuard } from '../guards/auth/auth.guard';
 import { Setup } from './schemas/setup.schema';
 import { DeviceAuthGuard } from '../guards/device-auth.guard';
+import type { DeviceDocument } from '../devices/schemas/device.schema';
+
+type DeviceRequest = {
+  device: DeviceDocument;
+};
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RolesGuard } from '../guards/auth/roles.guard';
 import { Role } from '../users/enums/role.enum';
@@ -51,7 +56,10 @@ export class SetupController {
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(Role.Admin)
   @ApiCookieAuth('jwt')
-  @ApiOperation({ summary: 'Create a Setup document manually' })
+  @ApiOperation({
+    summary: 'Create a Setup document manually',
+    description: 'Admin only: accessible by Admin or Owner.',
+  })
   @ApiBody({ type: SetupPayload })
   @ApiResponse({ status: 201, description: 'Setup created', type: Setup })
   @Post()
@@ -67,7 +75,10 @@ export class SetupController {
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(Role.Admin)
   @ApiCookieAuth('jwt')
-  @ApiOperation({ summary: 'Get all setups' })
+  @ApiOperation({
+    summary: 'Get all setups',
+    description: 'Admin only: accessible by Admin or Owner.',
+  })
   @ApiResponse({ status: 200 })
   @ApiQuery({
     name: 'page',
@@ -95,7 +106,10 @@ export class SetupController {
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(Role.Admin)
   @ApiCookieAuth('jwt')
-  @ApiOperation({ summary: 'Get setup by ID' })
+  @ApiOperation({
+    summary: 'Get setup by ID',
+    description: 'Admin only: accessible by Admin or Owner.',
+  })
   @ApiParam({ name: 'id' })
   @ApiResponse({ status: 200, type: Setup })
   @Get(':id')
@@ -112,7 +126,10 @@ export class SetupController {
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(Role.Admin)
   @ApiCookieAuth('jwt')
-  @ApiOperation({ summary: 'Get setup by Flow ID' })
+  @ApiOperation({
+    summary: 'Get setup by Flow ID',
+    description: 'Admin only: accessible by Admin or Owner.',
+  })
   @ApiParam({ name: 'flowId' })
   @ApiResponse({ status: 200, type: Setup })
   @Get('flow/:flowId')
@@ -130,7 +147,10 @@ export class SetupController {
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(Role.Admin)
   @ApiCookieAuth('jwt')
-  @ApiOperation({ summary: 'Update setup by ID' })
+  @ApiOperation({
+    summary: 'Update setup by ID',
+    description: 'Admin only: accessible by Admin or Owner.',
+  })
   @ApiParam({ name: 'id' })
   @ApiBody({ type: SetupPayload })
   @ApiResponse({ status: 200, type: Setup })
@@ -147,7 +167,10 @@ export class SetupController {
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(Role.Admin)
   @ApiCookieAuth('jwt')
-  @ApiOperation({ summary: 'Delete setup by ID' })
+  @ApiOperation({
+    summary: 'Delete setup by ID',
+    description: 'Admin only: accessible by Admin or Owner.',
+  })
   @ApiParam({ name: 'id' })
   @ApiResponse({
     status: 200,
@@ -226,7 +249,7 @@ export class SetupController {
   })
   @UseGuards(DeviceAuthGuard)
   @Get('device/sync')
-  async syncDevice(@Req() req) {
+  async syncDevice(@Req() req: DeviceRequest) {
     // Extract device information attached by DeviceAuthGuard
     const device = req.device;
     const setupConfig = await this.setupService.findForDeviceContext(device);

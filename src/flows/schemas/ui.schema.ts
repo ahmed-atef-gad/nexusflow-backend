@@ -19,7 +19,7 @@ export class Ui {
     required: true,
     unique: true,
   })
-  flowId: Flow;
+  flowId!: Flow;
 
   @ApiProperty({ description: 'MQTT topic for sending commands to modules' })
   @Prop({ type: String, required: false })
@@ -67,7 +67,7 @@ export class Ui {
 
   @ApiProperty({ description: 'UI elements for the flow', type: [UiItem] })
   @Prop({ type: [UiItemSchema] })
-  uiItems: UiItem[];
+  uiItems!: UiItem[];
 }
 
 export const UiSchema = SchemaFactory.createForClass(Ui);

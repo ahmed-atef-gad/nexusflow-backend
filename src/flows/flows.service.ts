@@ -293,7 +293,8 @@ export class FlowsService {
     let deviceMac: string | null = null;
     try {
       const device = await this.devicesService.findByActiveFlowId(id);
-      deviceMac = typeof device?.macAddress === 'string' ? device.macAddress : null;
+      deviceMac =
+        typeof device?.macAddress === 'string' ? device.macAddress : null;
     } catch (error) {
       if (!(error instanceof NotFoundException)) {
         throw error;

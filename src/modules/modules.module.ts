@@ -9,7 +9,9 @@ import { UsersModule } from '../users/users.module';
 
 @Module({
   imports: [
-    MongooseModule.forFeature([{ name: ModuleEntity.name, schema: ModuleSchema }]),
+    MongooseModule.forFeature([
+      { name: ModuleEntity.name, schema: ModuleSchema },
+    ]),
     AuthModule,
     UsersModule,
   ],

@@ -12,6 +12,20 @@ import { MqttService } from './mqtt.service';
 import { LogicService } from '../flows/logic.service';
 import { NotificationsService } from 'src/notifications/notifications.service';
 import * as vm from 'node:vm';
+import type { PigeonBroker } from '../pigeon-mqtt/pigeon.interface';
+
+type RuntimeBroker = PigeonBroker & {
+  authenticate?: (
+    client: unknown,
+    username: string,
+    password: Buffer,
+    callback: (...args: unknown[]) => void
+  ) => void;
+  authorizePublish?: (...args: unknown[]) => void;
+  authorizeSubscribe?: (...args: unknown[]) => void;
+  authorizeForward?: (...args: unknown[]) => void;
+  on: PigeonBroker['on'];
+};
 
 type OutputModuleType = 'pwm' | 'digital' | 'dac' | 'servo' | 'other';
 
@@ -89,12 +103,14 @@ const DEFAULT_FUNCTION_NODE_EXECUTION_TIMEOUT_MS = 100;
 const DEFAULT_FUNCTION_NODE_MAX_PAYLOAD_BYTES = 8192;
 const MAX_RUNTIME_STEPS_PER_PATH = 64;
 const MAX_RUNTIME_FUNCTION_STEPS_PER_PATH = 16;
+const MAX_USER_MQTT_SESSIONS = 5;
 
 @Injectable()
 export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(MqttHandlers.name);
   private readonly functionExecutionTimeoutMs: number;
   private readonly functionNodeMaxPayloadBytes: number;
+  private readonly activeEspSessions = new Map<string, string>();
 
   constructor(
     private readonly pigeonService: PigeonService,
@@ -116,13 +132,27 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
   }
 
   onModuleInit() {
-    const broker = this.pigeonService.getBrokerInstance();
-    broker.authenticate = this.onAuthenticate.bind(this);
-    broker.authorizePublish = this.onAuthorizePublish.bind(this);
-    broker.authorizeSubscribe = this.onAuthorizeSubscribe.bind(this);
-    broker.authorizeForward = this.onAuthorizeForward.bind(this);
-    broker.on('clientDisconnect', this.onClientDisconnect.bind(this));
-    broker.on('publish', this.onClientPublish.bind(this));
+    const broker = this.pigeonService.getBrokerInstance() as RuntimeBroker;
+    broker.authenticate = this.onAuthenticate.bind(
+      this
+    ) as RuntimeBroker['authenticate'];
+    broker.authorizePublish = this.onAuthorizePublish.bind(
+      this
+    ) as RuntimeBroker['authorizePublish'];
+    broker.authorizeSubscribe = this.onAuthorizeSubscribe.bind(
+      this
+    ) as RuntimeBroker['authorizeSubscribe'];
+    broker.authorizeForward = this.onAuthorizeForward.bind(
+      this
+    ) as RuntimeBroker['authorizeForward'];
+    broker.on(
+      'clientDisconnect',
+      this.onClientDisconnect.bind(this) as (...args: unknown[]) => void
+    );
+    broker.on(
+      'publish',
+      this.onClientPublish.bind(this) as (...args: unknown[]) => void
+    );
 
     // start logic cache sweeper in LogicService
     this.logicService.startLogicCacheSweeper();
@@ -155,10 +185,20 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
   private isDevicesTopic(topic: string): boolean {
     return topic.startsWith('/devices') || topic.startsWith('devices/');
   }
+  private isEspTopic(topic: string): boolean {
+    return topic.startsWith('esp/');
+  }
   private extractDevicesTopicMac(topic: string): string | null {
     const segments = topic.split('/').filter(Boolean);
     if (segments.length < 2 || segments[0] !== 'devices') return null;
     if (segments[1] === '+' || segments[1] === '#') return null;
+    return this.normalizeMacAddress(segments[1]);
+  }
+
+  private extractEspTopicMac(topic: string): string | null {
+    const segments = topic.split('/').filter(Boolean);
+    if (segments.length < 2 || segments[0] !== 'esp') return null;
+    if (!this.isMacAddress(segments[1])) return null;
     return this.normalizeMacAddress(segments[1]);
   }
 
@@ -212,6 +252,47 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     return authorizedDeviceMacs.includes(topicMac);
   }
 
+  private isAuthorizedForEspTopic(clientMac: string, topic: string): boolean {
+    const normalizedClientMac = this.normalizeMacAddress(clientMac);
+    const topicMac = this.extractEspTopicMac(topic);
+    return topicMac === normalizedClientMac;
+  }
+
+  private isAuthorizedEspSubscriptionFilter(
+    clientMac: string,
+    filter: string
+  ): boolean {
+    const normalizedClientMac = this.normalizeMacAddress(clientMac);
+    const topicMac = this.extractEspTopicMac(filter);
+    return topicMac === normalizedClientMac;
+  }
+
+  private isUserAuthorizedForEspTopic(
+    client: MqttClientContext,
+    topic: string
+  ): boolean {
+    const topicMac = this.extractEspTopicMac(topic);
+    if (!topicMac) return false;
+
+    const authorizedDeviceMacs = Array.isArray(client?.authorizedDeviceMacs)
+      ? client.authorizedDeviceMacs
+      : [];
+    return authorizedDeviceMacs.includes(topicMac);
+  }
+
+  private isUserAuthorizedEspSubscriptionFilter(
+    client: MqttClientContext,
+    filter: string
+  ): boolean {
+    const topicMac = this.extractEspTopicMac(filter);
+    if (!topicMac) return false;
+
+    const authorizedDeviceMacs = Array.isArray(client?.authorizedDeviceMacs)
+      ? client.authorizedDeviceMacs
+      : [];
+    return authorizedDeviceMacs.includes(topicMac);
+  }
+
   private rejectAuth(
     clientId: string,
     details: string,
@@ -223,6 +304,28 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     };
     error.returnCode = 4;
     return done(error, false);
+  }
+
+  private reserveEspSession(deviceMac: string, clientId: string): boolean {
+    const normalizedMac = this.normalizeMacAddress(deviceMac);
+    const normalizedClientId = clientId.trim();
+    const activeClientId = this.activeEspSessions.get(normalizedMac);
+
+    if (!activeClientId) {
+      this.activeEspSessions.set(normalizedMac, normalizedClientId);
+      return true;
+    }
+
+    if (activeClientId === normalizedClientId) {
+      return true;
+    }
+
+    if (!this.mqttService.isClientConnected(activeClientId)) {
+      this.activeEspSessions.set(normalizedMac, normalizedClientId);
+      return true;
+    }
+
+    return false;
   }
 
   private async onAuthenticate(
@@ -274,6 +377,14 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
           return this.rejectAuth(
             clientId,
             `reason=invalid device credentials mac=${normalizedClientMac}`,
+            done
+          );
+        }
+
+        if (!this.reserveEspSession(normalizedClientMac, clientId)) {
+          return this.rejectAuth(
+            clientId,
+            `reason=device already has an active mqtt session mac=${normalizedClientMac}`,
             done
           );
         }
@@ -331,6 +442,16 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
         );
       }
 
+      const activeUserSessions =
+        this.mqttService.getActiveUserSessionCount(userId);
+      if (activeUserSessions >= MAX_USER_MQTT_SESSIONS) {
+        return this.rejectAuth(
+          clientId,
+          `reason=user already has maximum active mqtt sessions userId=${userId} activeSessions=${activeUserSessions} limit=${MAX_USER_MQTT_SESSIONS}`,
+          done
+        );
+      }
+
       const userDevices = await this.devicesService.findAllByUserIdRaw(userId);
       client.authorizedDeviceMacs = userDevices.map((device) =>
         this.normalizeMacAddress(device.macAddress)
@@ -361,28 +482,49 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
   ) {
     const topic = packet?.topic ?? '';
 
-    if (!this.isDevicesTopic(topic)) {
-      return done(null);
-    }
+    if (this.isDevicesTopic(topic)) {
+      if (client?.isEsp) {
+        const clientMac = client?.deviceMac;
+        if (clientMac && this.isAuthorizedForDevicesTopic(clientMac, topic)) {
+          return done(null);
+        }
+      }
 
-    if (client?.isEsp) {
-      const clientMac = client?.deviceMac;
-      if (clientMac && this.isAuthorizedForDevicesTopic(clientMac, topic)) {
+      if (
+        client?.isUserClient &&
+        this.isUserAuthorizedForDevicesTopic(client, topic)
+      ) {
         return done(null);
       }
+
+      this.logger.warn(
+        `MQTT publish rejected. clientId=${client?.id ?? 'unknown'} topic=${topic}`
+      );
+      return done(new Error('Not authorized'));
     }
 
-    if (
-      client?.isUserClient &&
-      this.isUserAuthorizedForDevicesTopic(client, topic)
-    ) {
-      return done(null);
+    if (this.isEspTopic(topic)) {
+      if (client?.isEsp) {
+        const clientMac = client?.deviceMac;
+        if (clientMac && this.isAuthorizedForEspTopic(clientMac, topic)) {
+          return done(null);
+        }
+      }
+
+      if (
+        client?.isUserClient &&
+        this.isUserAuthorizedForEspTopic(client, topic)
+      ) {
+        return done(null);
+      }
+
+      this.logger.warn(
+        `MQTT publish rejected. clientId=${client?.id ?? 'unknown'} topic=${topic}`
+      );
+      return done(new Error('Not authorized'));
     }
 
-    this.logger.warn(
-      `MQTT publish rejected. clientId=${client?.id ?? 'unknown'} topic=${topic}`
-    );
-    return done(new Error('Not authorized'));
+    return done(null);
   }
 
   private onAuthorizeSubscribe(
@@ -394,6 +536,33 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     ) => void
   ) {
     const topic = sub?.topic ?? '';
+
+    if (
+      this.isEspTopic(topic) &&
+      (topic.includes('#') || topic.includes('+'))
+    ) {
+      if (client?.isEsp) {
+        const clientMac = client?.deviceMac;
+        if (
+          clientMac &&
+          this.isAuthorizedEspSubscriptionFilter(clientMac, topic)
+        ) {
+          return done(null, sub);
+        }
+      }
+
+      if (
+        client?.isUserClient &&
+        this.isUserAuthorizedEspSubscriptionFilter(client, topic)
+      ) {
+        return done(null, sub);
+      }
+
+      this.logger.warn(
+        `MQTT subscribe rejected. clientId=${client?.id ?? 'unknown'} topic=${topic}`
+      );
+      return done(null, null);
+    }
 
     // For /devices/* topics with wildcard filter, enforce ownership by MAC.
     if (
@@ -453,6 +622,30 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       return done(null, null);
     }
 
+    if (this.isEspTopic(topic)) {
+      if (client?.isEsp) {
+        const clientMac = client?.deviceMac;
+        if (
+          clientMac &&
+          this.isAuthorizedEspSubscriptionFilter(clientMac, topic)
+        ) {
+          return done(null, sub);
+        }
+      }
+
+      if (
+        client?.isUserClient &&
+        this.isUserAuthorizedForEspTopic(client, topic)
+      ) {
+        return done(null, sub);
+      }
+
+      this.logger.warn(
+        `MQTT subscribe rejected. clientId=${client?.id ?? 'unknown'} topic=${topic}`
+      );
+      return done(null, null);
+    }
+
     return done(null, sub);
   }
 
@@ -461,26 +654,50 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     packet: { topic?: string }
   ) {
     const topic = packet?.topic ?? '';
-    if (!this.isDevicesTopic(topic)) return packet;
 
-    if (client?.isEsp) {
-      const clientMac = client?.deviceMac;
-      if (clientMac && this.isAuthorizedForDevicesTopic(clientMac, topic)) {
+    if (this.isDevicesTopic(topic)) {
+      if (client?.isEsp) {
+        const clientMac = client?.deviceMac;
+        if (clientMac && this.isAuthorizedForDevicesTopic(clientMac, topic)) {
+          return packet;
+        }
+      }
+
+      if (
+        client?.isUserClient &&
+        this.isUserAuthorizedForDevicesTopic(client, topic)
+      ) {
         return packet;
       }
+
+      this.logger.warn(
+        `MQTT forward blocked. clientId=${client?.id ?? 'unknown'} topic=${topic}`
+      );
+      return null;
     }
 
-    if (
-      client?.isUserClient &&
-      this.isUserAuthorizedForDevicesTopic(client, topic)
-    ) {
-      return packet;
+    if (this.isEspTopic(topic)) {
+      if (client?.isEsp) {
+        const clientMac = client?.deviceMac;
+        if (clientMac && this.isAuthorizedForEspTopic(clientMac, topic)) {
+          return packet;
+        }
+      }
+
+      if (
+        client?.isUserClient &&
+        this.isUserAuthorizedForEspTopic(client, topic)
+      ) {
+        return packet;
+      }
+
+      this.logger.warn(
+        `MQTT forward blocked. clientId=${client?.id ?? 'unknown'} topic=${topic}`
+      );
+      return null;
     }
 
-    this.logger.warn(
-      `MQTT forward blocked. clientId=${client?.id ?? 'unknown'} topic=${topic}`
-    );
-    return null;
+    return packet;
   }
   private async onClientDisconnect(client: MqttClientContext) {
     const clientId = client?.id?.toString?.() ?? '';
@@ -488,6 +705,9 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       const normalizedMac = this.normalizeMacAddress(
         client.deviceMac ?? clientId
       );
+      if (this.activeEspSessions.get(normalizedMac) === clientId) {
+        this.activeEspSessions.delete(normalizedMac);
+      }
       this.logicService.evictForDevice(normalizedMac);
 
       await this.mqttService.publish(`client/${clientId}/online`, {
@@ -911,6 +1131,7 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  /* eslint-disable @typescript-eslint/no-unsafe-assignment */
   private normalizeFunctionResult(
     result: unknown,
     currentMessage: RuntimeMessage
@@ -931,6 +1152,8 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       };
     }
 
+    // result comes from untyped sandbox execution; suppress narrow assignment lint here
+
     const candidate = result as Partial<RuntimeMessage> & { payload?: unknown };
     const hasPayload = Object.prototype.hasOwnProperty.call(
       candidate,
@@ -938,21 +1161,32 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     );
     const hasValue = Object.prototype.hasOwnProperty.call(candidate, 'value');
 
-    const payload = hasPayload ? candidate.payload : currentMessage.payload;
+    // candidate may originate from untyped runtime results — narrow with explicit casts
+
+    const candidatePayload: unknown = candidate.payload;
+
+    const currentPayload: unknown = currentMessage.payload;
+    const payload: unknown = hasPayload ? candidatePayload : currentPayload;
     if (!this.isPayloadSizeAllowed(payload)) {
       throw new Error('Function result payload exceeds allowed size');
     }
 
+    const candidateValue: unknown = candidate.value;
+
+    const currentValue: unknown = currentMessage.value;
+    const nextValue: unknown = hasPayload
+      ? candidatePayload
+      : hasValue
+        ? candidateValue
+        : currentValue;
+
     return {
       ...currentMessage,
       payload,
-      value: hasPayload
-        ? candidate.payload
-        : hasValue
-          ? candidate.value
-          : currentMessage.value,
+      value: nextValue,
     };
   }
+  /* eslint-enable @typescript-eslint/no-unsafe-assignment */
 
   private executeFunctionStep(
     step: RuntimeCommand,

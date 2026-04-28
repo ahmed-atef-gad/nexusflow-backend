@@ -4,20 +4,20 @@ import { UiItem } from '../schemas/uiItem.schema';
 
 export class Position {
   @ApiProperty({ example: 100, description: 'X coordinate' })
-  x: number;
+  x!: number;
 
   @ApiProperty({ example: 200, description: 'Y coordinate' })
-  y: number;
+  y!: number;
 }
 
 export class Module {
   @ApiProperty({ example: 'module-123', description: 'Unique ID for mqtt' })
-  id: string;
+  id!: string;
   @ApiProperty({ example: 'ESP32-gpio-input', description: 'Unique module ID' })
-  moduleId: string;
+  moduleId!: string;
 
   @ApiProperty({ example: 'ESP32 GPIO Input', description: 'Display name' })
-  name: string;
+  name!: string;
 
   @ApiProperty({
     example: 'INPUT',
@@ -29,10 +29,10 @@ export class Module {
     example: 'from-amber-500 to-orange-500',
     description: 'UI Gradient',
   })
-  color: string;
+  color!: string;
 
   @ApiProperty({ example: 'Hardware', description: 'Category' })
-  category: string;
+  category!: string;
 
   @ApiProperty({ enum: ['source', 'target', 'both'], required: false })
   ports?: 'source' | 'target' | 'both';
@@ -58,13 +58,13 @@ export class Module {
 
 export class ModuleNode {
   @ApiProperty({ example: 'node-123', description: 'Unique Node ID' })
-  id: string;
+  id!: string;
 
   @ApiProperty({ type: Position })
-  position: Position;
+  position!: Position;
 
   @ApiProperty({ type: Module })
-  data: Module;
+  data!: Module;
 
   @ApiProperty({ required: false })
   type?: string;
@@ -78,13 +78,13 @@ export class ModuleNode {
 
 export class Edge {
   @ApiProperty({ example: 'edge-1' })
-  id: string;
+  id!: string;
 
   @ApiProperty({ example: 'node-1' })
-  source: string;
+  source!: string;
 
   @ApiProperty({ example: 'node-2' })
-  target: string;
+  target!: string;
 
   @ApiProperty({ required: false })
   sourceHandle?: string | null;
@@ -100,13 +100,13 @@ export class SetupPayload {
     example: '64b5f...',
     description: 'The Flow ID this setup belongs to',
   })
-  flowId: string;
+  flowId!: string;
 
   @ApiProperty({
     example: [{ cmd: 16, pin: 4, mode: 1 }],
     description: 'Array of setup commands',
   })
-  elements: SetupObject;
+  elements!: SetupObject;
 }
 
 export class LogicPayload {
@@ -114,13 +114,13 @@ export class LogicPayload {
     example: '64b5f...',
     description: 'The Flow ID this logic belongs to',
   })
-  flowId: string;
+  flowId!: string;
 
   @ApiProperty({
     example: { flows: [[{ id: 'node-1', cmd: 18 }]] },
     description: 'The compiled logic program graph',
   })
-  program: CommandExtraction;
+  program!: CommandExtraction;
 }
 
 export class UiPayload {
@@ -128,11 +128,11 @@ export class UiPayload {
     example: '64b5f...',
     description: 'The Flow ID this UI belongs to',
   })
-  flowId: string;
+  flowId!: string;
 
   @ApiProperty({
     example: [{ type: 'button', label: 'Turn On', action: 'turn_on' }],
     description: 'Array of UI elements',
   })
-  uiItems: UiItem[];
+  uiItems!: UiItem[];
 }

@@ -12,7 +12,7 @@ import { basename, extname, resolve, sep } from 'path';
 import { Firmware, FirmwareDocument } from './schemas/firmware.schema';
 import { FIRMWARE_UPLOAD_DIR } from './firmware.constants';
 
-type UploadedFirmwareFile = {
+export type UploadedFirmwareFile = {
   path: string;
   filename: string;
   originalname: string;
@@ -86,7 +86,14 @@ export class FirmwareService {
     }
   }
 
-  async checkForUpdate(currentVersion: string | undefined, request: any) {
+  async checkForUpdate(
+    currentVersion: string | undefined,
+    request: {
+      headers: Record<string, string | string[] | undefined>;
+      protocol?: string;
+      get?: (headerName: string) => string | undefined;
+    }
+  ) {
     const latestFirmware = await this.getLatestFirmware();
 
     if (!latestFirmware) {
@@ -200,13 +207,18 @@ export class FirmwareService {
     return this.firmwareModel.findOne().sort({ createdAt: -1 }).exec();
   }
 
-  private buildDownloadUrl(request: any): string {
-    const forwardedProto = request.headers?.['x-forwarded-proto'];
-    const protocol =
+  private buildDownloadUrl(request: {
+    headers: Record<string, string | string[] | undefined>;
+    protocol?: string;
+    get?: (headerName: string) => string | undefined;
+  }): string {
+    const forwardedProto = request.headers['x-forwarded-proto'];
+    const protocol: string | undefined =
       typeof forwardedProto === 'string'
         ? forwardedProto.split(',')[0]
         : request.protocol;
-    const host = request.get?.('host') ?? request.headers?.host;
+    const hostValue = request.get?.('host') ?? request.headers.host;
+    const host = typeof hostValue === 'string' ? hostValue : undefined;
 
     if (!protocol || !host) {
       return '/firmware/device/download';

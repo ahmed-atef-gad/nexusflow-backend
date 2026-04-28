@@ -150,7 +150,10 @@ export class FlowTemplatesController {
   @UseGuards(AuthGuard, RolesGuard)
   @ApiCookieAuth('jwt')
   @Roles(Role.Admin)
-  @ApiOperation({ summary: 'Create flow template (Admin)' })
+  @ApiOperation({
+    summary: 'Create flow template (Admin)',
+    description: 'Admin only: accessible by Admin or Owner.',
+  })
   @ApiBody({
     type: CreateFlowTemplateDto,
     description: 'Flow template payload example',
@@ -212,7 +215,10 @@ export class FlowTemplatesController {
   @UseGuards(AuthGuard, RolesGuard)
   @ApiCookieAuth('jwt')
   @Roles(Role.Admin)
-  @ApiOperation({ summary: 'Update flow template (Admin)' })
+  @ApiOperation({
+    summary: 'Update flow template (Admin)',
+    description: 'Admin only: accessible by Admin or Owner.',
+  })
   @ApiBody({
     type: UpdateFlowTemplateDto,
     description: 'Flow template payload example',
@@ -238,7 +244,10 @@ export class FlowTemplatesController {
   @UseGuards(AuthGuard, RolesGuard)
   @ApiCookieAuth('jwt')
   @Roles(Role.Admin)
-  @ApiOperation({ summary: 'Delete flow template (Admin)' })
+  @ApiOperation({
+    summary: 'Delete flow template (Admin)',
+    description: 'Admin only: accessible by Admin or Owner.',
+  })
   @ApiOkResponse({ description: 'Template deleted successfully' })
   @ApiBadRequestResponse({ description: 'Invalid id format' })
   @ApiNotFoundResponse({ description: 'Template not found' })

@@ -1,37 +1,42 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { HydratedDocument } from 'mongoose';
 
-export type NotificationPreferenceDocument = NotificationPreference & Document;
+export type NotificationPreferenceDocument =
+  HydratedDocument<NotificationPreference>;
 
 @Schema({ _id: false })
 export class SensorNotificationPreference {
   @Prop({ required: true })
-  sensorType: string;
+  sensorType!: string;
 
   @Prop({ required: true, default: true })
-  enabled: boolean;
+  enabled!: boolean;
 
   @Prop()
   threshold?: number;
 }
 
 const SensorNotificationPreferenceSchema = SchemaFactory.createForClass(
-  SensorNotificationPreference,
+  SensorNotificationPreference
 );
 
 @Schema({ collection: 'notification_preferences', timestamps: true })
 export class NotificationPreference {
   @Prop({ required: true, index: true })
-  projectId: string;
+  projectId!: string;
 
   @Prop({ required: true, index: true })
-  userId: string;
+  userId!: string;
 
   @Prop({ type: [SensorNotificationPreferenceSchema], default: [] })
-  sensors: SensorNotificationPreference[];
+  sensors!: SensorNotificationPreference[];
 }
 
-export const NotificationPreferenceSchema =
-  SchemaFactory.createForClass(NotificationPreference);
+export const NotificationPreferenceSchema = SchemaFactory.createForClass(
+  NotificationPreference
+);
 
-NotificationPreferenceSchema.index({ projectId: 1, userId: 1 }, { unique: true });
+NotificationPreferenceSchema.index(
+  { projectId: 1, userId: 1 },
+  { unique: true }
+);

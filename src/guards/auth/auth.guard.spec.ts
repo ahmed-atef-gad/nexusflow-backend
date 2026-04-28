@@ -6,11 +6,7 @@ import { UsersService } from 'src/users/users.service';
 describe('AuthGuard', () => {
   it('should be defined', () => {
     expect(
-      new AuthGuard(
-        {} as JwtService,
-        {} as ConfigService,
-        {} as UsersService
-      )
+      new AuthGuard({} as JwtService, {} as ConfigService, {} as UsersService)
     ).toBeDefined();
   });
 });

@@ -7,7 +7,10 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { getUserIdFromRequest, type AuthenticatedRequest } from 'src/auth/utils/auth.util';
+import {
+  getUserIdFromRequest,
+  type AuthenticatedRequest,
+} from 'src/auth/utils/auth.util';
 import { AuthGuard } from 'src/guards/auth/auth.guard';
 import { RegisterNotificationDeviceDto } from './dto/register-notification-device.dto';
 import { NotificationsService } from './notifications.service';
@@ -49,7 +52,7 @@ export class NotificationsController {
   @Post('register')
   async registerDevice(
     @Req() req: AuthenticatedRequest,
-    @Body() body: RegisterNotificationDeviceDto,
+    @Body() body: RegisterNotificationDeviceDto
   ) {
     const userId = getUserIdFromRequest(req);
     return this.notificationsService.registerDeviceToken(userId, body);

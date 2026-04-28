@@ -206,7 +206,11 @@ export class FlowTemplatesService {
     return { message: 'Flow template deleted successfully' };
   }
 
-  async forkToFlow(templateId: string, userId: string, customFlowName?: string) {
+  async forkToFlow(
+    templateId: string,
+    userId: string,
+    customFlowName?: string
+  ) {
     const template = await this.findOne(templateId);
 
     const flowName =
@@ -216,13 +220,12 @@ export class FlowTemplatesService {
 
     const payload: Flow = {
       name: flowName,
-      userId: userId as any,
-      nodes: JSON.parse(JSON.stringify(template.nodes ?? [])),
-      edges: JSON.parse(JSON.stringify(template.edges ?? [])),
+      userId: userId as unknown as Flow['userId'],
+      nodes: JSON.parse(JSON.stringify(template.nodes ?? [])) as Flow['nodes'],
+      edges: JSON.parse(JSON.stringify(template.edges ?? [])) as Flow['edges'],
       viewport: template.viewport ?? { x: 0, y: 0, zoom: 1 },
     };
 
     return this.flowsService.create(payload, userId);
   }
 }
-

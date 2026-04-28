@@ -28,7 +28,9 @@ describe('validateFunctionNodeCode', () => {
   });
 
   it('rejects unknown identifiers', () => {
-    const error = validateFunctionNodeCode('msg.payload = secret + 1; return msg;');
+    const error = validateFunctionNodeCode(
+      'msg.payload = secret + 1; return msg;'
+    );
     expect(error).toBe("'secret' is not defined");
   });
 

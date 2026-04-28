@@ -35,7 +35,10 @@ import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
 export class LogicController {
   constructor(private readonly logicService: LogicService) {}
 
-  @ApiOperation({ summary: 'Create a Logic document manually' })
+  @ApiOperation({
+    summary: 'Create a Logic document manually',
+    description: 'Admin only: accessible by Admin or Owner.',
+  })
   @ApiBody({ type: LogicPayload })
   @ApiResponse({ status: 201, description: 'Logic created', type: Logic })
   @Post()
@@ -43,7 +46,10 @@ export class LogicController {
     return this.logicService.create(body);
   }
 
-  @ApiOperation({ summary: 'Get all logic documents' })
+  @ApiOperation({
+    summary: 'Get all logic documents',
+    description: 'Admin only: accessible by Admin or Owner.',
+  })
   @ApiResponse({ status: 200 })
   @ApiQuery({
     name: 'page',
@@ -62,7 +68,10 @@ export class LogicController {
     return this.logicService.findAll(query);
   }
 
-  @ApiOperation({ summary: 'Get logic by ID' })
+  @ApiOperation({
+    summary: 'Get logic by ID',
+    description: 'Admin only: accessible by Admin or Owner.',
+  })
   @ApiParam({ name: 'id' })
   @ApiResponse({ status: 200, type: Logic })
   @Get(':id')
@@ -70,7 +79,10 @@ export class LogicController {
     return this.logicService.findOne(id);
   }
 
-  @ApiOperation({ summary: 'Get logic by Flow ID' })
+  @ApiOperation({
+    summary: 'Get logic by Flow ID',
+    description: 'Admin only: accessible by Admin or Owner.',
+  })
   @ApiParam({ name: 'flowId' })
   @ApiResponse({ status: 200, type: Logic })
   @Get('flow/:flowId')
@@ -78,7 +90,10 @@ export class LogicController {
     return this.logicService.findByFlowId(flowId);
   }
 
-  @ApiOperation({ summary: 'Update logic by ID' })
+  @ApiOperation({
+    summary: 'Update logic by ID',
+    description: 'Admin only: accessible by Admin or Owner.',
+  })
   @ApiParam({ name: 'id' })
   @ApiBody({ type: LogicPayload })
   @ApiResponse({ status: 200, type: Logic })
@@ -87,7 +102,10 @@ export class LogicController {
     return this.logicService.update(id, body);
   }
 
-  @ApiOperation({ summary: 'Delete logic by ID' })
+  @ApiOperation({
+    summary: 'Delete logic by ID',
+    description: 'Admin only: accessible by Admin or Owner.',
+  })
   @ApiParam({ name: 'id' })
   @ApiResponse({
     status: 200,

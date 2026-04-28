@@ -54,7 +54,8 @@ export class ModulesController {
   @Post()
   @ApiOperation({
     summary: 'Create module (Admin)',
-    description: 'Creates a new module entry in the catalog.',
+    description:
+      'Creates a new module entry in the catalog. Admin only: accessible by Admin or Owner.',
   })
   @ApiBody({ type: CreateModuleDto })
   @ApiResponse({
@@ -79,8 +80,12 @@ export class ModulesController {
     },
   })
   @ApiBadRequestResponse({ description: 'Invalid input data' })
-  @ApiInternalServerErrorResponse({ description: 'Server error while creating module' })
-  @ApiUnauthorizedResponse({ description: 'Unauthorized - Invalid or missing token' })
+  @ApiInternalServerErrorResponse({
+    description: 'Server error while creating module',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'Unauthorized - Invalid or missing token',
+  })
   @ApiForbiddenResponse({ description: 'Forbidden - Admin role required' })
   create(@Body() createModuleDto: CreateModuleDto) {
     return this.modulesService.create(createModuleDto);
@@ -94,7 +99,8 @@ export class ModulesController {
   @Get()
   @ApiOperation({
     summary: 'List modules (Admin)',
-    description: 'Returns all module entries in the catalog.',
+    description:
+      'Returns all module entries in the catalog. Admin only: accessible by Admin or Owner.',
   })
   @ApiOkResponse({
     description: 'List of all modules',
@@ -121,8 +127,12 @@ export class ModulesController {
     description: 'Items per page, max 100',
     example: '10',
   })
-  @ApiInternalServerErrorResponse({ description: 'Server error while fetching modules' })
-  @ApiUnauthorizedResponse({ description: 'Unauthorized - Invalid or missing token' })
+  @ApiInternalServerErrorResponse({
+    description: 'Server error while fetching modules',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'Unauthorized - Invalid or missing token',
+  })
   @ApiForbiddenResponse({ description: 'Forbidden - Admin role required' })
   findAll(@Query() query: PaginationQueryDto) {
     return this.modulesService.findAll(query);
@@ -136,7 +146,8 @@ export class ModulesController {
   @Get(':id')
   @ApiOperation({
     summary: 'Get module by ID (Admin)',
-    description: 'Fetches a module entry by MongoDB ID.',
+    description:
+      'Fetches a module entry by MongoDB ID. Admin only: accessible by Admin or Owner.',
   })
   @ApiParam({
     name: 'id',
@@ -163,7 +174,9 @@ export class ModulesController {
   })
   @ApiNotFoundResponse({ description: 'Module not found' })
   @ApiBadRequestResponse({ description: 'Invalid module ID format' })
-  @ApiUnauthorizedResponse({ description: 'Unauthorized - Invalid or missing token' })
+  @ApiUnauthorizedResponse({
+    description: 'Unauthorized - Invalid or missing token',
+  })
   @ApiForbiddenResponse({ description: 'Forbidden - Admin role required' })
   findOne(@Param('id') id: string) {
     return this.modulesService.findOne(id);
@@ -177,7 +190,8 @@ export class ModulesController {
   @Patch(':id')
   @ApiOperation({
     summary: 'Update module (Admin)',
-    description: 'Updates module fields by MongoDB ID.',
+    description:
+      'Updates module fields by MongoDB ID. Admin only: accessible by Admin or Owner.',
   })
   @ApiParam({
     name: 'id',
@@ -202,8 +216,12 @@ export class ModulesController {
   })
   @ApiNotFoundResponse({ description: 'Module not found' })
   @ApiBadRequestResponse({ description: 'Invalid update data or ID' })
-  @ApiInternalServerErrorResponse({ description: 'Server error while updating module' })
-  @ApiUnauthorizedResponse({ description: 'Unauthorized - Invalid or missing token' })
+  @ApiInternalServerErrorResponse({
+    description: 'Server error while updating module',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'Unauthorized - Invalid or missing token',
+  })
   @ApiForbiddenResponse({ description: 'Forbidden - Admin role required' })
   update(@Param('id') id: string, @Body() updateModuleDto: UpdateModuleDto) {
     return this.modulesService.update(id, updateModuleDto);
@@ -217,7 +235,8 @@ export class ModulesController {
   @Delete(':id')
   @ApiOperation({
     summary: 'Delete module (Admin)',
-    description: 'Deletes a module entry by MongoDB ID.',
+    description:
+      'Deletes a module entry by MongoDB ID. Admin only: accessible by Admin or Owner.',
   })
   @ApiParam({
     name: 'id',
@@ -235,7 +254,9 @@ export class ModulesController {
   })
   @ApiNotFoundResponse({ description: 'Module not found' })
   @ApiBadRequestResponse({ description: 'Invalid module ID format' })
-  @ApiUnauthorizedResponse({ description: 'Unauthorized - Invalid or missing token' })
+  @ApiUnauthorizedResponse({
+    description: 'Unauthorized - Invalid or missing token',
+  })
   @ApiForbiddenResponse({ description: 'Forbidden - Admin role required' })
   delete(@Param('id') id: string) {
     return this.modulesService.delete(id);

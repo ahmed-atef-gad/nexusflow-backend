@@ -1,24 +1,25 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { HydratedDocument } from 'mongoose';
 
-export type NotificationDeviceTokenDocument = NotificationDeviceToken & Document;
+export type NotificationDeviceTokenDocument = NotificationDeviceToken &
+  HydratedDocument<NotificationDeviceToken>;
 
 @Schema({ collection: 'device_tokens', timestamps: true })
 export class NotificationDeviceToken {
   @Prop({ required: true, index: true })
-  userId: string;
+  userId!: string;
 
   @Prop({ required: true, index: true })
-  deviceId: string;
+  deviceId!: string;
 
   @Prop({ required: true, enum: ['android', 'ios'] })
-  platform: 'android' | 'ios';
+  platform!: 'android' | 'ios';
 
   @Prop({ required: true, unique: true, index: true })
-  fcmToken: string;
+  fcmToken!: string;
 
   @Prop({ default: true, index: true })
-  isActive: boolean;
+  isActive!: boolean;
 
   @Prop()
   lastError?: string;
@@ -27,7 +28,7 @@ export class NotificationDeviceToken {
   invalidatedAt?: Date;
 
   @Prop({ required: true, default: Date.now })
-  lastSeenAt: Date;
+  lastSeenAt!: Date;
 
   @Prop()
   appVersion?: string;
@@ -40,7 +41,10 @@ export class NotificationDeviceToken {
 }
 
 export const NotificationDeviceTokenSchema = SchemaFactory.createForClass(
-  NotificationDeviceToken,
+  NotificationDeviceToken
 );
 
-NotificationDeviceTokenSchema.index({ userId: 1, deviceId: 1 }, { unique: true });
+NotificationDeviceTokenSchema.index(
+  { userId: 1, deviceId: 1 },
+  { unique: true }
+);

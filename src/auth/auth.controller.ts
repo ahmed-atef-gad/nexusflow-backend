@@ -22,8 +22,11 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { User } from 'src/users/schemas/user.schema';
 import type { Response, Request } from 'express';
+
+type RequestWithCookies = Request & {
+  cookies: Record<string, string | undefined>;
+};
 
 /**
  * Authentication endpoints for registration, login, profile retrieval, and logout.
@@ -138,10 +141,10 @@ export class AuthController {
     @Body() loginUserDto: LoginUserDto
   ) {
     // First, validate the user
-    const user = (await this.authService.validateUser(
+    const user = await this.authService.validateUser(
       loginUserDto.email,
       loginUserDto.password
-    )) as User;
+    );
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
     }
@@ -242,10 +245,11 @@ export class AuthController {
     },
   })
   async logout(
-    @Req() request: Request,
+    @Req() request: RequestWithCookies,
     @Res({ passthrough: true }) response: Response
   ) {
-    const token = request.cookies?.['jwt'];
+    const cookies = request.cookies as Record<string, string | undefined>;
+    const token = cookies.jwt;
     await this.authService.logout(token);
     response.clearCookie('jwt', {
       httpOnly: true,

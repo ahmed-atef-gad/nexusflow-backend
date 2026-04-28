@@ -8,5 +8,5 @@ export class UploadFirmwareDto {
   })
   @IsString()
   @IsNotEmpty()
-  version: string;
+  version!: string;
 }

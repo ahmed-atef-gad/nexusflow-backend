@@ -15,7 +15,7 @@ export class RegisterNotificationDeviceDto {
   @IsString()
   @IsNotEmpty()
   @Length(1, 200)
-  deviceId: string;
+  deviceId!: string;
 
   @ApiProperty({
     description: 'Mobile platform',
@@ -23,7 +23,7 @@ export class RegisterNotificationDeviceDto {
     example: 'android',
   })
   @IsEnum(['android', 'ios'])
-  platform: 'android' | 'ios';
+  platform!: 'android' | 'ios';
 
   @ApiProperty({
     description: 'Firebase Cloud Messaging token',
@@ -31,7 +31,7 @@ export class RegisterNotificationDeviceDto {
   })
   @IsString()
   @IsNotEmpty()
-  fcmToken: string;
+  fcmToken!: string;
 
   @ApiPropertyOptional({
     description: 'Current app version on device',

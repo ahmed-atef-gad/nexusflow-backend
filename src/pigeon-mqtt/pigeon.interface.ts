@@ -13,7 +13,7 @@ export interface PigeonModuleOptions {
   tls?: PigeonTlsOptions;
   ws?: PigeonWsOptions;
   wss?: PigeonWssOptions;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface PigeonWsOptions {
@@ -38,11 +38,15 @@ export interface PigeonTlsOptions {
   passphrase?: string;
 }
 
-export interface PigeonModuleAsyncOptions extends Pick<ModuleMetadata, 'imports'> {
+export interface PigeonModuleAsyncOptions
+  extends Pick<ModuleMetadata, 'imports'> {
   useExisting?: Type<PigeonOptionsFactory>;
   useClass?: Type<PigeonOptionsFactory>;
-  useFactory?: (...args: any[]) => Promise<PigeonModuleOptions> | PigeonModuleOptions;
-  inject?: any[];
+  useFactory?: (
+    ...args: any[]
+  ) => Promise<PigeonModuleOptions> | PigeonModuleOptions;
+  // allow any provider type to be injected (e.g., ConfigService)
+  inject?: Array<Type<unknown> | string | symbol>;
 }
 
 export interface PigeonOptionsFactory {
@@ -64,4 +68,11 @@ export interface MqttSubscriberParameter {
 
 export type MqttMessageTransformer<T> = (payload: Buffer) => T;
 
-export type PubPacket = any; 
+export type PubPacket = Record<string, unknown>;
+
+export interface PigeonBroker {
+  handle: (...args: unknown[]) => void;
+  publish: (packet: PubPacket, callback: (error?: unknown) => void) => void;
+  close: (callback?: () => void) => void;
+  on: (event: string | RegExp, listener: (...args: unknown[]) => void) => void;
+}

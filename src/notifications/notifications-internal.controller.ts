@@ -25,7 +25,7 @@ export class NotificationsInternalController {
 
   constructor(
     private readonly notificationsService: NotificationsService,
-    private readonly configService: ConfigService,
+    private readonly configService: ConfigService
   ) {}
 
   @ApiOperation({
@@ -49,19 +49,21 @@ export class NotificationsInternalController {
   @Post('trigger')
   async triggerAlert(
     @Headers('x-internal-key') internalKey: string | undefined,
-    @Body() body: TriggerAlertDto,
+    @Body() body: TriggerAlertDto
   ) {
     this.assertInternalKey(internalKey);
     return this.notificationsService.triggerAlert(body);
   }
 
   private assertInternalKey(incomingKey?: string): void {
-    const expectedKey = this.configService.get<string>('INTERNAL_ALERTS_API_KEY');
+    const expectedKey = this.configService.get<string>(
+      'INTERNAL_ALERTS_API_KEY'
+    );
     if (!expectedKey) {
       if (!this.hasLoggedMissingInternalKeyWarning) {
         this.hasLoggedMissingInternalKeyWarning = true;
         this.logger.warn(
-          'INTERNAL_ALERTS_API_KEY is not set. Internal alerts endpoint is currently unprotected.',
+          'INTERNAL_ALERTS_API_KEY is not set. Internal alerts endpoint is currently unprotected.'
         );
       }
       return;

@@ -1,9 +1,9 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document, Types } from 'mongoose';
+import { HydratedDocument, Types } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 
 // Type definition for Device document with Mongoose Document
-export type DeviceDocument = Device & Document;
+export type DeviceDocument = HydratedDocument<Device>;
 
 // Device schema with automatic timestamps (createdAt, updatedAt)
 @Schema({ timestamps: true })

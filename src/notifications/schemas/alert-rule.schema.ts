@@ -6,7 +6,7 @@ export type AlertRuleDocument = AlertRule & Document;
 @Schema({ _id: false })
 export class AlertRuleAction {
   @Prop({ required: true, enum: ['device_action', 'send_push'] })
-  type: 'device_action' | 'send_push';
+  type!: 'device_action' | 'send_push';
 
   @Prop()
   topic?: string;
@@ -23,28 +23,28 @@ const AlertRuleActionSchema = SchemaFactory.createForClass(AlertRuleAction);
 @Schema({ collection: 'alert_rules', timestamps: true })
 export class AlertRule {
   @Prop({ required: true, index: true })
-  projectId: string;
+  projectId!: string;
 
   @Prop({ required: true, index: true })
-  userId: string;
+  userId!: string;
 
   @Prop({ required: true, index: true })
-  sensorType: string;
+  sensorType!: string;
 
   @Prop({ required: true, enum: ['>', '<', '>=', '<=', '==', '!='] })
-  operator: '>' | '<' | '>=' | '<=' | '==' | '!=';
+  operator!: '>' | '<' | '>=' | '<=' | '==' | '!=';
 
   @Prop({ required: true })
-  threshold: number;
+  threshold!: number;
 
   @Prop({ required: true, default: true, index: true })
-  enabled: boolean;
+  enabled!: boolean;
 
   @Prop({ required: true, enum: ['critical', 'warning', 'info'] })
-  severity: 'critical' | 'warning' | 'info';
+  severity!: 'critical' | 'warning' | 'info';
 
   @Prop({ type: [AlertRuleActionSchema], default: [] })
-  actions: AlertRuleAction[];
+  actions!: AlertRuleAction[];
 
   createdAt?: Date;
   updatedAt?: Date;

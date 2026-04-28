@@ -212,7 +212,7 @@ export class FlowsController {
     @Request() req: AuthenticatedRequest
   ): Promise<Flow> {
     const userId = getUserIdFromRequest(req);
-    return (await this.flowsService.findOne(id, userId)) as Flow;
+    return await this.flowsService.findOne(id, userId);
   }
 
   @ApiOperation({ summary: 'Update a flow' })
