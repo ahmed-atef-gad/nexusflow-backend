@@ -3,7 +3,9 @@ import {
   ForbiddenException,
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { ConfigService } from '@nestjs/config';
@@ -100,13 +102,31 @@ type RuleOutput = {
   updatedAt?: Date;
 };
 
-const SIMPLE_OPERATORS: AlertRuleOperator[] = ['>', '<', '>=', '<='];
+type PolicyOutput = {
+  id: string;
+  moduleId: string;
+  readingKey: string;
+  label: string;
+  required: boolean;
+  thresholdRequired: boolean;
+  defaultEnabled: boolean;
+  defaultSeverity: AlertSeverity;
+  defaultOperator: AlertRuleOperator;
+  defaultThreshold: number | null;
+  defaultMin: number | null;
+  defaultMax: number | null;
+  supportedOperators: AlertComparisonOperator[];
+  isActive: boolean;
+};
+
+const SIMPLE_OPERATORS: AlertRuleOperator[] = ['>', '<', '>=', '<=', '='];
 const RANGE_OPERATORS: AlertRuleOperator[] = ['between', 'outside'];
 const ALL_OPERATORS = new Set<AlertRuleOperator>([
   '>',
   '<',
   '>=',
   '<=',
+  '=',
   'between',
   'outside',
 ]);
@@ -121,8 +141,220 @@ const MODULE_READING_KEYS: Record<string, string[]> = {
   'Ultrasonic-Sensor': ['distance_cm'],
 };
 
+type BaselinePolicyInput = {
+  moduleId: string;
+  readingKey: string;
+  label: string;
+  required: boolean;
+  thresholdRequired: boolean;
+  defaultEnabled: boolean;
+  defaultSeverity: AlertSeverity;
+  defaultOperator: AlertRuleOperator;
+  defaultThreshold: number | null;
+  defaultMin: number | null;
+  defaultMax: number | null;
+  supportedOperators: AlertComparisonOperator[];
+  isActive: boolean;
+};
+
+const SIMPLE_AND_RANGE_OPERATORS: AlertComparisonOperator[] = [
+  '>',
+  '<',
+  '>=',
+  '<=',
+  '=',
+  'between',
+  'outside',
+];
+
+const EQUALS_ONLY_OPERATOR: AlertComparisonOperator[] = ['='];
+
+const BASELINE_ALERT_POLICIES: BaselinePolicyInput[] = [
+  {
+    moduleId: 'MQ2-Sensor',
+    readingKey: 'analog',
+    label: 'MQ2 Gas Level (Analog)',
+    required: true,
+    thresholdRequired: true,
+    defaultEnabled: true,
+    defaultSeverity: 'critical',
+    defaultOperator: '>',
+    defaultThreshold: 300,
+    defaultMin: null,
+    defaultMax: null,
+    supportedOperators: SIMPLE_AND_RANGE_OPERATORS,
+    isActive: true,
+  },
+  {
+    moduleId: 'MQ2-Sensor',
+    readingKey: 'digital',
+    label: 'MQ2 Gas Detected (Digital)',
+    required: false,
+    thresholdRequired: true,
+    defaultEnabled: true,
+    defaultSeverity: 'critical',
+    defaultOperator: '=',
+    defaultThreshold: 1,
+    defaultMin: null,
+    defaultMax: null,
+    supportedOperators: EQUALS_ONLY_OPERATOR,
+    isActive: true,
+  },
+  {
+    moduleId: 'DHT-Sensor-11',
+    readingKey: 'temperature',
+    label: 'Temperature (DHT11)',
+    required: false,
+    thresholdRequired: true,
+    defaultEnabled: true,
+    defaultSeverity: 'warning',
+    defaultOperator: 'outside',
+    defaultThreshold: null,
+    defaultMin: 15,
+    defaultMax: 35,
+    supportedOperators: SIMPLE_AND_RANGE_OPERATORS,
+    isActive: true,
+  },
+  {
+    moduleId: 'DHT-Sensor-11',
+    readingKey: 'humidity',
+    label: 'Humidity (DHT11)',
+    required: false,
+    thresholdRequired: true,
+    defaultEnabled: true,
+    defaultSeverity: 'warning',
+    defaultOperator: 'outside',
+    defaultThreshold: null,
+    defaultMin: 30,
+    defaultMax: 80,
+    supportedOperators: SIMPLE_AND_RANGE_OPERATORS,
+    isActive: true,
+  },
+  {
+    moduleId: 'DHT-Sensor-22',
+    readingKey: 'temperature',
+    label: 'Temperature (DHT22)',
+    required: false,
+    thresholdRequired: true,
+    defaultEnabled: true,
+    defaultSeverity: 'warning',
+    defaultOperator: 'outside',
+    defaultThreshold: null,
+    defaultMin: 15,
+    defaultMax: 35,
+    supportedOperators: SIMPLE_AND_RANGE_OPERATORS,
+    isActive: true,
+  },
+  {
+    moduleId: 'DHT-Sensor-22',
+    readingKey: 'humidity',
+    label: 'Humidity (DHT22)',
+    required: false,
+    thresholdRequired: true,
+    defaultEnabled: true,
+    defaultSeverity: 'warning',
+    defaultOperator: 'outside',
+    defaultThreshold: null,
+    defaultMin: 30,
+    defaultMax: 80,
+    supportedOperators: SIMPLE_AND_RANGE_OPERATORS,
+    isActive: true,
+  },
+  {
+    moduleId: 'PIR-Sensor',
+    readingKey: 'motion',
+    label: 'Motion Detected',
+    required: false,
+    thresholdRequired: true,
+    defaultEnabled: true,
+    defaultSeverity: 'warning',
+    defaultOperator: '=',
+    defaultThreshold: 1,
+    defaultMin: null,
+    defaultMax: null,
+    supportedOperators: EQUALS_ONLY_OPERATOR,
+    isActive: true,
+  },
+  {
+    moduleId: 'Rain-Sensor',
+    readingKey: 'analog',
+    label: 'Rain Intensity (Analog)',
+    required: false,
+    thresholdRequired: true,
+    defaultEnabled: true,
+    defaultSeverity: 'warning',
+    defaultOperator: '>',
+    defaultThreshold: 1500,
+    defaultMin: null,
+    defaultMax: null,
+    supportedOperators: SIMPLE_AND_RANGE_OPERATORS,
+    isActive: true,
+  },
+  {
+    moduleId: 'Rain-Sensor',
+    readingKey: 'digital',
+    label: 'Rain Detected (Digital)',
+    required: false,
+    thresholdRequired: true,
+    defaultEnabled: true,
+    defaultSeverity: 'warning',
+    defaultOperator: '=',
+    defaultThreshold: 1,
+    defaultMin: null,
+    defaultMax: null,
+    supportedOperators: EQUALS_ONLY_OPERATOR,
+    isActive: true,
+  },
+  {
+    moduleId: 'Soil-Sensor',
+    readingKey: 'analog',
+    label: 'Soil Moisture (Analog)',
+    required: false,
+    thresholdRequired: true,
+    defaultEnabled: true,
+    defaultSeverity: 'warning',
+    defaultOperator: '>',
+    defaultThreshold: 2500,
+    defaultMin: null,
+    defaultMax: null,
+    supportedOperators: SIMPLE_AND_RANGE_OPERATORS,
+    isActive: true,
+  },
+  {
+    moduleId: 'Soil-Sensor',
+    readingKey: 'digital',
+    label: 'Soil Dry Detected (Digital)',
+    required: false,
+    thresholdRequired: true,
+    defaultEnabled: true,
+    defaultSeverity: 'warning',
+    defaultOperator: '=',
+    defaultThreshold: 1,
+    defaultMin: null,
+    defaultMax: null,
+    supportedOperators: EQUALS_ONLY_OPERATOR,
+    isActive: true,
+  },
+  {
+    moduleId: 'Ultrasonic-Sensor',
+    readingKey: 'distance_cm',
+    label: 'Distance (cm)',
+    required: false,
+    thresholdRequired: true,
+    defaultEnabled: true,
+    defaultSeverity: 'warning',
+    defaultOperator: 'outside',
+    defaultThreshold: null,
+    defaultMin: 2,
+    defaultMax: 400,
+    supportedOperators: SIMPLE_AND_RANGE_OPERATORS,
+    isActive: true,
+  },
+];
+
 @Injectable()
-export class NotificationsService {
+export class NotificationsService implements OnModuleInit {
+  private readonly logger = new Logger(NotificationsService.name);
   private firebaseApp?: App;
   private messagingClient?: Messaging;
   private readonly deadTokenErrorCodes = new Set([
@@ -152,6 +384,10 @@ export class NotificationsService {
       'ALERT_RULE_COOLDOWN_MS',
       60000
     );
+  }
+
+  async onModuleInit(): Promise<void> {
+    await this.ensureBaselinePolicies();
   }
 
   async registerDeviceToken(
@@ -212,19 +448,23 @@ export class NotificationsService {
     };
   }
 
+  async unregisterDeviceToken(
+    userId: string,
+    deviceId: string
+  ): Promise<boolean> {
+    const normalizedDeviceId = deviceId.trim();
+    if (!normalizedDeviceId) {
+      return false;
+    }
+
+    const deleted = await this.notificationDeviceTokenModel
+      .deleteOne({ userId, deviceId: normalizedDeviceId })
+      .exec();
+    return (deleted.deletedCount ?? 0) > 0;
+  }
+
   async getAlertPolicies(moduleId?: string): Promise<{
-    items: Array<{
-      id: string;
-      moduleId: string;
-      readingKey: string;
-      label: string;
-      required: boolean;
-      thresholdRequired: boolean;
-      defaultEnabled: boolean;
-      defaultSeverity: AlertSeverity;
-      supportedOperators: AlertComparisonOperator[];
-      isActive: boolean;
-    }>;
+    items: PolicyOutput[];
   }> {
     const filter: FilterQuery<AlertPolicyDocument> = { isActive: true };
     if (moduleId?.trim()) {
@@ -238,37 +478,13 @@ export class NotificationsService {
       .exec();
 
     return {
-      items: policies.map((policy) => ({
-        id: String(policy._id),
-        moduleId: policy.moduleId,
-        readingKey: policy.readingKey,
-        label: policy.label,
-        required: policy.required,
-        thresholdRequired: policy.thresholdRequired,
-        defaultEnabled: policy.defaultEnabled,
-        defaultSeverity: policy.defaultSeverity,
-        supportedOperators: this.normalizeSupportedOperators(
-          policy.supportedOperators
-        ),
-        isActive: policy.isActive,
-      })),
+      items: policies.map((policy) => this.mapPolicy(policy)),
     };
   }
 
   async upsertAlertPolicies(dto: UpsertAlertPoliciesDto): Promise<{
     upserted: number;
-    items: Array<{
-      id: string;
-      moduleId: string;
-      readingKey: string;
-      label: string;
-      required: boolean;
-      thresholdRequired: boolean;
-      defaultEnabled: boolean;
-      defaultSeverity: AlertSeverity;
-      supportedOperators: AlertComparisonOperator[];
-      isActive: boolean;
-    }>;
+    items: PolicyOutput[];
   }> {
     const normalized = this.deduplicatePolicies(dto.policies ?? []);
     if (!normalized.length) {
@@ -290,6 +506,10 @@ export class NotificationsService {
             thresholdRequired: policy.thresholdRequired,
             defaultEnabled: policy.defaultEnabled,
             defaultSeverity: policy.defaultSeverity,
+            defaultOperator: policy.defaultOperator,
+            defaultThreshold: policy.defaultThreshold ?? null,
+            defaultMin: policy.defaultMin ?? null,
+            defaultMax: policy.defaultMax ?? null,
             supportedOperators: this.normalizeSupportedOperators(
               policy.supportedOperators
             ),
@@ -315,20 +535,7 @@ export class NotificationsService {
 
     return {
       upserted: (result.upsertedCount ?? 0) + (result.modifiedCount ?? 0),
-      items: items.map((policy) => ({
-        id: String(policy._id),
-        moduleId: policy.moduleId,
-        readingKey: policy.readingKey,
-        label: policy.label,
-        required: policy.required,
-        thresholdRequired: policy.thresholdRequired,
-        defaultEnabled: policy.defaultEnabled,
-        defaultSeverity: policy.defaultSeverity,
-        supportedOperators: this.normalizeSupportedOperators(
-          policy.supportedOperators
-        ),
-        isActive: policy.isActive,
-      })),
+      items: items.map((policy) => this.mapPolicy(policy)),
     };
   }
 
@@ -573,6 +780,7 @@ export class NotificationsService {
       existing.moduleId,
       existing.readingKey
     );
+    // `required` controls persistence (delete protection), not runtime firing.
     if (policy?.required) {
       throw new ForbiddenException(
         'This alert rule is required by policy and cannot be deleted.'
@@ -705,9 +913,7 @@ export class NotificationsService {
       .lean()
       .exec();
 
-    const notificationsEnabled = preference
-      ? preference.notificationsEnabled
-      : true;
+    const notificationsEnabled = this.resolvePreferenceEnabled(preference);
     if (!notificationsEnabled) {
       return {
         triggered: false,
@@ -754,9 +960,7 @@ export class NotificationsService {
       .findOne({ flowId: input.flowId, userId: flowOwnerId })
       .lean()
       .exec();
-    const notificationsEnabled = preference
-      ? preference.notificationsEnabled
-      : true;
+    const notificationsEnabled = this.resolvePreferenceEnabled(preference);
     if (!notificationsEnabled) {
       return { evaluatedRules: 0, triggeredRules: 0 };
     }
@@ -881,19 +1085,19 @@ export class NotificationsService {
           continue;
         }
 
-        const operator = this.pickDefaultOperator(policy.supportedOperators);
+        const policyDefaults = this.resolvePolicyDefaults(policy);
         toInsert.push({
           flowId: params.flowId,
           userId: params.userId,
           nodeId: node.nodeId,
           moduleId: node.moduleId,
           readingKey,
-          operator,
-          threshold: null,
-          min: null,
-          max: null,
+          operator: policyDefaults.operator,
+          threshold: policyDefaults.threshold,
+          min: policyDefaults.min,
+          max: policyDefaults.max,
           severity: policy.defaultSeverity,
-          enabled: false,
+          enabled: policy.defaultEnabled && policyDefaults.isValidCondition,
           actions: defaultActions(policy.label),
         });
       }
@@ -912,6 +1116,43 @@ export class NotificationsService {
     ]);
   }
 
+  private async ensureBaselinePolicies(): Promise<void> {
+    try {
+      const operations = BASELINE_ALERT_POLICIES.map((policy) => ({
+        updateOne: {
+          filter: {
+            moduleId: policy.moduleId.trim(),
+            readingKey: this.normalizeReadingKey(policy.readingKey),
+          },
+          update: {
+            $setOnInsert: {
+              moduleId: policy.moduleId.trim(),
+              readingKey: this.normalizeReadingKey(policy.readingKey),
+              label: policy.label.trim(),
+              required: policy.required,
+              thresholdRequired: policy.thresholdRequired,
+              defaultEnabled: policy.defaultEnabled,
+              defaultSeverity: policy.defaultSeverity,
+              defaultOperator: policy.defaultOperator,
+              defaultThreshold: policy.defaultThreshold,
+              defaultMin: policy.defaultMin,
+              defaultMax: policy.defaultMax,
+              supportedOperators: policy.supportedOperators,
+              isActive: policy.isActive,
+            },
+          },
+          upsert: true,
+        },
+      }));
+
+      await this.alertPolicyModel.bulkWrite(operations, { ordered: false });
+    } catch (error) {
+      this.logger.warn(
+        `Failed to ensure baseline alert policies: ${error instanceof Error ? error.message : 'unknown error'}`
+      );
+    }
+  }
+
   private async fireAlertFromRule(params: {
     flowId: string;
     rule: AlertRuleDocument | (AlertRule & { _id: unknown });
@@ -920,7 +1161,7 @@ export class NotificationsService {
     metadata?: Record<string, string | number | boolean>;
   }): Promise<{ historyId: string; pushSent: boolean }> {
     const rule = params.rule as AlertRule & { _id: unknown };
-    const ruleId = String(rule._id);
+    const ruleId = this.toObjectIdString(rule);
     const pushAction = this.extractPushAction(rule.actions);
     const pushPayload = this.extractPushPayload(pushAction?.payload);
     const title = pushPayload.title ?? this.buildDefaultRuleTitle(rule);
@@ -1200,6 +1441,8 @@ export class NotificationsService {
         return input.threshold !== null && input.value >= input.threshold;
       case '<=':
         return input.threshold !== null && input.value <= input.threshold;
+      case '=':
+        return input.threshold !== null && input.value === input.threshold;
       case 'between':
         return (
           input.min !== null &&
@@ -1301,7 +1544,7 @@ export class NotificationsService {
     operators: unknown
   ): AlertComparisonOperator[] {
     if (!Array.isArray(operators)) {
-      return ['>', '<', '>=', '<='];
+      return ['>', '<', '>=', '<=', '='];
     }
 
     const normalized = Array.from(
@@ -1316,12 +1559,13 @@ export class NotificationsService {
               operator === '<' ||
               operator === '>=' ||
               operator === '<=' ||
+              operator === '=' ||
               operator === 'between' ||
               operator === 'outside'
           )
       )
     );
-    return normalized.length ? normalized : ['>', '<', '>=', '<='];
+    return normalized.length ? normalized : ['>', '<', '>=', '<=', '='];
   }
 
   private deduplicatePolicies(
@@ -1346,9 +1590,17 @@ export class NotificationsService {
         supportedOperators: this.normalizeSupportedOperators(
           policy.supportedOperators
         ),
+        defaultOperator: (policy.defaultOperator as AlertRuleOperator) ?? '>',
+        defaultThreshold: this.normalizeNullableNumber(policy.defaultThreshold),
+        defaultMin: this.normalizeNullableNumber(policy.defaultMin),
+        defaultMax: this.normalizeNullableNumber(policy.defaultMax),
       });
     }
-    return Array.from(deduped.values());
+    const normalizedPolicies = Array.from(deduped.values());
+    normalizedPolicies.forEach((policy) =>
+      this.validatePolicyDefaultCondition(policy)
+    );
+    return normalizedPolicies;
   }
 
   private pickDefaultOperator(supportedOperators: unknown): AlertRuleOperator {
@@ -1357,6 +1609,175 @@ export class NotificationsService {
       SIMPLE_OPERATORS.includes(operator)
     );
     return (preferredSimple ?? normalized[0] ?? '>') as AlertRuleOperator;
+  }
+
+  private mapPolicy(
+    policy: Partial<AlertPolicy> & { _id?: unknown }
+  ): PolicyOutput {
+    const supportedOperators = this.normalizeSupportedOperators(
+      policy.supportedOperators
+    );
+    const fallbackOperator = this.pickDefaultOperator(supportedOperators);
+    const defaultOperator = this.normalizeDefaultOperator(
+      policy.defaultOperator,
+      supportedOperators,
+      fallbackOperator
+    );
+
+    const defaults = this.normalizeConditionByOperator({
+      operator: defaultOperator,
+      threshold: this.normalizeNullableNumber(policy.defaultThreshold),
+      min: this.normalizeNullableNumber(policy.defaultMin),
+      max: this.normalizeNullableNumber(policy.defaultMax),
+    });
+
+    return {
+      id: this.toObjectIdString(policy),
+      moduleId: String(policy.moduleId ?? ''),
+      readingKey: String(policy.readingKey ?? ''),
+      label: String(policy.label ?? ''),
+      required: Boolean(policy.required),
+      thresholdRequired: Boolean(policy.thresholdRequired),
+      defaultEnabled: Boolean(policy.defaultEnabled),
+      defaultSeverity: (policy.defaultSeverity as AlertSeverity) ?? 'warning',
+      defaultOperator,
+      defaultThreshold: defaults.threshold,
+      defaultMin: defaults.min,
+      defaultMax: defaults.max,
+      supportedOperators,
+      isActive: Boolean(policy.isActive),
+    };
+  }
+
+  private validatePolicyDefaultCondition(
+    policy: UpsertAlertPoliciesDto['policies'][number]
+  ): void {
+    const supportedOperators = this.normalizeSupportedOperators(
+      policy.supportedOperators
+    );
+    const normalizedDefaultOperator = String(
+      policy.defaultOperator ?? ''
+    ).trim();
+    if (
+      !ALL_OPERATORS.has(normalizedDefaultOperator as AlertRuleOperator) ||
+      !supportedOperators.includes(
+        normalizedDefaultOperator as AlertComparisonOperator
+      )
+    ) {
+      throw new BadRequestException(
+        `defaultOperator "${policy.defaultOperator}" must be one of supportedOperators for ${policy.moduleId}:${policy.readingKey}.`
+      );
+    }
+
+    this.validateRuleCondition({
+      operator: normalizedDefaultOperator as AlertRuleOperator,
+      threshold: this.normalizeNullableNumber(policy.defaultThreshold),
+      min: this.normalizeNullableNumber(policy.defaultMin),
+      max: this.normalizeNullableNumber(policy.defaultMax),
+    });
+  }
+
+  private resolvePolicyDefaults(policy: Partial<AlertPolicy>): {
+    operator: AlertRuleOperator;
+    threshold: number | null;
+    min: number | null;
+    max: number | null;
+    isValidCondition: boolean;
+  } {
+    const supportedOperators = this.normalizeSupportedOperators(
+      policy.supportedOperators
+    );
+    const fallbackOperator = this.pickDefaultOperator(supportedOperators);
+    const operator = this.normalizeDefaultOperator(
+      policy.defaultOperator,
+      supportedOperators,
+      fallbackOperator
+    );
+    const normalizedCondition = this.normalizeConditionByOperator({
+      operator,
+      threshold: this.normalizeNullableNumber(policy.defaultThreshold),
+      min: this.normalizeNullableNumber(policy.defaultMin),
+      max: this.normalizeNullableNumber(policy.defaultMax),
+    });
+
+    const isValidCondition =
+      SIMPLE_OPERATORS.includes(operator) &&
+      normalizedCondition.threshold !== null
+        ? true
+        : RANGE_OPERATORS.includes(operator) &&
+          normalizedCondition.min !== null &&
+          normalizedCondition.max !== null &&
+          normalizedCondition.min < normalizedCondition.max;
+
+    return {
+      operator,
+      threshold: normalizedCondition.threshold,
+      min: normalizedCondition.min,
+      max: normalizedCondition.max,
+      isValidCondition,
+    };
+  }
+
+  private normalizeDefaultOperator(
+    operator: unknown,
+    supportedOperators: AlertComparisonOperator[],
+    fallback: AlertRuleOperator
+  ): AlertRuleOperator {
+    if (typeof operator !== 'string') {
+      return fallback;
+    }
+    const normalized = operator.trim() as AlertRuleOperator;
+    if (
+      ALL_OPERATORS.has(normalized) &&
+      supportedOperators.includes(normalized as AlertComparisonOperator)
+    ) {
+      return normalized;
+    }
+    return fallback;
+  }
+
+  private normalizeConditionByOperator(input: {
+    operator: AlertRuleOperator;
+    threshold: number | null;
+    min: number | null;
+    max: number | null;
+  }): { threshold: number | null; min: number | null; max: number | null } {
+    if (SIMPLE_OPERATORS.includes(input.operator)) {
+      return {
+        threshold: input.threshold,
+        min: null,
+        max: null,
+      };
+    }
+
+    return {
+      threshold: null,
+      min: input.min,
+      max: input.max,
+    };
+  }
+
+  private normalizeNullableNumber(value: unknown): number | null {
+    if (value === null || value === undefined) {
+      return null;
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === 'string' && value.trim()) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+    return null;
+  }
+
+  private resolvePreferenceEnabled(
+    preference: Pick<NotificationPreference, 'notificationsEnabled'> | null
+  ): boolean {
+    // Missing preference document means opt-in by default.
+    return preference ? preference.notificationsEnabled : true;
   }
 
   private async getFlowOwnerId(flowId: string): Promise<string | null> {

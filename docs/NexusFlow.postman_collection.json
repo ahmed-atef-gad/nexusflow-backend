@@ -178,12 +178,26 @@
             "method": "POST",
             "header": [
               {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
                 "key": "Cookie",
                 "value": "jwt={{jwt}}",
                 "type": "text"
               }
             ],
-            "url": "{{baseUrl}}/auth/logout"
+            "url": "{{baseUrl}}/auth/logout",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceId\": \"mobile-device-001\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           },
           "response": []
         }
@@ -1596,7 +1610,7 @@
             "url": "{{baseUrl}}/v1/alert-policies",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"policies\": [\n    {\n      \"moduleId\": \"MQ2-Sensor\",\n      \"readingKey\": \"analog\",\n      \"label\": \"MQ2 Gas Level (Analog)\",\n      \"required\": true,\n      \"thresholdRequired\": true,\n      \"defaultEnabled\": true,\n      \"defaultSeverity\": \"critical\",\n      \"supportedOperators\": [\">\", \"<\", \">=\", \"<=\", \"between\", \"outside\"],\n      \"isActive\": true\n    }\n  ]\n}",
+              "raw": "{\n  \"policies\": [\n    {\n      \"moduleId\": \"MQ2-Sensor\",\n      \"readingKey\": \"analog\",\n      \"label\": \"MQ2 Gas Level (Analog)\",\n      \"required\": true,\n      \"thresholdRequired\": true,\n      \"defaultEnabled\": true,\n      \"defaultSeverity\": \"critical\",\n      \"defaultOperator\": \">\",\n      \"defaultThreshold\": 300,\n      \"defaultMin\": null,\n      \"defaultMax\": null,\n      \"supportedOperators\": [\">\", \"<\", \">=\", \"<=\", \"=\", \"between\", \"outside\"],\n      \"isActive\": true\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"

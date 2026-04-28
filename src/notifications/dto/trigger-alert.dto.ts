@@ -43,11 +43,11 @@ export class TriggerAlertDto {
   readingKey!: string;
 
   @ApiProperty({
-    enum: ['>', '<', '>=', '<=', 'between', 'outside'],
+    enum: ['>', '<', '>=', '<=', '=', 'between', 'outside'],
     example: '>',
   })
-  @IsEnum(['>', '<', '>=', '<=', 'between', 'outside'])
-  operator!: '>' | '<' | '>=' | '<=' | 'between' | 'outside';
+  @IsEnum(['>', '<', '>=', '<=', '=', 'between', 'outside'])
+  operator!: '>' | '<' | '>=' | '<=' | '=' | 'between' | 'outside';
 
   @ApiProperty({ example: 430 })
   @Type(() => Number)

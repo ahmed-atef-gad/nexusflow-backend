@@ -14,7 +14,14 @@ import {
   ValidateNested,
 } from 'class-validator';
 
-export type AlertRuleOperator = '>' | '<' | '>=' | '<=' | 'between' | 'outside';
+export type AlertRuleOperator =
+  | '>'
+  | '<'
+  | '>='
+  | '<='
+  | '='
+  | 'between'
+  | 'outside';
 
 export class AlertRuleActionDto {
   @ApiProperty({
@@ -55,10 +62,10 @@ export class CreateAlertRuleDto {
   readingKey!: string;
 
   @ApiProperty({
-    enum: ['>', '<', '>=', '<=', 'between', 'outside'],
+    enum: ['>', '<', '>=', '<=', '=', 'between', 'outside'],
     example: '>',
   })
-  @IsEnum(['>', '<', '>=', '<=', 'between', 'outside'])
+  @IsEnum(['>', '<', '>=', '<=', '=', 'between', 'outside'])
   operator!: AlertRuleOperator;
 
   @ApiPropertyOptional({
