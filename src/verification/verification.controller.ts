@@ -1,5 +1,5 @@
-import { Body, Controller, Post, UseGuards } from '@nestjs/common';
-import { RateLimit, RateLimiterGuard } from 'nestjs-rate-limiter';
+import { Body, Controller, Post } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import {
   ApiBadRequestResponse,
   ApiBody,
@@ -25,14 +25,7 @@ export class VerificationController {
   })
   @ApiBody({ type: GenerateOtpDto })
   @Post('generate')
-  @UseGuards(RateLimiterGuard)
-  @RateLimit({
-    keyPrefix: 'verification-generate-otp',
-    points: 3,
-    duration: 60 * 60,
-    errorMessage:
-      'You can only request 3 OTPs per hour. Please try again later.',
-  })
+  @Throttle({ default: { limit: 3, ttl: 60 * 60 * 1000 } }) // 1 hour
   @ApiCreatedResponse({
     description: 'OTP generated and sent to the provided email',
   })
@@ -51,6 +44,7 @@ export class VerificationController {
   })
   @ApiBody({ type: VerifyOtpDto })
   @Post('verify')
+  @Throttle({ default: { limit: 5, ttl: 60 * 60 * 1000 } }) // 1 hour
   @ApiCreatedResponse({
     description: 'OTP verified and email marked as verified',
   })

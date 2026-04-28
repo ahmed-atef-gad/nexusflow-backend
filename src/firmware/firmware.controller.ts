@@ -14,7 +14,7 @@ import {
   UseInterceptors,
   UploadedFile,
 } from '@nestjs/common';
-import { RateLimit, RateLimiterGuard } from 'nestjs-rate-limiter';
+import { Throttle } from '@nestjs/throttler';
 import {
   ApiBody,
   ApiConsumes,
@@ -202,14 +202,7 @@ export class FirmwareController {
     status: 429,
     description: 'Too many download requests. Please try again later.',
   })
-  @UseGuards(RateLimiterGuard)
-  @RateLimit({
-    keyPrefix: 'firmware-download',
-    points: 3,
-    duration: 60 * 60,
-    errorMessage:
-      'You can only download firmware 3 times per hour. Please try again later.',
-  })
+  @Throttle({ default: { limit: 3, ttl: 60 * 1000 } })
   @Get('device/download')
   async downloadLatestFirmware(@Res() res: Response) {
     const firmware = await this.firmwareService.getLatestFirmwareOrThrow();

@@ -26,6 +26,23 @@ This service is not just a CRUD API. In the current architecture it is responsib
 - Jest + Supertest
 - Docker
 
+## Rate limiting
+
+This project uses `@nestjs/throttler` to protect sensitive endpoints (login, OTP, password-reset, firmware download, etc.). Notes for this repository:
+
+- Install: `npm i --save @nestjs/throttler` (already a dependency here).
+- Module config: `ThrottlerModule.forRoot([...])` is used in [src/app.module.ts](src/app.module.ts#L1-L240). The options are defined as an array of throttler sets and the repo uses TTL values in seconds (not milliseconds).
+- Global guard: the `ThrottlerGuard` is registered via the `APP_GUARD` provider in [src/app.module.ts](src/app.module.ts#L1-L240). Do not additionally call `app.useGlobalGuards(...)` in [src/main.ts](src/main.ts#L1-L120).
+- Per-route overrides: use the decorator form `@Throttle({ default: { limit: <n>, ttl: <seconds> } })` on controllers or routes. Examples exist in:
+  - [src/auth/auth.controller.ts](src/auth/auth.controller.ts#L1-L260)
+  - [src/verification/verification.controller.ts](src/verification/verification.controller.ts#L1-L200)
+- Skip certain routes with `@SkipThrottle()` when needed.
+- If running behind a proxy, enable `trust proxy` for the HTTP adapter and/or implement a custom tracker (see NestJS docs) so the guard can extract the real client IP from `X-Forwarded-For`.
+
+Tuning advice:
+- Use stricter limits for login attempts (e.g. 5 attempts / 60s) and OTP sends (e.g. 3 sends / 1h).
+- Add named throttlers when you need multiple layered rules (short/medium/long windows).
+
 ## Architecture Summary
 
 The application boots from [`src/main.ts`](src/main.ts) and composes feature modules in [`src/app.module.ts`](src/app.module.ts).

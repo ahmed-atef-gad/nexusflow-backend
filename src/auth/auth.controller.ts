@@ -6,6 +6,7 @@ import {
   Res,
   Req,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { RegisterUserDto } from './dto/register-user.dto';
 // We will create LocalAuthGuard soon. For login, we'll just use a basic DTO for now.
@@ -34,6 +35,7 @@ type RequestWithCookies = Request & {
  */
 @ApiTags('Authentication')
 @ApiCookieAuth('jwt')
+@Throttle({ default: { limit: 3, ttl: 60 * 1000 } }) // Apply a default rate limit to all auth routes
 @Controller('auth')
 export class AuthController {
   constructor(private authService: AuthService) {}
