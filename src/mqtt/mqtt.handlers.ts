@@ -206,6 +206,21 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     return this.normalizeMacAddress(segments[1]);
   }
 
+  private isVirtualEspSubscriptionTopic(topic: string): boolean {
+    const segments = topic.split('/').filter(Boolean);
+    if (segments.length < 3 || segments[0] !== 'esp') return false;
+    if (this.isMacAddress(segments[1])) return false;
+
+    return segments[2] === 'response';
+  }
+
+  private isVirtualEspResponseSubscriptionFilter(topic: string): boolean {
+    const segments = topic.split('/').filter(Boolean);
+    if (segments.length !== 3 || segments[0] !== 'esp') return false;
+    if (this.isMacAddress(segments[1])) return false;
+    return segments[2] === 'response' || segments[2] === '+';
+  }
+
   private isAuthorizedForDevicesTopic(
     clientMac: string,
     topic: string
@@ -542,6 +557,13 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     const topic = sub?.topic ?? '';
 
     if (
+      client?.isUserClient &&
+      this.isVirtualEspResponseSubscriptionFilter(topic)
+    ) {
+      return done(null, sub);
+    }
+
+    if (
       this.isEspTopic(topic) &&
       (topic.includes('#') || topic.includes('+'))
     ) {
@@ -627,6 +649,10 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     }
 
     if (this.isEspTopic(topic)) {
+      if (client?.isUserClient && this.isVirtualEspSubscriptionTopic(topic)) {
+        return done(null, sub);
+      }
+
       if (client?.isEsp) {
         const clientMac = client?.deviceMac;
         if (
@@ -732,6 +758,8 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     if (prefixedMatch) {
       return prefixedMatch[1] || null;
     }
+
+    return null;
   }
 
   private clampToByte(value: number): number {
@@ -923,7 +951,14 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
   }
 
   private normalizeMqttChannel(channel: unknown): string {
-    const normalized = String(channel ?? 'default')
+    const rawChannel =
+      typeof channel === 'string' ||
+      typeof channel === 'number' ||
+      typeof channel === 'boolean'
+        ? String(channel)
+        : 'default';
+
+    const normalized = rawChannel
       .trim()
       .replace(/[^a-zA-Z0-9_-]/g, '-')
       .replace(/-+/g, '-')
@@ -948,6 +983,10 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       params.targetFlowId,
       this.normalizeMqttChannel(params.channel),
     ].join('/');
+  }
+
+  private buildMqttInUiTopic(flowId: string, nodeId: string): string {
+    return `nexusflow/ui/mqtt-in/${flowId}/${nodeId}`;
   }
 
   private parseInternalMqttTopic(topic: string): {
@@ -1830,6 +1869,37 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
         `Skip MQTT In logic: no flows in logic program for flowId=${bridge.targetFlowId}`
       );
       return;
+    }
+
+    const matchedMqttInNodeIds = new Set<string>();
+    flows.forEach((flow) => {
+      const firstStep = Array.isArray(flow)
+        ? (flow[0] as RuntimeCommand | undefined)
+        : undefined;
+      if (
+        firstStep?.moduleId === 'mqtt-in' &&
+        firstStep.id &&
+        this.normalizeMqttChannel(firstStep.channel) === bridge.channel
+      ) {
+        matchedMqttInNodeIds.add(String(firstStep.id));
+      }
+    });
+
+    for (const nodeId of matchedMqttInNodeIds) {
+      await this.mqttService.publish(
+        this.buildMqttInUiTopic(bridge.targetFlowId, nodeId),
+        {
+          ...(rawPayload ?? {}),
+          _nexusflow: {
+            kind: 'mqtt-in',
+            sourceFlowId: bridge.sourceFlowId,
+            targetFlowId: bridge.targetFlowId,
+            sourceDeviceMac: bridge.sourceDeviceMac,
+            channel: bridge.channel,
+            timestamp: new Date().toISOString(),
+          },
+        }
+      );
     }
 
     const { matchedSteps, publishedCommands } =
