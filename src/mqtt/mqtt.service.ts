@@ -213,6 +213,15 @@ export class MqttService {
     return activeUsers.sort((a, b) => a.username.localeCompare(b.username));
   }
 
+  getActiveUserSessionCount(userId: string): number {
+    const normalizedUserId = userId.trim();
+    if (!normalizedUserId) return 0;
+
+    return this.getActiveUserConnections().filter(
+      (client) => client.userId === normalizedUserId
+    ).length;
+  }
+
   getActiveUsersCount(): number {
     return this.getActiveUserConnections().length;
   }

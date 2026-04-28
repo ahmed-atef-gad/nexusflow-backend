@@ -103,6 +103,7 @@ const DEFAULT_FUNCTION_NODE_EXECUTION_TIMEOUT_MS = 100;
 const DEFAULT_FUNCTION_NODE_MAX_PAYLOAD_BYTES = 8192;
 const MAX_RUNTIME_STEPS_PER_PATH = 64;
 const MAX_RUNTIME_FUNCTION_STEPS_PER_PATH = 16;
+const MAX_USER_MQTT_SESSIONS = 5;
 
 @Injectable()
 export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
@@ -437,6 +438,16 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
         return this.rejectAuth(
           clientId,
           `reason=invalid user id username=${mqttUsername}`,
+          done
+        );
+      }
+
+      const activeUserSessions =
+        this.mqttService.getActiveUserSessionCount(userId);
+      if (activeUserSessions >= MAX_USER_MQTT_SESSIONS) {
+        return this.rejectAuth(
+          clientId,
+          `reason=user already has maximum active mqtt sessions userId=${userId} activeSessions=${activeUserSessions} limit=${MAX_USER_MQTT_SESSIONS}`,
           done
         );
       }
