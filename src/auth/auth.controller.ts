@@ -29,13 +29,24 @@ type RequestWithCookies = Request & {
   cookies: Record<string, string | undefined>;
 };
 
+type ThrottleOptions = {
+  default: {
+    limit: number;
+    ttl: number;
+  };
+};
+
+const throttle = Throttle as unknown as (
+  options: ThrottleOptions
+) => ClassDecorator;
+
 /**
  * Authentication endpoints for registration, login, profile retrieval, and logout.
  * Uses an HttpOnly `jwt` cookie for session management.
  */
 @ApiTags('Authentication')
 @ApiCookieAuth('jwt')
-@Throttle({ default: { limit: 3, ttl: 60 * 1000 } }) // Apply a default rate limit to all auth routes
+@throttle({ default: { limit: 3, ttl: 60 * 1000 } }) // Apply a default rate limit to all auth routes
 @Controller('auth')
 export class AuthController {
   constructor(private authService: AuthService) {}
