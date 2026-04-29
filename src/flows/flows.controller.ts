@@ -27,7 +27,10 @@ import type { AuthenticatedRequest } from '../auth/utils/auth.util';
 import { getUserIdFromRequest } from '../auth/utils/auth.util';
 import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
 import { CreateFlowDto } from './dto/create-flow.dto';
-import { FlowWithUiAndWarnings } from './flows.service';
+import {
+  FlowWithNotificationState,
+  FlowWithUiAndWarnings,
+} from './flows.service';
 
 const FLOW_REQUEST_EXAMPLE = {
   name: 'My IoT Flow',
@@ -192,7 +195,7 @@ export class FlowsController {
     @Request() req: AuthenticatedRequest,
     @Query() query: PaginationQueryDto
   ): Promise<{
-    data: Flow[];
+    data: FlowWithNotificationState[];
     total: number;
     page: number;
     limit: number;

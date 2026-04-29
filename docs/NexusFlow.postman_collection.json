@@ -703,7 +703,27 @@
             ],
             "url": "{{baseUrl}}/flows?page={{page}}&limit={{limit}}"
           },
-          "response": []
+          "response": [
+            {
+              "name": "Example - List My Flows",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Cookie",
+                    "value": "jwt={{jwt}}",
+                    "type": "text"
+                  }
+                ],
+                "url": "{{baseUrl}}/flows?page={{page}}&limit={{limit}}"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [],
+              "body": "{\n  \"items\": [\n    {\n      \"_id\": \"69b58d513b6489cbd6655026\",\n      \"name\": \"My IoT Flow\",\n      \"owner\": { \"id\": \"69e7d46dcc140f9805db82ab\", \"username\": \"john_doe\" },\n      \"isNotificationsEnabled\": true\n    }\n  ],\n  \"page\": 1,\n  \"limit\": 10,\n  \"total\": 1\n}"
+            }
+          ]
         },
         {
           "name": "Get Flow By ID",

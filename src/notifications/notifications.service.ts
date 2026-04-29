@@ -616,6 +616,39 @@ export class NotificationsService implements OnModuleInit {
     };
   }
 
+  async getNotificationStatesForFlows(
+    userId: string,
+    flowIds: string[]
+  ): Promise<Map<string, boolean>> {
+    const normalizedFlowIds = Array.from(
+      new Set(
+        flowIds
+          .map((flowId) => flowId.trim())
+          .filter((flowId) => flowId.length > 0)
+      )
+    );
+
+    if (!normalizedFlowIds.length) {
+      return new Map<string, boolean>();
+    }
+
+    const preferences = await this.notificationPreferenceModel
+      .find({
+        userId,
+        flowId: { $in: normalizedFlowIds },
+      })
+      .select({ flowId: 1, notificationsEnabled: 1 })
+      .lean()
+      .exec();
+
+    const states = new Map<string, boolean>();
+    for (const preference of preferences) {
+      states.set(preference.flowId, preference.notificationsEnabled);
+    }
+
+    return states;
+  }
+
   async getAlertRules(
     userId: string,
     flowId: string,

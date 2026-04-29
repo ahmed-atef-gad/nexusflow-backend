@@ -135,6 +135,10 @@ Notes:
 - Runtime default when preference doc is missing is `notificationsEnabled = true`
 - `GET` returns `404` if preference doc does not exist yet
 
+Note about flow listing:
+
+- The client-facing `GET /v1/flows` (flows list) now includes an `isNotificationsEnabled` boolean on each flow object. This value is computed at read time and defaults to `true` when the `notification_preferences` document for the flow is missing. Frontend clients should use this field to render notification toggles; to change it, call `PUT /v1/flows/:flowId/notification-preferences` and then refetch the flows list to reflect the updated state.
+
 ### 4) Alert Rules (Per Flow + Node)
 
 - `GET /v1/flows/:flowId/alert-rules?nodeId=<optional>`

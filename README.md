@@ -473,6 +473,7 @@ This README is not a full API reference. Swagger at `/api` is the source of trut
 - `/devices/registration-code`: one-time code generation
 - `/devices/verify-registration-code`: firmware/device self-registration
 - `/flows`: flow CRUD
+  - Note: responses for flow listing now include an `isNotificationsEnabled` boolean per flow (defaults to `true` when the user has no explicit preference). Use `PUT /v1/flows/:flowId/notification-preferences` to toggle.
 - `/setups` and related flow-derived endpoints: firmware sync/setup material
 - `/ui`: frontend-facing flow UI representation
 - `/modules`: available editor modules
