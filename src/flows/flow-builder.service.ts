@@ -1216,7 +1216,7 @@ export class FlowBuilderService {
   private parseTargetFlowIds(value: string | number | boolean): string[] {
     return Array.from(
       new Set(
-        targetFlowIdsValue
+        String(value ?? '')
           .split(',')
           .map((item) => item.trim())
           .filter(Boolean)
