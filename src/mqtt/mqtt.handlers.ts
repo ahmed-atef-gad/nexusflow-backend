@@ -1861,19 +1861,30 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
               targetFlowId,
               channel,
             });
-            await this.mqttService.publish(bridgeTopic, {
-              ...this.buildForwardPayload(currentMessage),
-              _nexusflow: {
-                kind: 'flow-forward',
-                sourceFlowId: flowId,
-                targetFlowId,
-                sourceNodeId: step.id,
-                sourceDeviceMac: this.normalizeMacAddress(deviceMac),
-                channel,
-                hops: nextHopCount,
-                timestamp: new Date().toISOString(),
-              },
-            });
+            const forwardedPacket = {
+              topic: bridgeTopic,
+              payload: Buffer.from(
+                JSON.stringify({
+                  ...this.buildForwardPayload(currentMessage),
+                  _nexusflow: {
+                    kind: 'flow-forward',
+                    sourceFlowId: flowId,
+                    targetFlowId,
+                    sourceNodeId: step.id,
+                    sourceDeviceMac: this.normalizeMacAddress(deviceMac),
+                    channel,
+                    hops: nextHopCount,
+                    timestamp: new Date().toISOString(),
+                  },
+                }),
+                'utf8'
+              ),
+            } as MqttPacketContext;
+
+            await this.executeInternalMqttForwardTopic(
+              bridgeTopic,
+              forwardedPacket
+            );
             publishedCommands++;
           }
           continue;
@@ -2062,47 +2073,6 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
             `Flow update detected for device ${topicMac}, evicting logic cache.`
           );
           this.logicService.evictForDevice(topicMac);
-        }
-      }
-
-      if (client?.isEsp && this.isVirtualEspResponseTopic(topic)) {
-        const responseNodeId = this.extractVirtualEspResponseNodeId(topic);
-        const flowId = client.linkedFlowId ?? null;
-        if (responseNodeId && flowId) {
-          try {
-            let mirroredPayload: Record<string, unknown> = {};
-            if (packet?.payload) {
-              const payloadText = packet.payload.toString('utf8');
-              const parsed: unknown = JSON.parse(payloadText);
-              if (
-                parsed &&
-                typeof parsed === 'object' &&
-                !Array.isArray(parsed)
-              ) {
-                mirroredPayload = parsed as Record<string, unknown>;
-              } else {
-                mirroredPayload = { value: parsed };
-              }
-            }
-            await this.mqttService.publish(
-              `nexusflow/ui/output/${flowId}/${responseNodeId}`,
-              mirroredPayload
-            );
-          } catch (error) {
-            this.logger.warn(
-              `Failed to mirror output response topic=${topic}: ${(error as Error).message}`
-            );
-          }
-        }
-      }
-
-      if (this.parseInternalMqttTopic(topic)) {
-        try {
-          await this.executeInternalMqttForwardTopic(topic, packet);
-        } catch (error) {
-          this.logger.error(
-            `Failed to execute MQTT flow forward for topic=${topic}: ${(error as Error).message}`
-          );
         }
       }
 
