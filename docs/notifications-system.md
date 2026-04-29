@@ -5,6 +5,7 @@
 This guide explains the current notifications architecture and API contract used by backend and mobile.
 
 Scope:
+
 - FCM device-token registration
 - Global alert policies
 - Per-flow notification preferences
@@ -20,6 +21,7 @@ Scope:
 - `readingKey`: reading field for that module (example: `analog`, `temperature`)
 
 Rule identity and linking:
+
 - A rule is linked by `flowId + nodeId + moduleId + readingKey`
 - Backend validates that `nodeId` actually belongs to the flow and matches `moduleId`
 - Unique guard exists per `flowId + nodeId + readingKey` to avoid duplicates
@@ -38,7 +40,7 @@ sequenceDiagram
     ESP->>MQTT: Publish sensor payload
     MQTT->>NS: processSensorReading(flowId, nodeId, readings)
     NS->>DB: Load enabled rules for flow+node
-    NS->>NS: Evaluate operator/threshold + cooldown
+    NS->>NS: Evaluate operator/threshold + cooldown/backoff
     NS->>DB: Insert alert_events snapshot
     NS->>FCM: Send multicast push to active owner tokens
     FCM-->>NS: Per-token response
@@ -74,6 +76,7 @@ All user-facing endpoints require `Cookie: jwt=<token>`.
 ```
 
 Notes:
+
 - Device-scoped only (no `flowId` in body)
 - Upsert by `(userId, deviceId)`
 - If token exists for another user/device, old mapping is removed
@@ -108,6 +111,7 @@ Notes:
 ```
 
 Policy validation:
+
 - `defaultOperator` must be one of `supportedOperators`
 - Simple operators (`>`, `<`, `>=`, `<=`, `=`) require `defaultThreshold` and require `defaultMin/defaultMax = null`
 - Range operators (`between`, `outside`) require `defaultMin/defaultMax` and require `defaultThreshold = null`
@@ -127,6 +131,7 @@ Policy validation:
 ```
 
 Notes:
+
 - Runtime default when preference doc is missing is `notificationsEnabled = true`
 - `GET` returns `404` if preference doc does not exist yet
 
@@ -162,22 +167,34 @@ Create example:
 ```
 
 Validation highlights:
+
 - Node must exist inside flow
 - Reading key must be allowed for module
 - Operator must match provided condition fields (`threshold` or `min/max`)
 - Required-policy rules cannot be disabled/deleted
 
 Operator notes:
+
 - `=` is supported and is used for binary sensors (`digital = 1`, `motion = 1`)
 
 ### 5) Alert History
 
-- `GET /v1/flows/:flowId/alert-history?limit=50&cursor=<optional>&nodeId=<optional>&severity=<optional>`
+- `GET /v1/flows/:flowId/alert-history?limit=50&since=<hours>&cursor=<optional>&nodeId=<optional>&severity=<optional>`
 
 Behavior:
+
 - Sorted by `occurredAt desc`, then `_id desc`
 - Cursor pagination returns `nextCursor` and `hasMore`
+- `since` is in hours; default is `24` when omitted
+- `since` accepts positive integer strings and is capped at `720`
 - This is the source for missed notifications when device was offline
+
+### 5.1) MQ2 Repeated-Alert Throttling
+
+- MQ2 (`moduleId = MQ2-Sensor`) uses exponential backoff when a rule stays matched.
+- First match fires immediately, then subsequent alerts wait progressively longer.
+- Backoff starts from `ALERT_RULE_COOLDOWN_MS` and doubles up to `ALERT_RULE_MAX_BACKOFF_MS`.
+- When reading returns to normal (rule no longer matched), backoff state is reset.
 
 ### 6) Internal Trigger Endpoint
 
@@ -202,6 +219,7 @@ Body:
 ## Dead Token Handling
 
 When Firebase returns dead-token errors (`UNREGISTERED`, `messaging/registration-token-not-registered`, `messaging/invalid-registration-token`):
+
 - token is marked inactive
 - `lastError` and `invalidatedAt` are updated
 - future sends skip inactive tokens
@@ -209,6 +227,7 @@ When Firebase returns dead-token errors (`UNREGISTERED`, `messaging/registration
 ## Offline / Missed Alerts
 
 Push is not durable delivery. Mobile should always call:
+
 - `GET /v1/flows/:flowId/alert-history`
 
 on app open/resume to backfill alerts that may have been missed while offline.
@@ -242,3 +261,4 @@ on app open/resume to backfill alerts that may have been missed while offline.
 - `FIREBASE_PRIVATE_KEY`
 - `INTERNAL_ALERTS_API_KEY` (recommended outside local)
 - `ALERT_RULE_COOLDOWN_MS` (optional, default `60000`)
+- `ALERT_RULE_MAX_BACKOFF_MS` (optional, default `900000`)

@@ -141,6 +141,10 @@ const MODULE_READING_KEYS: Record<string, string[]> = {
   'Ultrasonic-Sensor': ['distance_cm'],
 };
 
+const GAS_SENSOR_MODULE_ID = 'MQ2-Sensor';
+const DEFAULT_HISTORY_SINCE_HOURS = 24;
+const MAX_HISTORY_SINCE_HOURS = 720;
+
 type BaselinePolicyInput = {
   moduleId: string;
   readingKey: string;
@@ -364,6 +368,11 @@ export class NotificationsService implements OnModuleInit {
   ]);
   private readonly ruleCooldownMs: number;
   private readonly recentRuleTriggers = new Map<string, number>();
+  private readonly gasRuleMaxBackoffMs: number;
+  private readonly gasRuleBackoffState = new Map<
+    string,
+    { lastTriggeredAtMs: number; nextDelayMs: number }
+  >();
 
   constructor(
     @InjectModel(NotificationDeviceToken.name)
@@ -383,6 +392,10 @@ export class NotificationsService implements OnModuleInit {
     this.ruleCooldownMs = this.readPositiveConfigNumber(
       'ALERT_RULE_COOLDOWN_MS',
       60000
+    );
+    this.gasRuleMaxBackoffMs = this.readPositiveConfigNumber(
+      'ALERT_RULE_MAX_BACKOFF_MS',
+      15 * 60000
     );
   }
 
@@ -807,7 +820,15 @@ export class NotificationsService implements OnModuleInit {
         ? Math.min(parsedLimit, 100)
         : 50;
 
+    const parsedSinceHours = Number(query.since);
+    const sinceHours =
+      Number.isFinite(parsedSinceHours) && parsedSinceHours > 0
+        ? Math.min(Math.trunc(parsedSinceHours), MAX_HISTORY_SINCE_HOURS)
+        : DEFAULT_HISTORY_SINCE_HOURS;
+    const fromDate = new Date(Date.now() - sinceHours * 60 * 60 * 1000);
+
     const filter: FilterQuery<AlertEventDocument> = { flowId };
+    filter.occurredAt = { $gte: fromDate };
     if (query.nodeId?.trim()) {
       filter.nodeId = query.nodeId.trim();
     }
@@ -987,6 +1008,7 @@ export class NotificationsService implements OnModuleInit {
         continue;
       }
 
+      const cooldownKey = `${input.flowId}:${this.toObjectIdString(rule)}`;
       evaluatedRules++;
       const matches = this.matchesOperator({
         operator: rule.operator,
@@ -996,11 +1018,11 @@ export class NotificationsService implements OnModuleInit {
         max: rule.max ?? null,
       });
       if (!matches) {
+        this.resetRuleTriggerState(cooldownKey, rule.moduleId);
         continue;
       }
 
-      const cooldownKey = `${input.flowId}:${this.toObjectIdString(rule)}`;
-      if (!this.shouldTriggerRule(cooldownKey)) {
+      if (!this.shouldTriggerRule(cooldownKey, rule.moduleId, occurredAt)) {
         continue;
       }
 
@@ -2004,8 +2026,16 @@ export class NotificationsService implements OnModuleInit {
     );
   }
 
-  private shouldTriggerRule(cooldownKey: string): boolean {
-    const now = Date.now();
+  private shouldTriggerRule(
+    cooldownKey: string,
+    moduleId: string,
+    occurredAt?: Date
+  ): boolean {
+    const now = occurredAt?.getTime() ?? Date.now();
+    if (moduleId.trim() === GAS_SENSOR_MODULE_ID) {
+      return this.shouldTriggerGasRule(cooldownKey, now);
+    }
+
     const previous = this.recentRuleTriggers.get(cooldownKey);
     if (previous && now - previous < this.ruleCooldownMs) {
       return false;
@@ -2019,11 +2049,56 @@ export class NotificationsService implements OnModuleInit {
     return true;
   }
 
+  private shouldTriggerGasRule(cooldownKey: string, now: number): boolean {
+    const state = this.gasRuleBackoffState.get(cooldownKey);
+    if (!state) {
+      this.gasRuleBackoffState.set(cooldownKey, {
+        lastTriggeredAtMs: now,
+        nextDelayMs: this.ruleCooldownMs,
+      });
+      if (this.gasRuleBackoffState.size > 5000) {
+        this.pruneGasRuleBackoffState(now);
+      }
+      return true;
+    }
+
+    if (now - state.lastTriggeredAtMs < state.nextDelayMs) {
+      return false;
+    }
+
+    this.gasRuleBackoffState.set(cooldownKey, {
+      lastTriggeredAtMs: now,
+      nextDelayMs: Math.min(state.nextDelayMs * 2, this.gasRuleMaxBackoffMs),
+    });
+    if (this.gasRuleBackoffState.size > 5000) {
+      this.pruneGasRuleBackoffState(now);
+    }
+
+    return true;
+  }
+
+  private resetRuleTriggerState(cooldownKey: string, moduleId: string): void {
+    if (moduleId.trim() === GAS_SENSOR_MODULE_ID) {
+      this.gasRuleBackoffState.delete(cooldownKey);
+      return;
+    }
+    this.recentRuleTriggers.delete(cooldownKey);
+  }
+
   private pruneRecentRuleTriggers(now: number): void {
     const expiry = now - this.ruleCooldownMs;
     for (const [key, value] of this.recentRuleTriggers.entries()) {
       if (value <= expiry) {
         this.recentRuleTriggers.delete(key);
+      }
+    }
+  }
+
+  private pruneGasRuleBackoffState(now: number): void {
+    const expiry = now - this.gasRuleMaxBackoffMs;
+    for (const [key, value] of this.gasRuleBackoffState.entries()) {
+      if (value.lastTriggeredAtMs <= expiry) {
+        this.gasRuleBackoffState.delete(key);
       }
     }
   }

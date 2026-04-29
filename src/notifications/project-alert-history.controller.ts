@@ -39,6 +39,12 @@ export class ProjectAlertHistoryController {
     example: '20',
   })
   @ApiQuery({
+    name: 'since',
+    required: false,
+    description: 'Return alerts from the last N hours (default 24, max 720)',
+    example: '24',
+  })
+  @ApiQuery({
     name: 'cursor',
     required: false,
     description: 'Pagination cursor from previous response',

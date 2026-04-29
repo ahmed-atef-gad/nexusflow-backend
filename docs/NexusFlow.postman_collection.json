@@ -1734,7 +1734,7 @@
                 "type": "text"
               }
             ],
-            "url": "{{baseUrl}}/v1/flows/{{flowId}}/alert-history?limit=50&cursor={{alertCursor}}"
+            "url": "{{baseUrl}}/v1/flows/{{flowId}}/alert-history?limit=50&since={{sinceHours}}&cursor={{alertCursor}}"
           },
           "event": [
             {
@@ -1879,9 +1879,12 @@
       "value": ""
     },
     {
+      "key": "sinceHours",
+      "value": "24"
+    },
+    {
       "key": "internalAlertsApiKey",
       "value": ""
     }
   ]
 }
-

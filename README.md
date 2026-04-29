@@ -40,6 +40,7 @@ This project uses `@nestjs/throttler` to protect sensitive endpoints (login, OTP
 - If running behind a proxy, enable `trust proxy` for the HTTP adapter and/or implement a custom tracker (see NestJS docs) so the guard can extract the real client IP from `X-Forwarded-For`.
 
 Tuning advice:
+
 - Use stricter limits for login attempts (e.g. 5 attempts / 60s) and OTP sends (e.g. 3 sends / 1h).
 - Add named throttlers when you need multiple layered rules (short/medium/long windows).
 
@@ -282,7 +283,9 @@ Responsibilities:
 - User notification preference management (`notification_preferences`)
 - Alert rule CRUD and runtime rule evaluation (`alert_rules`)
 - Alert history persistence with cursor pagination (`alert_events`)
+- Alert history defaults to the last 24 hours and supports `since` (hours)
 - Firebase push dispatch and dead-token cleanup on `UNREGISTERED`
+- MQ2 gas alerts use exponential backoff to reduce repeated spam while condition remains active
 - Internal alert trigger endpoint for backend services
 
 Key files:
@@ -400,6 +403,7 @@ FIREBASE_CLIENT_EMAIL=
 FIREBASE_PRIVATE_KEY=
 INTERNAL_ALERTS_API_KEY=
 ALERT_RULE_COOLDOWN_MS=60000
+ALERT_RULE_MAX_BACKOFF_MS=900000
 ```
 
 Notes:
