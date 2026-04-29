@@ -2065,37 +2065,6 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
         }
       }
 
-      if (client?.isEsp && this.isVirtualEspResponseTopic(topic)) {
-        const responseNodeId = this.extractVirtualEspResponseNodeId(topic);
-        const flowId = client.linkedFlowId ?? null;
-        if (responseNodeId && flowId) {
-          try {
-            let mirroredPayload: Record<string, unknown> = {};
-            if (packet?.payload) {
-              const payloadText = packet.payload.toString('utf8');
-              const parsed: unknown = JSON.parse(payloadText);
-              if (
-                parsed &&
-                typeof parsed === 'object' &&
-                !Array.isArray(parsed)
-              ) {
-                mirroredPayload = parsed as Record<string, unknown>;
-              } else {
-                mirroredPayload = { value: parsed };
-              }
-            }
-            await this.mqttService.publish(
-              `nexusflow/ui/output/${flowId}/${responseNodeId}`,
-              mirroredPayload
-            );
-          } catch (error) {
-            this.logger.warn(
-              `Failed to mirror output response topic=${topic}: ${(error as Error).message}`
-            );
-          }
-        }
-      }
-
       if (this.parseInternalMqttTopic(topic)) {
         try {
           await this.executeInternalMqttForwardTopic(topic, packet);

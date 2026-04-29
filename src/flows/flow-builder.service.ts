@@ -737,7 +737,7 @@ export class FlowBuilderService {
             outputTask.commands!.push({
               cmd: cmd,
               pin: pinNumber,
-              topic: `esp/${node.id}/response`,
+              topic: `nexusflow/output/${node.id}`,
             });
           }
         } else {
@@ -1028,9 +1028,7 @@ export class FlowBuilderService {
             moduleName: module.name,
             alias: module.alias,
             pin: pinNumber,
-            responseTopic: flowId
-              ? `nexusflow/ui/output/${flowId}/${node.id}`
-              : `nexusflow/ui/output/${node.id}`,
+            responseTopic: `nexusflow/output/${node.id}`,
             moduleType: 'output',
             topic: commandTopic,
             isFloating: !connectedOutputIds.has(node.id),
@@ -1205,7 +1203,7 @@ export class FlowBuilderService {
     );
   }
 
-  private normalizeMqttChannel(value: unknown): string {
+  private normalizeMqttChannel(value: string | number | boolean): string {
     const channel = String(value ?? 'default')
       .trim()
       .replace(/[^a-zA-Z0-9_-]/g, '-')
@@ -1215,7 +1213,7 @@ export class FlowBuilderService {
     return channel || 'default';
   }
 
-  private parseTargetFlowIds(value: unknown): string[] {
+  private parseTargetFlowIds(value: string | number | boolean): string[] {
     return Array.from(
       new Set(
         String(value ?? '')
@@ -1318,7 +1316,7 @@ export class FlowBuilderService {
       cmd,
       pin,
       value: '$prev',
-      topic: `esp/${targetNode.id}/response`,
+      topic: `nexusflow/output/${targetNode.id}`,
     };
   }
 
