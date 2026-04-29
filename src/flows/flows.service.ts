@@ -30,6 +30,10 @@ export type FlowWithUiAndWarnings = Flow & {
   ui: Ui | null;
 };
 
+export type FlowWithNotificationState = Flow & {
+  isNotificationsEnabled: boolean;
+};
+
 @Injectable()
 export class FlowsService {
   constructor(
@@ -255,7 +259,7 @@ export class FlowsService {
     userId: string,
     query: PaginationQueryDto
   ): Promise<{
-    data: Flow[];
+    data: FlowWithNotificationState[];
     total: number;
     page: number;
     limit: number;
@@ -291,8 +295,24 @@ export class FlowsService {
       this.flowModel.countDocuments(filter).exec(),
     ]);
 
+    const flowIds = data.map((flowDoc) => String(flowDoc.id ?? ''));
+    const notificationStates =
+      await this.notificationsService.getNotificationStatesForFlows(
+        userId,
+        flowIds
+      );
+
+    const enrichedData: FlowWithNotificationState[] = data.map((flowDoc) => {
+      const flowObject = flowDoc.toObject() as Flow;
+      const flowId = String(flowDoc.id ?? '');
+      return {
+        ...flowObject,
+        isNotificationsEnabled: notificationStates.get(flowId) ?? true,
+      };
+    });
+
     return {
-      data,
+      data: enrichedData,
       total,
       page,
       limit,

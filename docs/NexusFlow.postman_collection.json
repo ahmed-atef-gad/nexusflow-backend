@@ -178,12 +178,26 @@
             "method": "POST",
             "header": [
               {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
                 "key": "Cookie",
                 "value": "jwt={{jwt}}",
                 "type": "text"
               }
             ],
-            "url": "{{baseUrl}}/auth/logout"
+            "url": "{{baseUrl}}/auth/logout",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceId\": \"mobile-device-001\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           },
           "response": []
         }
@@ -689,7 +703,27 @@
             ],
             "url": "{{baseUrl}}/flows?page={{page}}&limit={{limit}}"
           },
-          "response": []
+          "response": [
+            {
+              "name": "Example - List My Flows",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Cookie",
+                    "value": "jwt={{jwt}}",
+                    "type": "text"
+                  }
+                ],
+                "url": "{{baseUrl}}/flows?page={{page}}&limit={{limit}}"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [],
+              "body": "{\n  \"items\": [\n    {\n      \"_id\": \"69b58d513b6489cbd6655026\",\n      \"name\": \"My IoT Flow\",\n      \"owner\": { \"id\": \"69e7d46dcc140f9805db82ab\", \"username\": \"john_doe\" },\n      \"isNotificationsEnabled\": true\n    }\n  ],\n  \"page\": 1,\n  \"limit\": 10,\n  \"total\": 1\n}"
+            }
+          ]
         },
         {
           "name": "Get Flow By ID",
@@ -1596,7 +1630,7 @@
             "url": "{{baseUrl}}/v1/alert-policies",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"policies\": [\n    {\n      \"moduleId\": \"MQ2-Sensor\",\n      \"readingKey\": \"analog\",\n      \"label\": \"MQ2 Gas Level (Analog)\",\n      \"required\": true,\n      \"thresholdRequired\": true,\n      \"defaultEnabled\": true,\n      \"defaultSeverity\": \"critical\",\n      \"supportedOperators\": [\">\", \"<\", \">=\", \"<=\", \"between\", \"outside\"],\n      \"isActive\": true\n    }\n  ]\n}",
+              "raw": "{\n  \"policies\": [\n    {\n      \"moduleId\": \"MQ2-Sensor\",\n      \"readingKey\": \"analog\",\n      \"label\": \"MQ2 Gas Level (Analog)\",\n      \"required\": true,\n      \"thresholdRequired\": true,\n      \"defaultEnabled\": true,\n      \"defaultSeverity\": \"critical\",\n      \"defaultOperator\": \">\",\n      \"defaultThreshold\": 300,\n      \"defaultMin\": null,\n      \"defaultMax\": null,\n      \"supportedOperators\": [\">\", \"<\", \">=\", \"<=\", \"=\", \"between\", \"outside\"],\n      \"isActive\": true\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1720,7 +1754,7 @@
                 "type": "text"
               }
             ],
-            "url": "{{baseUrl}}/v1/flows/{{flowId}}/alert-history?limit=50&cursor={{alertCursor}}"
+            "url": "{{baseUrl}}/v1/flows/{{flowId}}/alert-history?limit=50&since={{sinceHours}}&cursor={{alertCursor}}"
           },
           "event": [
             {
@@ -1865,9 +1899,12 @@
       "value": ""
     },
     {
+      "key": "sinceHours",
+      "value": "24"
+    },
+    {
       "key": "internalAlertsApiKey",
       "value": ""
     }
   ]
 }
-

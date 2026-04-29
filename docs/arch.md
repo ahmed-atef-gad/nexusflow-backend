@@ -73,6 +73,7 @@ graph TD
     - `FIREBASE_PRIVATE_KEY`
   - optional internal trigger key: `INTERNAL_ALERTS_API_KEY`
   - rule cooldown tuning: `ALERT_RULE_COOLDOWN_MS`
+  - gas alert max backoff tuning: `ALERT_RULE_MAX_BACKOFF_MS`
 
 ## Security Model
 
@@ -173,13 +174,13 @@ sequenceDiagram
     ESP->>MQTT: Sensor payload publish
     MQTT->>N: processSensorReading(flowId, nodeId, readings)
     N->>DB: Load enabled alert_rules for flow+node and evaluate operators
-    N->>N: Apply cooldown and policy checks
+    N->>N: Apply cooldown/backoff and policy checks
     N->>DB: Insert alert_events
     N->>FCM: Send multicast push to active device_tokens
     FCM-->>N: Delivery result per token
     N->>DB: Mark dead tokens inactive on UNREGISTERED
 
-    App->>N: GET /v1/flows/:flowId/alert-history
+    App->>N: GET /v1/flows/:flowId/alert-history?since=<hours>
     N-->>App: Last alerts + nextCursor
 ```
 

@@ -13,6 +13,17 @@ import { GenerateOtpDto } from './dto/generate-otp.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { VerificationService } from './verification.service';
 
+type ThrottleOptions = {
+  default: {
+    limit: number;
+    ttl: number;
+  };
+};
+
+const throttle = Throttle as unknown as (
+  options: ThrottleOptions
+) => MethodDecorator;
+
 @ApiTags('verification')
 @Controller('verification')
 export class VerificationController {
@@ -25,7 +36,7 @@ export class VerificationController {
   })
   @ApiBody({ type: GenerateOtpDto })
   @Post('generate')
-  @Throttle({ default: { limit: 3, ttl: 60 * 60 * 1000 } }) // 1 hour
+  @throttle({ default: { limit: 3, ttl: 60 * 60 * 1000 } }) // 1 hour
   @ApiCreatedResponse({
     description: 'OTP generated and sent to the provided email',
   })
@@ -44,7 +55,7 @@ export class VerificationController {
   })
   @ApiBody({ type: VerifyOtpDto })
   @Post('verify')
-  @Throttle({ default: { limit: 5, ttl: 60 * 60 * 1000 } }) // 1 hour
+  @throttle({ default: { limit: 5, ttl: 60 * 60 * 1000 } }) // 1 hour
   @ApiCreatedResponse({
     description: 'OTP verified and email marked as verified',
   })

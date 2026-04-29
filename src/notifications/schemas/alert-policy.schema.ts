@@ -26,8 +26,26 @@ export class AlertPolicy {
   @Prop({ required: true, enum: ['critical', 'warning', 'info'] })
   defaultSeverity!: 'critical' | 'warning' | 'info';
 
-  @Prop({ type: [String], default: ['>', '<', '>=', '<='] })
-  supportedOperators!: Array<'>' | '<' | '>=' | '<=' | 'between' | 'outside'>;
+  @Prop({
+    required: true,
+    enum: ['>', '<', '>=', '<=', '=', 'between', 'outside'],
+    default: '>',
+  })
+  defaultOperator!: '>' | '<' | '>=' | '<=' | '=' | 'between' | 'outside';
+
+  @Prop({ type: Number, default: null })
+  defaultThreshold?: number | null;
+
+  @Prop({ type: Number, default: null })
+  defaultMin?: number | null;
+
+  @Prop({ type: Number, default: null })
+  defaultMax?: number | null;
+
+  @Prop({ type: [String], default: ['>', '<', '>=', '<=', '='] })
+  supportedOperators!: Array<
+    '>' | '<' | '>=' | '<=' | '=' | 'between' | 'outside'
+  >;
 
   @Prop({ required: true, default: true, index: true })
   isActive!: boolean;

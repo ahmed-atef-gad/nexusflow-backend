@@ -18,6 +18,15 @@ export class AlertHistoryQueryDto {
   limit?: string;
 
   @ApiPropertyOptional({
+    description: 'Return alerts from the last N hours (default 24, max 720)',
+    example: '12',
+    default: '24',
+  })
+  @IsOptional()
+  @Matches(/^\d+$/, { message: 'since must be a positive integer string' })
+  since?: string;
+
+  @ApiPropertyOptional({
     description: 'Cursor from previous response for next page',
     example: '69e7d01de463e7c6e48fb552',
   })
