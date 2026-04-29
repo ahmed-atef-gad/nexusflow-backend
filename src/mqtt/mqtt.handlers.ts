@@ -1861,19 +1861,30 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
               targetFlowId,
               channel,
             });
-            await this.mqttService.publish(bridgeTopic, {
-              ...this.buildForwardPayload(currentMessage),
-              _nexusflow: {
-                kind: 'flow-forward',
-                sourceFlowId: flowId,
-                targetFlowId,
-                sourceNodeId: step.id,
-                sourceDeviceMac: this.normalizeMacAddress(deviceMac),
-                channel,
-                hops: nextHopCount,
-                timestamp: new Date().toISOString(),
-              },
-            });
+            const forwardedPacket = {
+              topic: bridgeTopic,
+              payload: Buffer.from(
+                JSON.stringify({
+                  ...this.buildForwardPayload(currentMessage),
+                  _nexusflow: {
+                    kind: 'flow-forward',
+                    sourceFlowId: flowId,
+                    targetFlowId,
+                    sourceNodeId: step.id,
+                    sourceDeviceMac: this.normalizeMacAddress(deviceMac),
+                    channel,
+                    hops: nextHopCount,
+                    timestamp: new Date().toISOString(),
+                  },
+                }),
+                'utf8'
+              ),
+            } as MqttPacketContext;
+
+            await this.executeInternalMqttForwardTopic(
+              bridgeTopic,
+              forwardedPacket
+            );
             publishedCommands++;
           }
           continue;
@@ -2062,16 +2073,6 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
             `Flow update detected for device ${topicMac}, evicting logic cache.`
           );
           this.logicService.evictForDevice(topicMac);
-        }
-      }
-
-      if (this.parseInternalMqttTopic(topic)) {
-        try {
-          await this.executeInternalMqttForwardTopic(topic, packet);
-        } catch (error) {
-          this.logger.error(
-            `Failed to execute MQTT flow forward for topic=${topic}: ${(error as Error).message}`
-          );
         }
       }
 
