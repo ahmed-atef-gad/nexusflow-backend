@@ -980,32 +980,6 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     return `logic/input/${nodeId}`;
   }
 
-  private buildForwardedInputPacket(
-    packet: MqttPacketContext
-  ): MqttPacketContext | null {
-    const payload = packet?.payload;
-    if (!Buffer.isBuffer(payload)) {
-      return null;
-    }
-
-    try {
-      const parsed: unknown = JSON.parse(payload.toString('utf8'));
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        return null;
-      }
-
-      const forwardedPayload = { ...(parsed as Record<string, unknown>) };
-      delete forwardedPayload._nexusflow;
-
-      return {
-        ...packet,
-        payload: Buffer.from(JSON.stringify(forwardedPayload), 'utf8'),
-      };
-    } catch {
-      return null;
-    }
-  }
-
   private parseInternalMqttTopic(topic: string): {
     ownerId: string;
     sourceDeviceMac: string;
@@ -1457,14 +1431,7 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
           this.buildMqttInUiTopic(flowId, String(firstStep.id)),
           {
             ...(rawPayload ?? {}),
-            _nexusflow: {
-              kind: 'mqtt-in',
-              sourceFlowId: forwardedBridge.sourceFlowId,
-              targetFlowId: flowId,
-              sourceDeviceMac: forwardedBridge.sourceDeviceMac,
-              channel: forwardedBridge.channel,
-              timestamp: new Date().toISOString(),
-            },
+            sourceFlowId: forwardedBridge.sourceFlowId,
           }
         );
       }
@@ -1586,15 +1553,6 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
               payload: Buffer.from(
                 JSON.stringify({
                   ...this.buildForwardPayload(currentMessage),
-                  _nexusflow: {
-                    kind: 'flow-forward',
-                    sourceFlowId: flowId,
-                    targetFlowId,
-                    sourceNodeId: step.id,
-                    sourceDeviceMac: this.normalizeMacAddress(deviceMac),
-                    channel,
-                    timestamp: new Date().toISOString(),
-                  },
                 }),
                 'utf8'
               ),
