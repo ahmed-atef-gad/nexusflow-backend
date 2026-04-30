@@ -63,6 +63,22 @@ type RuntimeMessage = {
   };
 };
 
+type RuntimeInputForwardingBridge = {
+  sourceFlowId: string;
+  sourceDeviceMac: string;
+  channel: string;
+};
+
+type RuntimeInputPipelineParams = {
+  topic: string;
+  packet: MqttPacketContext;
+  inputNodeId: string;
+  deviceMac: string;
+  client: MqttClientContext;
+  flowId?: string;
+  forwardedBridge?: RuntimeInputForwardingBridge;
+};
+
 type MqttClientContext = {
   id?: string;
   deviceMac?: string;
@@ -1377,23 +1393,11 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     return Math.round(Math.min(180, Math.max(0, angle)));
   }
 
-  private async executeGpioLogicForInputTopic(
-    topic: string,
-    packet: MqttPacketContext,
-    client: MqttClientContext
+  private async processRuntimeInputAndForwarding(
+    params: RuntimeInputPipelineParams
   ): Promise<void> {
-    Logger.debug(
-      `Processing MQTT publish for GPIO logic. topic=${topic} clientId=${client?.id ?? 'unknown'}`
-    );
-
-    const inputNodeId = this.getInputNodeIdFromTopic(topic);
-    if (!inputNodeId) {
-      this.logger.debug(
-        `Skip GPIO logic: failed to extract node id from topic ${topic}`
-      );
-      return;
-    }
-
+    const { topic, packet, inputNodeId, deviceMac, client, forwardedBridge } =
+      params;
     const inputValue = this.extractNumericInputValue(packet);
     const rawPayload = this.extractRawInputPayload(packet);
     if (inputValue === null && rawPayload === null) {
@@ -1403,14 +1407,7 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    const deviceMac =
-      typeof client?.deviceMac === 'string' ? client.deviceMac : null;
-    if (!deviceMac) {
-      this.logger.debug('Skip GPIO logic: missing client.deviceMac');
-      return;
-    }
-
-    const flowId = client.linkedFlowId;
+    const flowId = params.flowId ?? client.linkedFlowId;
     this.logger.debug(
       `Received MQTT input. topic=${topic} nodeId=${inputNodeId} value=${inputValue ?? 'n/a'} deviceMac=${deviceMac} flowId=${flowId ?? 'none'}`
     );
@@ -1456,6 +1453,7 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
 
     let matchedSteps = 0;
     let publishedCommands = 0;
+    let matchedBridgeNodes = 0;
 
     for (const flow of flows) {
       if (!Array.isArray(flow) || !flow.length) {
@@ -1482,6 +1480,29 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       const firstStep = flow[0] as RuntimeCommand | undefined;
       if (!firstStep) {
         continue;
+      }
+
+      if (
+        forwardedBridge &&
+        firstStep.moduleId === 'mqtt-in' &&
+        firstStep.id &&
+        this.normalizeMqttChannel(firstStep.channel) === inputNodeId
+      ) {
+        matchedBridgeNodes++;
+        await this.mqttService.publish(
+          this.buildMqttInUiTopic(flowId, String(firstStep.id)),
+          {
+            ...(rawPayload ?? {}),
+            _nexusflow: {
+              kind: 'mqtt-in',
+              sourceFlowId: forwardedBridge.sourceFlowId,
+              targetFlowId: flowId,
+              sourceDeviceMac: forwardedBridge.sourceDeviceMac,
+              channel: forwardedBridge.channel,
+              timestamp: new Date().toISOString(),
+            },
+          }
+        );
       }
 
       const matchesInput =
@@ -1678,9 +1699,48 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       );
     }
 
+    if (forwardedBridge && matchedBridgeNodes === 0) {
+      this.logger.debug(
+        `Skip Flow Bridge In logic: no matching Flow Bridge In (mqtt-in) nodes for flowId=${flowId} channel=${forwardedBridge.channel}`
+      );
+    }
+
     this.logger.debug(
       `GPIO logic processing finished. nodeId=${inputNodeId} matchedSteps=${matchedSteps} publishedCommands=${publishedCommands}`
     );
+  }
+
+  private async executeGpioLogicForInputTopic(
+    topic: string,
+    packet: MqttPacketContext,
+    client: MqttClientContext
+  ): Promise<void> {
+    Logger.debug(
+      `Processing MQTT publish for GPIO logic. topic=${topic} clientId=${client?.id ?? 'unknown'}`
+    );
+
+    const inputNodeId = this.getInputNodeIdFromTopic(topic);
+    if (!inputNodeId) {
+      this.logger.debug(
+        `Skip GPIO logic: failed to extract node id from topic ${topic}`
+      );
+      return;
+    }
+
+    const deviceMac =
+      typeof client?.deviceMac === 'string' ? client.deviceMac : null;
+    if (!deviceMac) {
+      this.logger.debug('Skip GPIO logic: missing client.deviceMac');
+      return;
+    }
+
+    await this.processRuntimeInputAndForwarding({
+      topic,
+      packet,
+      inputNodeId,
+      deviceMac,
+      client,
+    });
   }
 
   private async executeInternalMqttForwardTopic(
@@ -1689,14 +1749,6 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
   ): Promise<void> {
     const bridge = this.parseInternalMqttTopic(topic);
     if (!bridge) return;
-
-    const forwardedPacket = this.buildForwardedInputPacket(packet);
-    if (!forwardedPacket) {
-      this.logger.debug(
-        `MQTT flow forward skipped. topic=${topic} could not normalize forwarded payload`
-      );
-      return;
-    }
 
     let targetDeviceMac: string | null = null;
     try {
@@ -1717,47 +1769,6 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    const inputValue = this.extractNumericInputValue(packet);
-    const rawPayload = this.extractRawInputPayload(packet);
-    if (inputValue === null && rawPayload === null) {
-      this.logger.debug(
-        `Skip Flow Bridge In logic: could not extract usable payload for topic ${topic}`
-      );
-      return;
-    }
-
-    const flows = await this.logicService.getLogicFlowsForFlowId(
-      bridge.targetFlowId,
-      targetDeviceMac
-    );
-    if (!flows.length) {
-      this.logger.debug(
-        `Skip Flow Bridge In logic: no flows in logic program for flowId=${bridge.targetFlowId}`
-      );
-      return;
-    }
-
-    const matchedMqttInNodeIds = new Set<string>();
-    flows.forEach((flow) => {
-      const firstStep = Array.isArray(flow)
-        ? (flow[0] as RuntimeCommand | undefined)
-        : undefined;
-      if (
-        firstStep?.moduleId === 'mqtt-in' &&
-        firstStep.id &&
-        this.normalizeMqttChannel(firstStep.channel) === bridge.channel
-      ) {
-        matchedMqttInNodeIds.add(String(firstStep.id));
-      }
-    });
-
-    if (!matchedMqttInNodeIds.size) {
-      this.logger.debug(
-        `Skip Flow Bridge In logic: no matching Flow Bridge In (mqtt-in) nodes for flowId=${bridge.targetFlowId} channel=${bridge.channel}`
-      );
-      return;
-    }
-
     const forwardedClient: MqttClientContext = {
       id: `internal-forward-${bridge.sourceFlowId}-${bridge.targetFlowId}`,
       deviceMac: targetDeviceMac,
@@ -1766,31 +1777,22 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       isEsp: true,
     };
 
-    for (const nodeId of matchedMqttInNodeIds) {
-      await this.mqttService.publish(
-        this.buildMqttInUiTopic(bridge.targetFlowId, nodeId),
-        {
-          ...(rawPayload ?? {}),
-          _nexusflow: {
-            kind: 'mqtt-in',
-            sourceFlowId: bridge.sourceFlowId,
-            targetFlowId: bridge.targetFlowId,
-            sourceDeviceMac: bridge.sourceDeviceMac,
-            channel: bridge.channel,
-            timestamp: new Date().toISOString(),
-          },
-        }
-      );
-    }
-
-    await this.executeGpioLogicForInputTopic(
-      this.buildLogicInputTopic(bridge.channel),
-      forwardedPacket,
-      forwardedClient
-    );
+    await this.processRuntimeInputAndForwarding({
+      topic: this.buildLogicInputTopic(bridge.channel),
+      inputNodeId: bridge.channel,
+      packet,
+      deviceMac: targetDeviceMac,
+      client: forwardedClient,
+      flowId: bridge.targetFlowId,
+      forwardedBridge: {
+        sourceFlowId: bridge.sourceFlowId,
+        sourceDeviceMac: bridge.sourceDeviceMac,
+        channel: bridge.channel,
+      },
+    });
 
     this.logger.debug(
-      `Flow Bridge In processing finished. targetFlowId=${bridge.targetFlowId} channel=${bridge.channel} matchedSteps=${matchedMqttInNodeIds.size}`
+      `Flow Bridge In processing finished. targetFlowId=${bridge.targetFlowId} channel=${bridge.channel}`
     );
   }
 
