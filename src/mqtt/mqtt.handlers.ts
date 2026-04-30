@@ -120,10 +120,7 @@ const INTERNAL_MQTT_TOPIC_PATTERN =
   /^nexusflow\/internal\/([^/]+)\/([^/]+)\/([^/]+)\/([^/]+)\/([^/]+)$/;
 const DEFAULT_FUNCTION_NODE_EXECUTION_TIMEOUT_MS = 100;
 const DEFAULT_FUNCTION_NODE_MAX_PAYLOAD_BYTES = 8192;
-const MAX_RUNTIME_STEPS_PER_PATH = 64;
-const MAX_RUNTIME_FUNCTION_STEPS_PER_PATH = 16;
 const MAX_USER_MQTT_SESSIONS = 5;
-const MAX_INTERNAL_MQTT_FORWARD_HOPS = 8;
 
 @Injectable()
 export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
@@ -1459,24 +1456,6 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       if (!Array.isArray(flow) || !flow.length) {
         continue;
       }
-      if (flow.length > MAX_RUNTIME_STEPS_PER_PATH) {
-        this.logger.warn(
-          `Skipping runtime path due to excessive length (${flow.length} steps).`
-        );
-        continue;
-      }
-
-      const functionStepsInPath = flow.reduce<number>((count, step) => {
-        const runtimeStep = step as RuntimeCommand;
-        return runtimeStep?.stepType === 'function' ? count + 1 : count;
-      }, 0);
-      if (functionStepsInPath > MAX_RUNTIME_FUNCTION_STEPS_PER_PATH) {
-        this.logger.warn(
-          `Skipping runtime path due to excessive function node depth (${functionStepsInPath}).`
-        );
-        continue;
-      }
-
       const firstStep = flow[0] as RuntimeCommand | undefined;
       if (!firstStep) {
         continue;
@@ -1610,12 +1589,6 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
           const channel = this.normalizeMqttChannel(step.channel);
           const nextHopCount =
             this.getInternalForwardHopCount(currentMessage) + 1;
-          if (nextHopCount > MAX_INTERNAL_MQTT_FORWARD_HOPS) {
-            this.logger.warn(
-              `MQTT flow forward stopped after ${MAX_INTERNAL_MQTT_FORWARD_HOPS} hops. flowId=${flowId}`
-            );
-            continue;
-          }
 
           for (const targetFlowId of targetFlowIds) {
             const bridgeTopic = this.buildInternalMqttTopic({
