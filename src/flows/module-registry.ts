@@ -23,12 +23,12 @@ export const MODULE_DEFINITIONS: ModuleDefinition[] = [
   },
   {
     id: 'mqtt-in',
-    name: 'MQTT In',
+    name: 'Flow Bridge In',
     ports: 'source',
   },
   {
     id: 'mqtt-out',
-    name: 'MQTT Out',
+    name: 'Flow Bridge Out',
     ports: 'target',
   },
   {

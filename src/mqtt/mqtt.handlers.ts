@@ -1721,7 +1721,7 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     const rawPayload = this.extractRawInputPayload(packet);
     if (inputValue === null && rawPayload === null) {
       this.logger.debug(
-        `Skip MQTT In logic: could not extract usable payload for topic ${topic}`
+        `Skip Flow Bridge In logic: could not extract usable payload for topic ${topic}`
       );
       return;
     }
@@ -1732,7 +1732,7 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     );
     if (!flows.length) {
       this.logger.debug(
-        `Skip MQTT In logic: no flows in logic program for flowId=${bridge.targetFlowId}`
+        `Skip Flow Bridge In logic: no flows in logic program for flowId=${bridge.targetFlowId}`
       );
       return;
     }
@@ -1753,7 +1753,7 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
 
     if (!matchedMqttInNodeIds.size) {
       this.logger.debug(
-        `Skip MQTT In logic: no matching mqtt-in nodes for flowId=${bridge.targetFlowId} channel=${bridge.channel}`
+        `Skip Flow Bridge In logic: no matching Flow Bridge In (mqtt-in) nodes for flowId=${bridge.targetFlowId} channel=${bridge.channel}`
       );
       return;
     }
@@ -1790,7 +1790,7 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     );
 
     this.logger.debug(
-      `MQTT In processing finished. targetFlowId=${bridge.targetFlowId} channel=${bridge.channel} matchedSteps=${matchedMqttInNodeIds.size}`
+      `Flow Bridge In processing finished. targetFlowId=${bridge.targetFlowId} channel=${bridge.channel} matchedSteps=${matchedMqttInNodeIds.size}`
     );
   }
 

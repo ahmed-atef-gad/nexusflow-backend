@@ -44,7 +44,7 @@ export class UiItem {
 
   @ApiProperty({
     required: false,
-    description: 'Optional logical MQTT channel for MQTT In modules',
+    description: 'Optional logical MQTT channel for Flow Bridge In modules',
   })
   @Prop()
   channel?: string;

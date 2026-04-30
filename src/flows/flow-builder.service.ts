@@ -1273,7 +1273,7 @@ export class FlowBuilderService {
       if (!targetFlowIds.length) {
         this.appendNodeWarning(
           targetNode,
-          `MQTT Out node ${this.getNodeLabel(targetNode)} has no target flows and was skipped.`,
+          `Flow Bridge Out node ${this.getNodeLabel(targetNode)} has no target flows and was skipped.`,
           'MQTT_OUT_TARGET_FLOWS_MISSING'
         );
         return null;
@@ -1455,7 +1455,7 @@ export class FlowBuilderService {
       ) {
         this.throwNodeError(
           targetNode,
-          `MQTT In node ${this.getNodeLabel(node)} must connect to a Function node before downstream modules.`,
+          `Flow Bridge In node ${this.getNodeLabel(node)} must connect to a Function node before downstream modules.`,
           'MQTT_IN_REQUIRES_FUNCTION'
         );
       }
