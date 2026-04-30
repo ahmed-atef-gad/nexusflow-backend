@@ -160,6 +160,17 @@ sequenceDiagram
     Broker-->>ESP: Execute command
 ```
 
+  #### 3.1) Cross-Flow Bridge Routing
+
+  The runtime also supports routing one flow into one or more other flows:
+
+  - `mqtt-out` nodes (UI label: Flow Bridge Out) can publish to multiple `targetFlowIds`.
+  - `mqtt-in` nodes (UI label: Flow Bridge In) consume forwarded messages when `channel` matches.
+  - Forwarding is owner-scoped; cross-owner routing is blocked.
+  - A max internal hop limit is applied to prevent forwarding loops.
+
+  Practical effect: one source flow can fan-out the same processed message to multiple target flows, each continuing execution from matching Flow Bridge In nodes.
+
 ### 4) Notification Pipeline (Rules + History + Push)
 
 ```mermaid

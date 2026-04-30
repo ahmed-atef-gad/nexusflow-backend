@@ -157,6 +157,31 @@ The flow builder converts visual graph nodes into:
 - `ui`: frontend-facing module/topic metadata
 - logic runtime paths from input nodes through optional function nodes to output nodes
 
+### Flow Bridge (Multi-Flow Routing)
+
+Flow graphs support cross-flow routing through the network modules with stable internal ids:
+
+- `mqtt-out` (shown in UI as **Flow Bridge Out**)
+- `mqtt-in` (shown in UI as **Flow Bridge In**)
+
+How it works:
+
+- A `mqtt-out` step can forward one runtime message to **multiple target flows** using `targetFlowIds`.
+- Routing is filtered by `channel`; only `mqtt-in` nodes in the target flow with the same normalized channel receive the forwarded message.
+- Forwarded packets are routed internally on backend-managed MQTT topics and ownership is enforced (cross-owner forwarding is blocked).
+- Runtime hop count protection prevents infinite forwarding loops.
+
+Authoring constraints:
+
+- A Flow Bridge In (`mqtt-in`) node must connect to a `logic-function` node before downstream outputs.
+- A Flow Bridge Out (`mqtt-out`) node without selected target flows is skipped with a compile warning.
+
+Key implementation references:
+
+- `src/flows/flow-builder.service.ts` (compiles `targetFlowIds`, channel, and path constraints)
+- `src/mqtt/mqtt.handlers.ts` (internal forward execution and target-flow dispatch)
+- `src/flows/logic.service.ts` (runtime step sanitization for `mqtt-out`)
+
 ### Function Node Runtime
 
 The backend now supports a `logic-function` node in flow logic.
