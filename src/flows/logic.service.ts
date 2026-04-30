@@ -22,6 +22,7 @@ import {
 
 const MAX_RUNTIME_FLOW_PATHS = 500;
 const MAX_RUNTIME_STEPS_PER_PATH = 64;
+const MAX_RUNTIME_FUNCTION_STEPS_PER_PATH = 16;
 const MAX_FUNCTION_VALIDATION_CACHE_SIZE = 500;
 const DEFAULT_MQTT_LOGIC_CACHE_TTL_MS = 300000; // 5 minutes
 const DEFAULT_MQTT_LOGIC_CACHE_MAX_ENTRIES = 1000;
@@ -366,6 +367,15 @@ export class LogicService {
         )
       );
 
+      const functionStepsInPath = sanitizedPath.reduce((count, step) => {
+        return step.stepType === 'function' ? count + 1 : count;
+      }, 0);
+      if (functionStepsInPath > MAX_RUNTIME_FUNCTION_STEPS_PER_PATH) {
+        throw new BadRequestException(
+          `program.flows[${pathIndex}] exceeds maximum function steps (${MAX_RUNTIME_FUNCTION_STEPS_PER_PATH})`
+        );
+      }
+
       if (sanitizedPath[0]?.stepType !== 'input') {
         throw new BadRequestException(
           `program.flows[${pathIndex}] must start with an input step`
@@ -373,6 +383,20 @@ export class LogicService {
       }
       const terminalStepType =
         sanitizedPath[sanitizedPath.length - 1]?.stepType;
+
+      // Prevent flow bridge loops at build/validation time: disallow paths
+      // that originate from a Flow Bridge In (`mqtt-in`) and terminate at
+      // a Flow Bridge Out (`mqtt-out`). Runtime hop-count guarding still
+      // exists, but blocking these paths early avoids wasting runtime
+      // resources and makes intent clearer to users.
+      const firstModuleId = sanitizedPath[0]?.moduleId;
+      if (firstModuleId === 'mqtt-in' && terminalStepType === 'mqtt-out') {
+        throw new BadRequestException(
+          `program.flows[${pathIndex}] cannot start with 'mqtt-in' and end with 'mqtt-out'` +
+            ` — flow bridge loops are not allowed. Insert an intermediate Function node or change topology.`
+        );
+      }
+
       if (terminalStepType !== 'output' && terminalStepType !== 'mqtt-out') {
         throw new BadRequestException(
           `program.flows[${pathIndex}] must end with an output step or mqtt-out step`
