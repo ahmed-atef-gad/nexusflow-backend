@@ -1037,21 +1037,6 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  private getInternalForwardHopCount(message: RuntimeMessage): number {
-    const payload = message.payload;
-    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-      return 0;
-    }
-
-    const metadata = (payload as Record<string, unknown>)._nexusflow;
-    if (!metadata || typeof metadata !== 'object') {
-      return 0;
-    }
-
-    const hops = (metadata as Record<string, unknown>).hops;
-    return typeof hops === 'number' && Number.isFinite(hops) ? hops : 0;
-  }
-
   private createRuntimeMessage(params: {
     inputNodeId: string;
     inputModuleId: string;
@@ -1587,8 +1572,6 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
           }
 
           const channel = this.normalizeMqttChannel(step.channel);
-          const nextHopCount =
-            this.getInternalForwardHopCount(currentMessage) + 1;
 
           for (const targetFlowId of targetFlowIds) {
             const bridgeTopic = this.buildInternalMqttTopic({
@@ -1610,7 +1593,6 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
                     sourceNodeId: step.id,
                     sourceDeviceMac: this.normalizeMacAddress(deviceMac),
                     channel,
-                    hops: nextHopCount,
                     timestamp: new Date().toISOString(),
                   },
                 }),
