@@ -206,36 +206,6 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     return this.normalizeMacAddress(segments[1]);
   }
 
-  private isVirtualEspSubscriptionTopic(topic: string): boolean {
-    const segments = topic.split('/').filter(Boolean);
-    if (segments.length < 3 || segments[0] !== 'esp') return false;
-    if (this.isMacAddress(segments[1])) return false;
-
-    return segments[2] === 'response';
-  }
-
-  private isVirtualEspResponseSubscriptionFilter(topic: string): boolean {
-    const segments = topic.split('/').filter(Boolean);
-    if (segments.length !== 3 || segments[0] !== 'esp') return false;
-    if (this.isMacAddress(segments[1])) return false;
-    return segments[2] === 'response' || segments[2] === '+';
-  }
-
-  private isVirtualEspResponseTopic(topic: string): boolean {
-    const segments = topic.split('/').filter(Boolean);
-    if (segments.length !== 3 || segments[0] !== 'esp') return false;
-    if (this.isMacAddress(segments[1])) return false;
-    return segments[2] === 'response';
-  }
-
-  private extractVirtualEspResponseNodeId(topic: string): string | null {
-    const segments = topic.split('/').filter(Boolean);
-    if (segments.length !== 3 || segments[0] !== 'esp') return null;
-    if (this.isMacAddress(segments[1])) return null;
-    if (segments[2] !== 'response') return null;
-    return segments[1];
-  }
-
   private isAuthorizedForDevicesTopic(
     clientMac: string,
     topic: string
@@ -538,10 +508,6 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     }
 
     if (this.isEspTopic(topic)) {
-      if (client?.isEsp && this.isVirtualEspResponseTopic(topic)) {
-        return done(null);
-      }
-
       if (client?.isEsp) {
         const clientMac = client?.deviceMac;
         if (clientMac && this.isAuthorizedForEspTopic(clientMac, topic)) {
@@ -574,13 +540,6 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     ) => void
   ) {
     const topic = sub?.topic ?? '';
-
-    if (
-      client?.isUserClient &&
-      this.isVirtualEspResponseSubscriptionFilter(topic)
-    ) {
-      return done(null, sub);
-    }
 
     if (
       this.isEspTopic(topic) &&
@@ -668,10 +627,6 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     }
 
     if (this.isEspTopic(topic)) {
-      if (client?.isUserClient && this.isVirtualEspSubscriptionTopic(topic)) {
-        return done(null, sub);
-      }
-
       if (client?.isEsp) {
         const clientMac = client?.deviceMac;
         if (
@@ -726,10 +681,6 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     }
 
     if (this.isEspTopic(topic)) {
-      if (client?.isEsp && this.isVirtualEspResponseTopic(topic)) {
-        return packet;
-      }
-
       if (client?.isEsp) {
         const clientMac = client?.deviceMac;
         if (clientMac && this.isAuthorizedForEspTopic(clientMac, topic)) {
@@ -1424,214 +1375,6 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       : this.mapValue(numericValue, 0, 255, 0, 180);
 
     return Math.round(Math.min(180, Math.max(0, angle)));
-  }
-
-  private async executeRuntimeFlowsForInput(params: {
-    flows: unknown[][];
-    inputNodeId: string;
-    inputModuleId: string;
-    inputValue: number | null;
-    rawPayload: InputPayload | null;
-    topic: string;
-    flowId: string;
-    deviceMac: string;
-    ownerId?: string;
-    matchFirstStep?: (step: RuntimeCommand) => boolean;
-  }): Promise<{ matchedSteps: number; publishedCommands: number }> {
-    const commandTopic = `esp/${this.normalizeMacAddress(params.deviceMac)}/cmd`;
-    let matchedSteps = 0;
-    let publishedCommands = 0;
-
-    for (const flow of params.flows) {
-      if (!Array.isArray(flow) || !flow.length) {
-        continue;
-      }
-      if (flow.length > MAX_RUNTIME_STEPS_PER_PATH) {
-        this.logger.warn(
-          `Skipping runtime path due to excessive length (${flow.length} steps).`
-        );
-        continue;
-      }
-
-      const functionStepsInPath = flow.reduce<number>((count, step) => {
-        const runtimeStep = step as RuntimeCommand;
-        return runtimeStep?.stepType === 'function' ? count + 1 : count;
-      }, 0);
-      if (functionStepsInPath > MAX_RUNTIME_FUNCTION_STEPS_PER_PATH) {
-        this.logger.warn(
-          `Skipping runtime path due to excessive function node depth (${functionStepsInPath}).`
-        );
-        continue;
-      }
-
-      const firstStep = flow[0] as RuntimeCommand | undefined;
-      if (!firstStep) continue;
-      const matches = params.matchFirstStep
-        ? params.matchFirstStep(firstStep)
-        : firstStep.id === params.inputNodeId;
-      if (!matches) continue;
-
-      const effectiveInputNodeId = String(firstStep.id ?? params.inputNodeId);
-      const effectiveInputModuleId = String(
-        firstStep.moduleId ?? params.inputModuleId
-      );
-      matchedSteps++;
-      this.logger.debug(
-        `Matched runtime path for nodeId=${effectiveInputNodeId} with ${flow.length} steps`
-      );
-
-      const usesFunctionSteps = this.pathUsesFunctionSteps(flow);
-      const initialPayload = usesFunctionSteps
-        ? this.buildFunctionInitialPayload(params.rawPayload, params.inputValue)
-        : params.inputValue;
-
-      let currentMessage = this.createRuntimeMessage({
-        inputNodeId: effectiveInputNodeId,
-        inputModuleId: effectiveInputModuleId,
-        payload: initialPayload,
-        normalizedInput: params.inputValue,
-        topic: params.topic,
-        flowId: params.flowId,
-        deviceMac: this.normalizeMacAddress(params.deviceMac),
-      });
-
-      for (const rawStep of flow.slice(1)) {
-        const step = rawStep as RuntimeCommand;
-
-        if (step.stepType === 'function') {
-          const functionNodeId = String(step.id ?? 'unknown');
-          try {
-            const nextMessage = this.executeFunctionStep(step, currentMessage);
-            if (nextMessage === null) {
-              await this.mqttService.publish(
-                this.buildFunctionDebugTopic(params.deviceMac, functionNodeId),
-                {
-                  code: 'FUNCTION_RETURNED_NULL',
-                  severity: 'info',
-                  message:
-                    'Function node returned null/undefined, so this runtime path was stopped.',
-                  flowId: params.flowId,
-                  nodeId: functionNodeId,
-                  moduleId: step.moduleId,
-                  inputTopic: params.topic,
-                  timestamp: new Date().toISOString(),
-                }
-              );
-              break;
-            }
-            currentMessage = nextMessage;
-          } catch (error) {
-            this.logger.warn(
-              `Function node ${step.id ?? 'unknown'} failed: ${(error as Error).message}`
-            );
-
-            await this.mqttService.publish(
-              this.buildFunctionErrorTopic(params.deviceMac, functionNodeId),
-              {
-                code: 'FUNCTION_EXECUTION_FAILED',
-                message: (error as Error).message,
-                flowId: params.flowId,
-                nodeId: functionNodeId,
-                moduleId: step.moduleId,
-                inputTopic: params.topic,
-                timestamp: new Date().toISOString(),
-              }
-            );
-
-            await this.mqttService.publish(
-              this.buildFunctionDebugTopic(params.deviceMac, functionNodeId),
-              {
-                code: 'FUNCTION_EXECUTION_FAILED',
-                severity: 'error',
-                message: (error as Error).message,
-                flowId: params.flowId,
-                nodeId: functionNodeId,
-                moduleId: step.moduleId,
-                inputTopic: params.topic,
-                timestamp: new Date().toISOString(),
-              }
-            );
-            break;
-          }
-          continue;
-        }
-
-        if (this.isMqttOutRuntimeCommand(step)) {
-          const ownerId = params.ownerId;
-          const targetFlowIds = Array.isArray(step.targetFlowIds)
-            ? step.targetFlowIds
-            : [];
-          if (!ownerId || !targetFlowIds.length) continue;
-
-          const nextHopCount =
-            this.getInternalForwardHopCount(currentMessage) + 1;
-          if (nextHopCount > MAX_INTERNAL_MQTT_FORWARD_HOPS) {
-            this.logger.warn(
-              `MQTT flow forward stopped after ${MAX_INTERNAL_MQTT_FORWARD_HOPS} hops. flowId=${params.flowId}`
-            );
-            continue;
-          }
-
-          const channel = this.normalizeMqttChannel(step.channel);
-          for (const targetFlowId of targetFlowIds) {
-            const topic = this.buildInternalMqttTopic({
-              ownerId,
-              sourceDeviceMac: params.deviceMac,
-              sourceFlowId: params.flowId,
-              targetFlowId,
-              channel,
-            });
-            await this.mqttService.publish(topic, {
-              ...this.buildForwardPayload(currentMessage),
-              _nexusflow: {
-                kind: 'flow-forward',
-                sourceFlowId: params.flowId,
-                targetFlowId,
-                sourceNodeId: step.id,
-                sourceDeviceMac: this.normalizeMacAddress(params.deviceMac),
-                channel,
-                hops: nextHopCount,
-                timestamp: new Date().toISOString(),
-              },
-            });
-            publishedCommands++;
-          }
-          continue;
-        }
-
-        if (!this.isGpioRuntimeCommand(step)) continue;
-        if (typeof step.cmd !== 'number' || typeof step.pin !== 'number') {
-          continue;
-        }
-
-        const outputValue =
-          step.targetModuleType === 'servo'
-            ? this.coerceServoOutputValue(currentMessage, usesFunctionSteps)
-            : this.coerceRuntimeOutputValue(currentMessage);
-        if (outputValue === null) {
-          this.logger.warn(
-            `Output step ${step.id ?? 'unknown'} skipped because payload is not a numeric, boolean, or numeric string value.`
-          );
-          continue;
-        }
-
-        await this.mqttService.publish(commandTopic, {
-          command: {
-            cmd: step.cmd,
-            pin: step.pin,
-            value: outputValue,
-            topic: step.topic,
-          },
-        });
-        publishedCommands++;
-
-        this.logger.debug(
-          `Published GPIO logic command. cmd=${step.cmd} pin=${step.pin} value=${outputValue} topic=${commandTopic}`
-        );
-      }
-    }
-
-    return { matchedSteps, publishedCommands };
   }
 
   private async executeGpioLogicForInputTopic(
