@@ -564,7 +564,7 @@ export class NotificationsService implements OnModuleInit {
     await this.assertUserCanAccessFlow(userId, flowId);
 
     const preference = await this.notificationPreferenceModel
-      .findOne({ flowId, userId })
+      .findOne(this.buildPreferenceFilter(flowId, userId))
       .lean()
       .exec();
     if (!preference) {
@@ -606,16 +606,19 @@ export class NotificationsService implements OnModuleInit {
     const normalizedChannels = this.normalizeChannels(dto.channels);
 
     const existing = await this.notificationPreferenceModel
-      .findOne({ flowId, userId })
+      .findOne(this.buildPreferenceFilter(flowId, userId))
       .exec();
 
     const updated =
       existing ??
       new this.notificationPreferenceModel({
         flowId,
+        projectId: flowId,
         userId,
       });
 
+    updated.flowId = flowId;
+    updated.projectId = flowId;
     updated.notificationsEnabled = dto.notificationsEnabled;
     updated.channels = normalizedChannels;
 
@@ -648,15 +651,25 @@ export class NotificationsService implements OnModuleInit {
     const preferences = await this.notificationPreferenceModel
       .find({
         userId,
-        flowId: { $in: normalizedFlowIds },
+        $or: [
+          { flowId: { $in: normalizedFlowIds } },
+          { projectId: { $in: normalizedFlowIds } },
+        ],
       })
-      .select({ flowId: 1, notificationsEnabled: 1 })
+      .select({ flowId: 1, projectId: 1, notificationsEnabled: 1 })
       .lean()
       .exec();
 
     const states = new Map<string, boolean>();
     for (const preference of preferences) {
-      states.set(preference.flowId, preference.notificationsEnabled);
+      const key =
+        typeof preference.flowId === 'string' && preference.flowId.trim()
+          ? preference.flowId
+          : (preference.projectId ?? '');
+      if (!key) {
+        continue;
+      }
+      states.set(key, preference.notificationsEnabled);
     }
 
     return states;
@@ -976,7 +989,7 @@ export class NotificationsService implements OnModuleInit {
     }
 
     const preference = await this.notificationPreferenceModel
-      .findOne({ flowId: input.flowId, userId: flowOwnerId })
+      .findOne(this.buildPreferenceFilter(input.flowId, flowOwnerId))
       .lean()
       .exec();
 
@@ -1024,7 +1037,7 @@ export class NotificationsService implements OnModuleInit {
     }
 
     const preference = await this.notificationPreferenceModel
-      .findOne({ flowId: input.flowId, userId: flowOwnerId })
+      .findOne(this.buildPreferenceFilter(input.flowId, flowOwnerId))
       .lean()
       .exec();
     const notificationsEnabled = this.resolvePreferenceEnabled(preference);
@@ -1180,7 +1193,11 @@ export class NotificationsService implements OnModuleInit {
     await Promise.all([
       this.alertRuleModel.deleteMany({ flowId }).exec(),
       this.alertEventModel.deleteMany({ flowId }).exec(),
-      this.notificationPreferenceModel.deleteMany({ flowId }).exec(),
+      this.notificationPreferenceModel
+        .deleteMany({
+          $or: [{ flowId }, { projectId: flowId }],
+        })
+        .exec(),
     ]);
   }
 
@@ -1846,6 +1863,16 @@ export class NotificationsService implements OnModuleInit {
   ): boolean {
     // Missing preference document means opt-in by default.
     return preference ? preference.notificationsEnabled : true;
+  }
+
+  private buildPreferenceFilter(
+    flowId: string,
+    userId: string
+  ): FilterQuery<NotificationPreferenceDocument> {
+    return {
+      userId,
+      $or: [{ flowId }, { projectId: flowId }],
+    };
   }
 
   private async getFlowOwnerId(flowId: string): Promise<string | null> {

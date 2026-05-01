@@ -1598,6 +1598,36 @@
           "response": []
         },
         {
+          "name": "Disable Notification Preferences",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/flows/{{flowId}}/notification-preferences",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notificationsEnabled\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Disable notifications for a flow. This operation is always allowed and does not require alert rules."
+          },
+          "response": []
+        },
+        {
           "name": "Get Alert Policies",
           "request": {
             "method": "GET",

@@ -9,6 +9,10 @@ export class NotificationPreference {
   @Prop({ required: true, index: true })
   flowId!: string;
 
+  // Backward compatibility for legacy documents/indexes that used projectId.
+  @Prop({ required: false, index: true })
+  projectId?: string;
+
   @Prop({ required: true, index: true })
   userId!: string;
 
