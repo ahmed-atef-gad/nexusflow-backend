@@ -67,6 +67,20 @@ export class ProjectAlertConfigController {
     return this.notificationsService.upsertAlertPolicies(body);
   }
 
+  @ApiOperation({ summary: 'Delete an alert policy (Admin only)' })
+  @ApiParam({ name: 'policyId', description: 'Alert policy ID' })
+  @ApiResponse({ status: 204, description: 'Alert policy deleted' })
+  @ApiUnauthorizedResponse({
+    description: 'Unauthorized - Invalid or missing user token',
+  })
+  @UseGuards(RolesGuard)
+  @Roles(Role.Admin)
+  @HttpCode(204)
+  @Delete('alert-policies/:policyId')
+  async deleteAlertPolicy(@Param('policyId') policyId: string): Promise<void> {
+    await this.notificationsService.deleteAlertPolicy(policyId);
+  }
+
   @ApiOperation({ summary: 'Get notification preferences for a flow' })
   @ApiParam({ name: 'flowId', description: 'Flow identifier' })
   @ApiResponse({ status: 200, description: 'Flow notification preferences' })
