@@ -139,6 +139,9 @@ const MODULE_READING_KEYS: Record<string, string[]> = {
   'Rain-Sensor': ['analog', 'digital'],
   'Soil-Sensor': ['analog', 'digital'],
   'Ultrasonic-Sensor': ['distance_cm'],
+  'ESP32-gpio-input': ['result'],
+  'ESP32-gpio-input-pullup': ['result'],
+  'ESP32-gpio-input-analog': ['raw', 'result'],
 };
 
 const GAS_SENSOR_MODULE_ID = 'MQ2-Sensor';
