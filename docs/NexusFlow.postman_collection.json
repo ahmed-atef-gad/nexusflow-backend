@@ -1797,11 +1797,45 @@
                   "  const json = pm.response.json();",
                   "  const cursor = json?.nextCursor ?? '';",
                   "  pm.collectionVariables.set('alertCursor', String(cursor));",
+                  "  const firstHistoryId = json?.items?.[0]?.id ?? '';",
+                  "  if (firstHistoryId) pm.collectionVariables.set('historyId', String(firstHistoryId));",
                   "} catch (e) {}"
                 ]
               }
             }
           ],
+          "response": []
+        },
+        {
+          "name": "Mark Alert Notification Received",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/notifications/alert-history/{{historyId}}/received",
+            "description": "Mobile handshake endpoint. Marks alert notification as delivered to the device. No body is required."
+          },
+          "response": []
+        },
+        {
+          "name": "Mark Alert Notification Handled",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/notifications/alert-history/{{historyId}}/handled",
+            "description": "Mobile handshake endpoint. Marks alert notification as handled by user interaction. No body is required. Future sends are suppressed only during the handled cool-down window."
+          },
           "response": []
         },
         {
@@ -1923,6 +1957,10 @@
     },
     {
       "key": "ruleId",
+      "value": ""
+    },
+    {
+      "key": "historyId",
       "value": ""
     },
     {

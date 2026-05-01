@@ -11,6 +11,7 @@ Scope:
 - Per-flow notification preferences
 - Per-flow/node alert rules
 - Alert history for missed notifications
+- Alert notification handshake state (received/handled)
 - Internal alert trigger endpoint
 
 ## Core Model
@@ -143,7 +144,7 @@ Legacy compatibility note:
 - This avoids duplicate-key failures in environments that still have an old unique index on `projectId + userId`.
 - New writes keep preferences aligned with flow-scoped routing (`/v1/flows/:flowId/...`).
 
-**Important: Alert Rules Requirement**
+### Important: Alert Rules Requirement
 
 - Notifications can only be enabled if the flow has at least one alert rule
 - Before enabling notifications, ensure the flow has created alert rules (see section 4 below)
@@ -214,8 +215,57 @@ Behavior:
 - `since` is in hours; default is `24` when omitted
 - `since` accepts positive integer strings and is capped at `720`
 - This is the source for missed notifications when device was offline
+- Each history item now includes handshake flags:
+  - `notificationReceived` (device received push)
+  - `notificationHandled` (user opened/interacted)
 
-### 5.1) MQ2 Repeated-Alert Throttling
+### 5.1) Alert Notification Handshake (Mobile Ack)
+
+- `POST /v1/notifications/alert-history/:historyId/received`
+- `POST /v1/notifications/alert-history/:historyId/handled`
+
+Contract:
+
+- Mobile app sends `received` when push reaches the device.
+- Mobile app sends `handled` when user opens/interacts with the alert.
+- `handled` also implies `received` if not already set.
+
+Server behavior:
+
+- If latest alert state is `handled`, backend suppresses sends only during a handled cool-down window (`ALERT_HANDLED_COOLDOWN_MS`).
+- After cool-down expires, the next hazardous reading is treated as a new issue and starts a new alert cycle/history item.
+- If latest alert state is `received` but not `handled`, backend throttles reminder pushes using `ALERT_RECEIVED_REMINDER_MS`.
+- If no receive ack exists, backend keeps normal trigger behavior.
+
+Handled cool-down override precedence (highest to lowest):
+
+- `ALERT_HANDLED_COOLDOWN_BY_MODULE_SEVERITY_MS` (`moduleId|severity=ms`)
+- `ALERT_HANDLED_COOLDOWN_BY_MODULE_MS` (`moduleId=ms`)
+- `ALERT_HANDLED_COOLDOWN_BY_SEVERITY_MS` (`severity=ms`)
+- `ALERT_HANDLED_COOLDOWN_MS` (default fallback)
+
+Examples:
+
+- `ALERT_HANDLED_COOLDOWN_BY_SEVERITY_MS=critical=900000,warning=1800000,info=3600000`
+- `ALERT_HANDLED_COOLDOWN_BY_MODULE_MS=MQ2-Sensor=600000,PIR-Sensor=1200000`
+- `ALERT_HANDLED_COOLDOWN_BY_MODULE_SEVERITY_MS=MQ2-Sensor|critical=300000`
+
+Response shape for both endpoints:
+
+```json
+{
+  "historyId": "6802ec3f7fd4db8af143dcf1",
+  "flowId": "69b58d513b6489cbd6655026",
+  "ruleId": "69e7cf54e463e7c6e48fb54d",
+  "nodeId": "MQ2-Sensor-1777061998955-55w",
+  "notificationReceived": true,
+  "notificationHandled": false,
+  "notificationReceivedAt": "2026-05-02T10:00:00.000Z",
+  "notificationHandledAt": null
+}
+```
+
+### 5.2) MQ2 Repeated-Alert Throttling
 
 - MQ2 (`moduleId = MQ2-Sensor`) uses exponential backoff when a rule stays matched.
 - First match fires immediately, then subsequent alerts wait progressively longer.
@@ -288,3 +338,8 @@ on app open/resume to backfill alerts that may have been missed while offline.
 - `INTERNAL_ALERTS_API_KEY` (recommended outside local)
 - `ALERT_RULE_COOLDOWN_MS` (optional, default `60000`)
 - `ALERT_RULE_MAX_BACKOFF_MS` (optional, default `900000`)
+- `ALERT_RECEIVED_REMINDER_MS` (optional, default `600000`)
+- `ALERT_HANDLED_COOLDOWN_MS` (optional, default `3600000`)
+- `ALERT_HANDLED_COOLDOWN_BY_SEVERITY_MS` (optional CSV map, example `critical=900000,warning=1800000`)
+- `ALERT_HANDLED_COOLDOWN_BY_MODULE_MS` (optional CSV map, example `MQ2-Sensor=600000`)
+- `ALERT_HANDLED_COOLDOWN_BY_MODULE_SEVERITY_MS` (optional CSV map, example `MQ2-Sensor|critical=300000`)

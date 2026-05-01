@@ -48,6 +48,8 @@ import {
 
 type AlertSeverity = 'critical' | 'warning' | 'info';
 
+const ALERT_SEVERITIES: AlertSeverity[] = ['critical', 'warning', 'info'];
+
 type ProcessSensorReadingInput = {
   flowId: string;
   nodeId: string;
@@ -82,7 +84,20 @@ type AlertHistoryItem = {
   min: number | null;
   max: number | null;
   occurredAt: Date;
+  notificationReceived: boolean;
+  notificationHandled: boolean;
   createdAt?: Date;
+};
+
+type AlertDeliveryState = {
+  historyId: string;
+  flowId: string;
+  ruleId: string;
+  nodeId: string;
+  notificationReceived: boolean;
+  notificationHandled: boolean;
+  notificationReceivedAt?: Date | null;
+  notificationHandledAt?: Date | null;
 };
 
 type RuleOutput = {
@@ -144,6 +159,8 @@ const MODULE_READING_KEYS: Record<string, string[]> = {
 const GAS_SENSOR_MODULE_ID = 'MQ2-Sensor';
 const DEFAULT_HISTORY_SINCE_HOURS = 24;
 const MAX_HISTORY_SINCE_HOURS = 720;
+const DEFAULT_RECEIVED_REMINDER_MS = 10 * 60 * 1000;
+const DEFAULT_HANDLED_COOLDOWN_MS = 60 * 60 * 1000;
 
 type BaselinePolicyInput = {
   moduleId: string;
@@ -369,6 +386,11 @@ export class NotificationsService implements OnModuleInit {
   private readonly ruleCooldownMs: number;
   private readonly recentRuleTriggers = new Map<string, number>();
   private readonly gasRuleMaxBackoffMs: number;
+  private readonly receivedReminderMs: number;
+  private readonly handledCooldownMs: number;
+  private readonly handledCooldownByModuleSeverityMs: Map<string, number>;
+  private readonly handledCooldownByModuleMs: Map<string, number>;
+  private readonly handledCooldownBySeverityMs: Map<AlertSeverity, number>;
   private readonly gasRuleBackoffState = new Map<
     string,
     { lastTriggeredAtMs: number; nextDelayMs: number }
@@ -396,6 +418,25 @@ export class NotificationsService implements OnModuleInit {
     this.gasRuleMaxBackoffMs = this.readPositiveConfigNumber(
       'ALERT_RULE_MAX_BACKOFF_MS',
       15 * 60000
+    );
+    this.receivedReminderMs = this.readPositiveConfigNumber(
+      'ALERT_RECEIVED_REMINDER_MS',
+      DEFAULT_RECEIVED_REMINDER_MS
+    );
+    this.handledCooldownMs = this.readPositiveConfigNumber(
+      'ALERT_HANDLED_COOLDOWN_MS',
+      DEFAULT_HANDLED_COOLDOWN_MS
+    );
+    this.handledCooldownByModuleSeverityMs = this.readDurationMapConfig(
+      'ALERT_HANDLED_COOLDOWN_BY_MODULE_SEVERITY_MS',
+      (key) => this.normalizeModuleSeverityKey(key)
+    );
+    this.handledCooldownByModuleMs = this.readDurationMapConfig(
+      'ALERT_HANDLED_COOLDOWN_BY_MODULE_MS',
+      (key) => key.trim()
+    );
+    this.handledCooldownBySeverityMs = this.readSeverityDurationMapConfig(
+      'ALERT_HANDLED_COOLDOWN_BY_SEVERITY_MS'
     );
   }
 
@@ -942,6 +983,8 @@ export class NotificationsService implements OnModuleInit {
       min: event.min ?? null,
       max: event.max ?? null,
       occurredAt: event.occurredAt,
+      notificationReceived: Boolean(event.notificationReceived),
+      notificationHandled: Boolean(event.notificationHandled),
       createdAt: event.createdAt,
     }));
 
@@ -950,6 +993,52 @@ export class NotificationsService implements OnModuleInit {
       : null;
 
     return { items, nextCursor, hasMore };
+  }
+
+  async markAlertNotificationReceived(
+    userId: string,
+    historyId: string
+  ): Promise<AlertDeliveryState> {
+    const event = await this.getOwnedAlertEventOrThrow(userId, historyId);
+    const now = new Date();
+
+    if (!event.notificationReceived) {
+      event.notificationReceived = true;
+      event.notificationReceivedAt = now;
+    }
+    if (!event.notificationLastSentAt) {
+      event.notificationLastSentAt = event.createdAt ?? now;
+    }
+    if (!event.notificationHandled) {
+      event.notificationNextReminderAt = new Date(
+        (event.notificationLastSentAt ?? now).getTime() +
+          this.receivedReminderMs
+      );
+    }
+
+    await event.save();
+    return this.mapAlertDeliveryState(event);
+  }
+
+  async markAlertNotificationHandled(
+    userId: string,
+    historyId: string
+  ): Promise<AlertDeliveryState> {
+    const event = await this.getOwnedAlertEventOrThrow(userId, historyId);
+    const now = new Date();
+
+    if (!event.notificationReceived) {
+      event.notificationReceived = true;
+      event.notificationReceivedAt = now;
+    }
+    if (!event.notificationHandled) {
+      event.notificationHandled = true;
+      event.notificationHandledAt = now;
+    }
+    event.notificationNextReminderAt = null;
+
+    await event.save();
+    return this.mapAlertDeliveryState(event);
   }
 
   async triggerAlertFromInternal(input: TriggerAlertDto): Promise<{
@@ -1024,6 +1113,15 @@ export class NotificationsService implements OnModuleInit {
       metadata: { source: 'internal-trigger' },
     });
 
+    if (fired.suppressed) {
+      return {
+        triggered: false,
+        historyId: fired.historyId,
+        pushSent: false,
+        reason: fired.reason,
+      };
+    }
+
     return {
       triggered: true,
       historyId: fired.historyId,
@@ -1096,13 +1194,16 @@ export class NotificationsService implements OnModuleInit {
         continue;
       }
 
-      await this.fireAlertFromRule({
+      const fired = await this.fireAlertFromRule({
         flowId: input.flowId,
         rule,
         value,
         occurredAt,
         metadata: input.metadata,
       });
+      if (fired.suppressed) {
+        continue;
+      }
       triggeredRules++;
     }
 
@@ -1255,9 +1356,35 @@ export class NotificationsService implements OnModuleInit {
     value: number;
     occurredAt: Date;
     metadata?: Record<string, string | number | boolean>;
-  }): Promise<{ historyId: string; pushSent: boolean }> {
+  }): Promise<{
+    historyId: string;
+    pushSent: boolean;
+    suppressed: boolean;
+    reason?: string;
+  }> {
     const rule = params.rule as AlertRule & { _id: unknown };
     const ruleId = this.toObjectIdString(rule);
+    const latestEvent = await this.findLatestAlertEventForRule(
+      params.flowId,
+      ruleId,
+      rule.nodeId,
+      rule.moduleId,
+      this.normalizeReadingKey(rule.readingKey)
+    );
+    const deliveryGate = this.evaluateAlertDeliveryGate(
+      latestEvent,
+      params.occurredAt,
+      { moduleId: rule.moduleId, severity: rule.severity }
+    );
+    if (!deliveryGate.allowSend) {
+      return {
+        historyId: latestEvent ? this.toObjectIdString(latestEvent) : '',
+        pushSent: false,
+        suppressed: true,
+        reason: deliveryGate.reason,
+      };
+    }
+
     const pushAction = this.extractPushAction(rule.actions);
     const pushPayload = this.extractPushPayload(pushAction?.payload);
     const title = pushPayload.title ?? this.buildDefaultRuleTitle(rule);
@@ -1279,7 +1406,20 @@ export class NotificationsService implements OnModuleInit {
       min: rule.min ?? null,
       max: rule.max ?? null,
       occurredAt: params.occurredAt,
+      notificationReceived: deliveryGate.inheritReceived,
+      notificationHandled: false,
+      notificationReceivedAt:
+        deliveryGate.inheritReceived && latestEvent?.notificationReceivedAt
+          ? latestEvent.notificationReceivedAt
+          : null,
+      notificationHandledAt: null,
+      notificationLastSentAt: params.occurredAt,
+      notificationNextReminderAt: deliveryGate.inheritReceived
+        ? new Date(params.occurredAt.getTime() + this.receivedReminderMs)
+        : null,
     });
+
+    const historyId = this.toObjectIdString(createdEvent);
 
     const delivery = await this.sendAlertToFlowOwner({
       flowId: params.flowId,
@@ -1288,6 +1428,7 @@ export class NotificationsService implements OnModuleInit {
       severity: rule.severity,
       data: {
         type: 'ALERT_TRIGGERED',
+        historyId,
         ruleId,
         nodeId: rule.nodeId,
         moduleId: rule.moduleId,
@@ -1303,9 +1444,253 @@ export class NotificationsService implements OnModuleInit {
     });
 
     return {
-      historyId: this.toObjectIdString(createdEvent),
+      historyId,
       pushSent: delivery.successCount > 0,
+      suppressed: false,
     };
+  }
+
+  private async getOwnedAlertEventOrThrow(
+    userId: string,
+    historyId: string
+  ): Promise<AlertEventDocument> {
+    if (!Types.ObjectId.isValid(historyId)) {
+      throw new NotFoundException('Alert history event not found.');
+    }
+
+    const event = await this.alertEventModel.findById(historyId).exec();
+    if (!event) {
+      throw new NotFoundException('Alert history event not found.');
+    }
+
+    const ownerId = await this.getFlowOwnerId(event.flowId);
+    if (!ownerId || ownerId !== userId) {
+      throw new ForbiddenException(
+        'You are not allowed to update this alert history event.'
+      );
+    }
+
+    return event;
+  }
+
+  private mapAlertDeliveryState(
+    event: Pick<
+      AlertEvent,
+      | 'flowId'
+      | 'ruleId'
+      | 'nodeId'
+      | 'notificationReceived'
+      | 'notificationHandled'
+      | 'notificationReceivedAt'
+      | 'notificationHandledAt'
+    > & { _id?: unknown }
+  ): AlertDeliveryState {
+    return {
+      historyId: this.toObjectIdString(event),
+      flowId: event.flowId,
+      ruleId: event.ruleId,
+      nodeId: event.nodeId,
+      notificationReceived: Boolean(event.notificationReceived),
+      notificationHandled: Boolean(event.notificationHandled),
+      notificationReceivedAt: event.notificationReceivedAt ?? null,
+      notificationHandledAt: event.notificationHandledAt ?? null,
+    };
+  }
+
+  private async findLatestAlertEventForRule(
+    flowId: string,
+    ruleId: string,
+    nodeId: string,
+    moduleId: string,
+    readingKey: string
+  ): Promise<AlertEventDocument | null> {
+    return this.alertEventModel
+      .findOne({
+        flowId,
+        ruleId,
+        nodeId,
+        moduleId,
+        readingKey,
+      })
+      .sort({ occurredAt: -1, _id: -1 })
+      .exec();
+  }
+
+  private evaluateAlertDeliveryGate(
+    latestEvent: AlertEventDocument | null,
+    occurredAt: Date,
+    context?: { moduleId?: string; severity?: AlertSeverity }
+  ): { allowSend: boolean; inheritReceived: boolean; reason?: string } {
+    if (!latestEvent) {
+      return { allowSend: true, inheritReceived: false };
+    }
+
+    if (latestEvent.notificationHandled) {
+      const cooldownMs = this.resolveHandledCooldownMs(
+        context?.moduleId ?? latestEvent.moduleId,
+        context?.severity ?? latestEvent.severity
+      );
+      const handledAt =
+        latestEvent.notificationHandledAt ??
+        latestEvent.updatedAt ??
+        latestEvent.createdAt ??
+        latestEvent.occurredAt;
+      const elapsedSinceHandledMs = handledAt
+        ? Math.max(0, occurredAt.getTime() - handledAt.getTime())
+        : cooldownMs;
+
+      if (elapsedSinceHandledMs < cooldownMs) {
+        return {
+          allowSend: false,
+          inheritReceived: true,
+          reason:
+            'Alert notification already handled by user and still within handled cooldown window.',
+        };
+      }
+
+      return {
+        allowSend: true,
+        inheritReceived: false,
+      };
+    }
+
+    if (!latestEvent.notificationReceived) {
+      return { allowSend: true, inheritReceived: false };
+    }
+
+    const baseTime =
+      latestEvent.notificationLastSentAt ??
+      latestEvent.updatedAt ??
+      latestEvent.createdAt ??
+      latestEvent.occurredAt;
+
+    if (baseTime) {
+      const elapsedMs = occurredAt.getTime() - baseTime.getTime();
+      if (elapsedMs < this.receivedReminderMs) {
+        return {
+          allowSend: false,
+          inheritReceived: true,
+          reason: 'Reminder throttled after receive acknowledgement.',
+        };
+      }
+    }
+
+    return {
+      allowSend: true,
+      inheritReceived: true,
+    };
+  }
+
+  private resolveHandledCooldownMs(
+    moduleId?: string,
+    severity?: AlertSeverity
+  ): number {
+    const normalizedModuleId = moduleId?.trim() ?? '';
+    const normalizedSeverity = this.normalizeSeverity(severity);
+
+    if (normalizedModuleId && normalizedSeverity) {
+      const key = this.normalizeModuleSeverityKey(
+        `${normalizedModuleId}|${normalizedSeverity}`
+      );
+      const moduleSeverityMs = this.handledCooldownByModuleSeverityMs.get(key);
+      if (moduleSeverityMs) {
+        return moduleSeverityMs;
+      }
+    }
+
+    if (normalizedModuleId) {
+      const moduleMs = this.handledCooldownByModuleMs.get(normalizedModuleId);
+      if (moduleMs) {
+        return moduleMs;
+      }
+    }
+
+    if (normalizedSeverity) {
+      const severityMs =
+        this.handledCooldownBySeverityMs.get(normalizedSeverity);
+      if (severityMs) {
+        return severityMs;
+      }
+    }
+
+    return this.handledCooldownMs;
+  }
+
+  private readDurationMapConfig(
+    name: string,
+    normalizeKey: (key: string) => string
+  ): Map<string, number> {
+    const raw = this.configService.get<string>(name);
+    if (!raw || !raw.trim()) {
+      return new Map<string, number>();
+    }
+
+    const parsed = new Map<string, number>();
+    const entries = raw
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+
+    for (const entry of entries) {
+      const separatorIndex = entry.indexOf('=');
+      if (separatorIndex <= 0 || separatorIndex === entry.length - 1) {
+        continue;
+      }
+
+      const key = normalizeKey(entry.slice(0, separatorIndex));
+      const rawValue = entry.slice(separatorIndex + 1).trim();
+      const parsedValue = Number(rawValue);
+
+      if (!key || !Number.isFinite(parsedValue) || parsedValue <= 0) {
+        continue;
+      }
+
+      parsed.set(key, Math.trunc(parsedValue));
+    }
+
+    return parsed;
+  }
+
+  private readSeverityDurationMapConfig(
+    name: string
+  ): Map<AlertSeverity, number> {
+    const rawMap = this.readDurationMapConfig(name, (key) =>
+      this.normalizeSeverity(key)
+    );
+    const result = new Map<AlertSeverity, number>();
+
+    for (const [key, value] of rawMap.entries()) {
+      if (this.isAlertSeverity(key)) {
+        result.set(key, value);
+      }
+    }
+
+    return result;
+  }
+
+  private normalizeModuleSeverityKey(value: string): string {
+    const [rawModuleId, rawSeverity] = value.split('|');
+    const moduleId = rawModuleId?.trim() ?? '';
+    const severity = this.normalizeSeverity(rawSeverity);
+
+    if (!moduleId || !severity) {
+      return '';
+    }
+
+    return `${moduleId}|${severity}`;
+  }
+
+  private normalizeSeverity(value: unknown): AlertSeverity | '' {
+    if (typeof value !== 'string') {
+      return '';
+    }
+
+    const normalized = value.trim().toLowerCase();
+    return this.isAlertSeverity(normalized) ? normalized : '';
+  }
+
+  private isAlertSeverity(value: string): value is AlertSeverity {
+    return ALERT_SEVERITIES.includes(value as AlertSeverity);
   }
 
   private async sendAlertToFlowOwner(input: {

@@ -47,6 +47,24 @@ export class AlertEvent {
   @Prop({ required: true, index: true })
   occurredAt!: Date;
 
+  @Prop({ type: Boolean, default: false, index: true })
+  notificationReceived!: boolean;
+
+  @Prop({ type: Boolean, default: false, index: true })
+  notificationHandled!: boolean;
+
+  @Prop({ type: Date, default: null })
+  notificationReceivedAt?: Date | null;
+
+  @Prop({ type: Date, default: null })
+  notificationHandledAt?: Date | null;
+
+  @Prop({ type: Date, default: null })
+  notificationLastSentAt?: Date | null;
+
+  @Prop({ type: Date, default: null })
+  notificationNextReminderAt?: Date | null;
+
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -55,3 +73,4 @@ export const AlertEventSchema = SchemaFactory.createForClass(AlertEvent);
 
 AlertEventSchema.index({ flowId: 1, occurredAt: -1 });
 AlertEventSchema.index({ flowId: 1, nodeId: 1, occurredAt: -1 });
+AlertEventSchema.index({ flowId: 1, ruleId: 1, nodeId: 1, occurredAt: -1 });
