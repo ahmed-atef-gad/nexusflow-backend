@@ -144,7 +144,7 @@ Legacy compatibility note:
 - This avoids duplicate-key failures in environments that still have an old unique index on `projectId + userId`.
 - New writes keep preferences aligned with flow-scoped routing (`/v1/flows/:flowId/...`).
 
-**Important: Alert Rules Requirement**
+### Important: Alert Rules Requirement
 
 - Notifications can only be enabled if the flow has at least one alert rule
 - Before enabling notifications, ensure the flow has created alert rules (see section 4 below)
@@ -232,9 +232,23 @@ Contract:
 
 Server behavior:
 
-- If latest alert state is `handled`, backend suppresses future sends for that alert lineage (same flow/rule/node/reading key).
+- If latest alert state is `handled`, backend suppresses sends only during a handled cool-down window (`ALERT_HANDLED_COOLDOWN_MS`).
+- After cool-down expires, the next hazardous reading is treated as a new issue and starts a new alert cycle/history item.
 - If latest alert state is `received` but not `handled`, backend throttles reminder pushes using `ALERT_RECEIVED_REMINDER_MS`.
 - If no receive ack exists, backend keeps normal trigger behavior.
+
+Handled cool-down override precedence (highest to lowest):
+
+- `ALERT_HANDLED_COOLDOWN_BY_MODULE_SEVERITY_MS` (`moduleId|severity=ms`)
+- `ALERT_HANDLED_COOLDOWN_BY_MODULE_MS` (`moduleId=ms`)
+- `ALERT_HANDLED_COOLDOWN_BY_SEVERITY_MS` (`severity=ms`)
+- `ALERT_HANDLED_COOLDOWN_MS` (default fallback)
+
+Examples:
+
+- `ALERT_HANDLED_COOLDOWN_BY_SEVERITY_MS=critical=900000,warning=1800000,info=3600000`
+- `ALERT_HANDLED_COOLDOWN_BY_MODULE_MS=MQ2-Sensor=600000,PIR-Sensor=1200000`
+- `ALERT_HANDLED_COOLDOWN_BY_MODULE_SEVERITY_MS=MQ2-Sensor|critical=300000`
 
 Response shape for both endpoints:
 
@@ -325,3 +339,7 @@ on app open/resume to backfill alerts that may have been missed while offline.
 - `ALERT_RULE_COOLDOWN_MS` (optional, default `60000`)
 - `ALERT_RULE_MAX_BACKOFF_MS` (optional, default `900000`)
 - `ALERT_RECEIVED_REMINDER_MS` (optional, default `600000`)
+- `ALERT_HANDLED_COOLDOWN_MS` (optional, default `3600000`)
+- `ALERT_HANDLED_COOLDOWN_BY_SEVERITY_MS` (optional CSV map, example `critical=900000,warning=1800000`)
+- `ALERT_HANDLED_COOLDOWN_BY_MODULE_MS` (optional CSV map, example `MQ2-Sensor=600000`)
+- `ALERT_HANDLED_COOLDOWN_BY_MODULE_SEVERITY_MS` (optional CSV map, example `MQ2-Sensor|critical=300000`)
