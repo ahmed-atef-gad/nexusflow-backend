@@ -296,18 +296,24 @@ export class FlowsService {
     ]);
 
     const flowIds = data.map((flowDoc) => String(flowDoc.id ?? ''));
-    const notificationStates =
-      await this.notificationsService.getNotificationStatesForFlows(
-        userId,
-        flowIds
-      );
+    const [notificationStates, alertRulesMap] = await Promise.all([
+      this.notificationsService.getNotificationStatesForFlows(userId, flowIds),
+      this.getAlertRulesMapForFlows(userId, flowIds),
+    ]);
 
     const enrichedData: FlowWithNotificationState[] = data.map((flowDoc) => {
       const flowObject = flowDoc.toObject() as Flow;
       const flowId = String(flowDoc.id ?? '');
+      const hasAlertRules = alertRulesMap.get(flowId) ?? false;
+      const preferenceEnabled = notificationStates.get(flowId);
+
+      // Notifications can only be enabled if there are alert rules
+      const isNotificationsEnabled =
+        hasAlertRules && preferenceEnabled !== false;
+
       return {
         ...flowObject,
-        isNotificationsEnabled: notificationStates.get(flowId) ?? true,
+        isNotificationsEnabled,
       };
     });
 
@@ -318,6 +324,27 @@ export class FlowsService {
       limit,
       totalPages: total > 0 ? Math.ceil(total / limit) : 1,
     };
+  }
+
+  private async getAlertRulesMapForFlows(
+    userId: string,
+    flowIds: string[]
+  ): Promise<Map<string, boolean>> {
+    const normalizedFlowIds = Array.from(
+      new Set(flowIds.map((id) => id.trim()).filter((id) => id.length > 0))
+    );
+
+    if (!normalizedFlowIds.length) {
+      return new Map<string, boolean>();
+    }
+
+    // Get count of alert rules per flow
+    const result = await this.notificationsService.getAlertRulesCounts(
+      userId,
+      normalizedFlowIds
+    );
+
+    return result;
   }
 
   async findOne(id: string, userId: string): Promise<Flow> {
