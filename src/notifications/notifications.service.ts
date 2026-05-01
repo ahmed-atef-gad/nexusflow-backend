@@ -479,7 +479,7 @@ export class NotificationsService implements OnModuleInit {
   async getAlertPolicies(moduleId?: string): Promise<{
     items: PolicyOutput[];
   }> {
-    const filter: FilterQuery<AlertPolicyDocument> = { isActive: true };
+    const filter: FilterQuery<AlertPolicyDocument> = {};
     if (moduleId?.trim()) {
       filter.moduleId = moduleId.trim();
     }
@@ -550,6 +550,17 @@ export class NotificationsService implements OnModuleInit {
       upserted: (result.upsertedCount ?? 0) + (result.modifiedCount ?? 0),
       items: items.map((policy) => this.mapPolicy(policy)),
     };
+  }
+
+  async deleteAlertPolicy(policyId: string): Promise<void> {
+    const objectId = new Types.ObjectId(policyId);
+    const result = await this.alertPolicyModel
+      .deleteOne({ _id: objectId })
+      .exec();
+
+    if ((result.deletedCount ?? 0) === 0) {
+      throw new NotFoundException('Alert policy not found');
+    }
   }
 
   async getNotificationPreferences(
