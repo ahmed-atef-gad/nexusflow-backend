@@ -1593,7 +1593,7 @@
                 }
               }
             },
-            "description": "Update notification preferences for a flow.\n\nNOTE: Setting 'notificationsEnabled: true' requires the flow to have at least one active alert rule.\nIf the flow has no alert rules, the API will return 400 Bad Request:\n{\n  \"message\": \"Cannot enable notifications for a flow with no alert rules. Please create an alert rule first.\",\n  \"statusCode\": 400\n}\n\nYou can disable notifications (notificationsEnabled: false) at any time.\n\nSee 'Create Alert Rule' endpoint to add alert rules to the flow."
+            "description": "Update notification preferences for a flow.\n\nNOTE: Setting 'notificationsEnabled: true' requires the flow to have at least one active alert rule.\nIf the flow has no alert rules, the API will return 400 Bad Request:\n{\n  \"message\": \"Cannot enable notifications for a flow with no alert rules. Please create an alert rule first.\",\n  \"statusCode\": 400\n}\n\nYou can disable notifications (notificationsEnabled: false) at any time.\nThe 'channels' field is optional on update; if omitted, the backend defaults to ['push'].\n\nSee 'Create Alert Rule' endpoint to add alert rules to the flow."
           },
           "response": []
         },

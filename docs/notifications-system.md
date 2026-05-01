@@ -134,6 +134,7 @@ Notes:
 
 - `notificationsEnabled: true` requires at least one active alert rule for the flow. If no rules exist, the API returns `400 Bad Request` with message: "Cannot enable notifications for a flow with no alert rules. Please create an alert rule first."
 - `notificationsEnabled: false` is always allowed
+- `channels` is optional on update; if omitted, the backend defaults to `['push']`
 - `GET` returns `404` if preference doc does not exist yet
 
 **Important: Alert Rules Requirement**

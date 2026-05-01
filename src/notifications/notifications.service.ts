@@ -616,18 +616,21 @@ export class NotificationsService implements OnModuleInit {
 
     const normalizedChannels = this.normalizeChannels(dto.channels);
 
-    const updated = await this.notificationPreferenceModel
-      .findOneAndUpdate(
-        { flowId, userId },
-        {
-          $set: {
-            notificationsEnabled: dto.notificationsEnabled,
-            channels: normalizedChannels,
-          },
-        },
-        { upsert: true, new: true, setDefaultsOnInsert: true }
-      )
+    const existing = await this.notificationPreferenceModel
+      .findOne({ flowId, userId })
       .exec();
+
+    const updated =
+      existing ??
+      new this.notificationPreferenceModel({
+        flowId,
+        userId,
+      });
+
+    updated.notificationsEnabled = dto.notificationsEnabled;
+    updated.channels = normalizedChannels;
+
+    await updated.save();
 
     return {
       id: this.toObjectIdString(updated),

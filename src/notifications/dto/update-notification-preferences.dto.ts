@@ -1,17 +1,18 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsArray, IsBoolean, IsString } from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { IsArray, IsBoolean, IsOptional, IsString } from 'class-validator';
 
 export class UpdateNotificationPreferencesDto {
-  @ApiProperty({ example: true })
+  @ApiPropertyOptional({ example: true })
   @IsBoolean()
   notificationsEnabled!: boolean;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     type: [String],
     example: ['push'],
     description: 'Delivery channels. Currently only push is used.',
   })
+  @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  channels!: string[];
+  channels?: string[];
 }

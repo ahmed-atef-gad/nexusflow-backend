@@ -308,6 +308,7 @@ Responsibilities:
 - User notification preference management (`notification_preferences`)
   - **Note**: Notifications can only be enabled if the flow has at least one alert rule
   - Attempting to enable notifications without alert rules returns a `400 Bad Request` error
+  - `channels` is optional on update; the backend defaults to `['push']` when it is omitted
 - Alert rule CRUD and runtime rule evaluation (`alert_rules`)
 - Alert history persistence with cursor pagination (`alert_events`)
 - Alert history defaults to the last 24 hours and supports `since` (hours)
