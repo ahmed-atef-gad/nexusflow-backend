@@ -593,6 +593,16 @@ export class NotificationsService implements OnModuleInit {
   }> {
     await this.assertUserCanAccessFlow(userId, flowId);
 
+    // Check if flow has alert rules before allowing notifications to be enabled
+    if (dto.notificationsEnabled) {
+      const hasRules = await this.hasAlertRulesForFlow(flowId, userId);
+      if (!hasRules) {
+        throw new BadRequestException(
+          'Cannot enable notifications for a flow with no alert rules. Please create an alert rule first.'
+        );
+      }
+    }
+
     const normalizedChannels = this.normalizeChannels(dto.channels);
 
     const updated = await this.notificationPreferenceModel
@@ -2143,5 +2153,40 @@ export class NotificationsService implements OnModuleInit {
     const parsed = Number(raw);
     if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
     return Math.trunc(parsed);
+  }
+
+  async hasAlertRulesForFlow(flowId: string, userId: string): Promise<boolean> {
+    const count = await this.alertRuleModel
+      .countDocuments({ flowId, userId })
+      .exec();
+    return count > 0;
+  }
+
+  async getAlertRulesCounts(
+    userId: string,
+    flowIds: string[]
+  ): Promise<Map<string, boolean>> {
+    const normalizedFlowIds = Array.from(
+      new Set(flowIds.map((id) => id.trim()).filter((id) => id.length > 0))
+    );
+
+    if (!normalizedFlowIds.length) {
+      return new Map<string, boolean>();
+    }
+
+    // Aggregate to get flows that have at least one alert rule
+    const flowsWithRules = await this.alertRuleModel
+      .distinct('flowId', {
+        userId,
+        flowId: { $in: normalizedFlowIds },
+      })
+      .exec();
+
+    const result = new Map<string, boolean>();
+    for (const flowId of normalizedFlowIds) {
+      result.set(flowId, flowsWithRules.includes(flowId));
+    }
+
+    return result;
   }
 }

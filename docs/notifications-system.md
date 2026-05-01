@@ -132,12 +132,27 @@ Policy validation:
 
 Notes:
 
-- Runtime default when preference doc is missing is `notificationsEnabled = true`
+- `notificationsEnabled: true` requires at least one active alert rule for the flow. If no rules exist, the API returns `400 Bad Request` with message: "Cannot enable notifications for a flow with no alert rules. Please create an alert rule first."
+- `notificationsEnabled: false` is always allowed
 - `GET` returns `404` if preference doc does not exist yet
+
+**Important: Alert Rules Requirement**
+
+- Notifications can only be enabled if the flow has at least one alert rule
+- Before enabling notifications, ensure the flow has created alert rules (see section 4 below)
+- Attempting to enable notifications without alert rules will fail with a clear error message
 
 Note about flow listing:
 
-- The client-facing `GET /v1/flows` (flows list) now includes an `isNotificationsEnabled` boolean on each flow object. This value is computed at read time and defaults to `true` when the `notification_preferences` document for the flow is missing. Frontend clients should use this field to render notification toggles; to change it, call `PUT /v1/flows/:flowId/notification-preferences` and then refetch the flows list to reflect the updated state.
+- The client-facing `GET /v1/flows` (flows list) now includes an `isNotificationsEnabled` boolean on each flow object
+- This value is `false` when:
+  - The flow has no alert rules, OR
+  - The notification preference is explicitly disabled
+- `isNotificationsEnabled: true` only when the flow has alert rules AND the user has enabled notifications
+- Frontend clients should:
+  1. Check `isNotificationsEnabled` to determine if notifications are active
+  2. Show a message to the user if they try to enable notifications without alert rules
+  3. After creating alert rules, call `PUT /v1/flows/:flowId/notification-preferences` to enable notifications
 
 ### 4) Alert Rules (Per Flow + Node)
 
