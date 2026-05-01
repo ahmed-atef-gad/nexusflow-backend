@@ -8,6 +8,7 @@ import { AlertRule, AlertRuleSchema } from './schemas/alert-rule.schema';
 import { Flow, FlowSchema } from 'src/flows/schemas/flow.schema';
 import { NotificationsInternalController } from './notifications-internal.controller';
 import { NotificationsController } from './notifications.controller';
+import { NotificationsAlertHandshakeController } from './notifications-alert-handshake.controller';
 import { ProjectAlertConfigController } from './project-alert-config.controller';
 import { ProjectAlertHistoryController } from './project-alert-history.controller';
 import { NotificationsService } from './notifications.service';
@@ -42,6 +43,7 @@ import {
   ],
   controllers: [
     NotificationsController,
+    NotificationsAlertHandshakeController,
     NotificationsInternalController,
     ProjectAlertConfigController,
     ProjectAlertHistoryController,

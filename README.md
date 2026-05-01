@@ -311,9 +311,11 @@ Responsibilities:
   - `channels` is optional on update; the backend defaults to `['push']` when it is omitted
 - Alert rule CRUD and runtime rule evaluation (`alert_rules`)
 - Alert history persistence with cursor pagination (`alert_events`)
+- Alert notification handshake tracking (`received` / `handled`) for mobile acknowledgments
 - Alert history defaults to the last 24 hours and supports `since` (hours)
 - Firebase push dispatch and dead-token cleanup on `UNREGISTERED`
 - MQ2 gas alerts use exponential backoff to reduce repeated spam while condition remains active
+- Received-but-unhandled alerts use reminder throttling (`ALERT_RECEIVED_REMINDER_MS`)
 - Internal alert trigger endpoint for backend services
 
 Key files:
@@ -322,6 +324,7 @@ Key files:
 - [`src/notifications/notifications.controller.ts`](src/notifications/notifications.controller.ts)
 - [`src/notifications/project-alert-config.controller.ts`](src/notifications/project-alert-config.controller.ts)
 - [`src/notifications/project-alert-history.controller.ts`](src/notifications/project-alert-history.controller.ts)
+- [`src/notifications/notifications-alert-handshake.controller.ts`](src/notifications/notifications-alert-handshake.controller.ts)
 - [`src/notifications/notifications-internal.controller.ts`](src/notifications/notifications-internal.controller.ts)
 
 ## Request / Data Flow
@@ -432,6 +435,7 @@ FIREBASE_PRIVATE_KEY=
 INTERNAL_ALERTS_API_KEY=
 ALERT_RULE_COOLDOWN_MS=60000
 ALERT_RULE_MAX_BACKOFF_MS=900000
+ALERT_RECEIVED_REMINDER_MS=600000
 ```
 
 Notes:
