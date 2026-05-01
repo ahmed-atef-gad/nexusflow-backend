@@ -137,6 +137,12 @@ Notes:
 - `channels` is optional on update; if omitted, the backend defaults to `['push']`
 - `GET` returns `404` if preference doc does not exist yet
 
+Legacy compatibility note:
+
+- The backend supports both `flowId` and legacy `projectId` in existing `notification_preferences` documents.
+- This avoids duplicate-key failures in environments that still have an old unique index on `projectId + userId`.
+- New writes keep preferences aligned with flow-scoped routing (`/v1/flows/:flowId/...`).
+
 **Important: Alert Rules Requirement**
 
 - Notifications can only be enabled if the flow has at least one alert rule
