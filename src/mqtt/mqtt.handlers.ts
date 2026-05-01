@@ -839,7 +839,7 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
         return null;
       }
 
-      return parsed as InputPayload;
+      return parsed;
     } catch {
       return null;
     }
@@ -1077,7 +1077,7 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       return {
         result: normalizedInput,
         raw: this.byteToAnalogRaw(normalizedInput),
-      } as InputPayload;
+      };
     }
 
     return rawPayload;
@@ -1374,22 +1374,6 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    try {
-      await this.evaluateAlertRulesForInput({
-        flowId,
-        inputNodeId,
-        topic,
-        rawPayload,
-        normalizedInput: inputValue,
-        deviceMac: this.normalizeMacAddress(deviceMac),
-        clientId: client?.id?.toString?.() ?? 'unknown',
-      });
-    } catch (error) {
-      this.logger.error(
-        `Failed to evaluate alert rules for topic=${topic}: ${(error as Error).message}`
-      );
-    }
-
     const flows = await this.logicService.getLogicFlowsForFlowId(
       flowId,
       deviceMac
@@ -1615,6 +1599,22 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     if (forwardedBridge && matchedBridgeNodes === 0) {
       this.logger.debug(
         `Skip Flow Bridge In logic: no matching Flow Bridge In (mqtt-in) nodes for flowId=${flowId} channel=${forwardedBridge.channel}`
+      );
+    }
+
+    try {
+      await this.evaluateAlertRulesForInput({
+        flowId,
+        inputNodeId,
+        topic,
+        rawPayload,
+        normalizedInput: inputValue,
+        deviceMac: this.normalizeMacAddress(deviceMac),
+        clientId: client?.id?.toString?.() ?? 'unknown',
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to evaluate alert rules for topic=${topic}: ${(error as Error).message}`
       );
     }
 
