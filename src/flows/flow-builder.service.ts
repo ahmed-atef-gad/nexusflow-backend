@@ -36,10 +36,11 @@ const CMD_MAP: Record<string, number> = {
   SET_UP_SERVO: 0x40,
   READ_SERVO_ANGLE: 0x41,
   WRITE_SERVO_ANGLE: 0x42,
-  DHT_READ: 0x30,
-  FC28_READ: 0x31,
-  RAIN_READ: 0x33,
-  MQ2_READ: 0x34,
+};
+
+const SETUP_CMD_BY_MODULE_ID: Record<string, number> = {
+  'ESP32-gpio-output-dac': CMD_MAP['SET_DAC'],
+  'ESP32-gpio-output-servo': CMD_MAP['SET_UP_SERVO'],
 };
 
 const INPUT_TOPIC_PREFIX = 'logic/input';
@@ -626,11 +627,8 @@ export class FlowBuilderService {
 
           const setupItem: SetupItem = {
             cmd:
-              module.moduleId === 'ESP32-gpio-output-servo'
-                ? CMD_MAP['SET_UP_SERVO']
-                : pinNumber == 25 || pinNumber == 26
-                  ? CMD_MAP['SET_DAC']
-                  : CMD_MAP['SET_PIN_MODE'],
+              SETUP_CMD_BY_MODULE_ID[module.moduleId] ??
+              CMD_MAP['SET_PIN_MODE'],
             pin: pinNumber,
             mode: pinMode,
           };
