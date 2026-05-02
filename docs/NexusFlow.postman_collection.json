@@ -1818,7 +1818,7 @@
               }
             ],
             "url": "{{baseUrl}}/v1/notifications/alert-history/{{historyId}}/received",
-            "description": "Mobile handshake endpoint. Marks alert notification as delivered to the device. No body is required."
+            "description": "Mobile handshake endpoint. Marks alert notification as delivered to the device. No body is required. Requires authenticated user (Cookie: jwt) and the user must be the owner of the flow for this history event; non-owners receive 403 Forbidden."
           },
           "response": []
         },
@@ -1834,7 +1834,7 @@
               }
             ],
             "url": "{{baseUrl}}/v1/notifications/alert-history/{{historyId}}/handled",
-            "description": "Mobile handshake endpoint. Marks alert notification as handled by user interaction. No body is required. Future sends are suppressed only during the handled cool-down window."
+            "description": "Mobile handshake endpoint. Marks alert notification as handled by user interaction. No body is required. Requires authenticated user (Cookie: jwt) and the user must be the owner of the flow for this history event; non-owners receive 403 Forbidden. Future sends are suppressed only during the handled cool-down window."
           },
           "response": []
         },

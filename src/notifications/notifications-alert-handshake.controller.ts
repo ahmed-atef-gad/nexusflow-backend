@@ -12,6 +12,8 @@ import {
   type AuthenticatedRequest,
 } from 'src/auth/utils/auth.util';
 import { AuthGuard } from 'src/guards/auth/auth.guard';
+import { OwnerGuard } from 'src/guards/auth/owner.guard';
+import { IsOwner } from 'src/auth/decorators/owner.decorator';
 import { NotificationsService } from './notifications.service';
 
 @ApiTags('Notifications')
@@ -35,6 +37,8 @@ export class NotificationsAlertHandshakeController {
   @ApiUnauthorizedResponse({
     description: 'Unauthorized - Invalid or missing user token',
   })
+  @UseGuards(OwnerGuard)
+  @IsOwner({ paramKey: 'historyId', resource: 'alertEvent' })
   @Post(':historyId/received')
   async markNotificationReceived(
     @Req() req: AuthenticatedRequest,
@@ -61,6 +65,8 @@ export class NotificationsAlertHandshakeController {
   @ApiUnauthorizedResponse({
     description: 'Unauthorized - Invalid or missing user token',
   })
+  @UseGuards(OwnerGuard)
+  @IsOwner({ paramKey: 'historyId', resource: 'alertEvent' })
   @Post(':historyId/handled')
   async markNotificationHandled(
     @Req() req: AuthenticatedRequest,
