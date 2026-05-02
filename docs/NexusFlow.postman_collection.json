@@ -1866,6 +1866,108 @@
             }
           },
           "response": []
+        },
+        {
+          "name": "Get Notification History",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/notifications/history?since={{sinceHours}}&limit={{limit}}&page={{page}}",
+            "description": "Returns the authenticated user's notification inbox history. Includes alert and resolved notification rows stored in the notifications collection."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const json = pm.response.json();",
+                  "  const firstNotificationId = json?.items?.[0]?.id ?? '';",
+                  "  if (firstNotificationId) pm.collectionVariables.set('notificationId', String(firstNotificationId));",
+                  "} catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Record Notification Receipts",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/notifications/receipts",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notification_ids\": [\"{{notificationId}}\"],\n  \"received_at\": \"2026-05-03T10:30:00.000Z\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Unauthenticated batch receipt endpoint used by the mobile app to report delivery timestamps."
+          },
+          "response": []
+        },
+        {
+          "name": "Mark Notification Handled",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "jwt={{jwt}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/notifications/{{notificationId}}/handled",
+            "description": "Authenticated endpoint that marks the notification as handled and acknowledges the active incident."
+          },
+          "response": []
+        },
+        {
+          "name": "Trigger Resolved Alert (Internal)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "x-internal-key",
+                "value": "{{internalAlertsApiKey}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/internal/alerts/trigger",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"flowId\": \"{{flowId}}\",\n  \"ruleId\": \"{{ruleId}}\",\n  \"nodeId\": \"MQ2-Sensor-1777061998955-55w\",\n  \"moduleId\": \"MQ2-Sensor\",\n  \"readingKey\": \"analog\",\n  \"operator\": \">\",\n  \"value\": 430,\n  \"threshold\": 300,\n  \"eventType\": \"resolved\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Internal endpoint variant that closes the active incident and emits a resolved notification."
+          },
+          "response": []
         }
       ]
     }
@@ -1964,7 +2066,15 @@
       "value": ""
     },
     {
+      "key": "notificationId",
+      "value": ""
+    },
+    {
       "key": "alertCursor",
+      "value": ""
+    },
+    {
+      "key": "notificationCursor",
       "value": ""
     },
     {

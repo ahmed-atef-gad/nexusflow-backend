@@ -13,6 +13,8 @@ Scope:
 - Alert history for missed notifications
 - Alert notification handshake state (received/handled)
 - Internal alert trigger endpoint
+- Incident-based notification delivery
+- Notification receipt ingestion and handled tracking
 
 ## Core Model
 
@@ -57,6 +59,8 @@ sequenceDiagram
 - `notification_preferences`
 - `alert_rules`
 - `alert_events`
+- `incidents`
+- `notifications`
 
 ## API Contract
 
@@ -276,6 +280,28 @@ Response shape for both endpoints:
 }
 ```
 
+### 5.2) Notification History
+
+- `GET /v1/notifications/history?since=ISO&limit=50&page=1`
+
+Notes:
+
+- Returns the authenticated user's notification inbox history
+- Records both alert and resolved notification rows from the `notifications` collection
+- `since` is optional and defaults to the last 24 hours
+- `limit` and `page` control pagination, with server-side caps applied
+
+### 5.3) Notification Receipt and Handled APIs
+
+- `POST /v1/notifications/receipts`
+- `POST /v1/notifications/:notificationId/handled`
+
+Notes:
+
+- `receipts` is unauthenticated and accepts a batch of notification ids plus an optional `received_at`
+- `handled` is authenticated and marks the notification as handled while acknowledging the underlying incident
+- Every notification payload includes `user_id` so the client can verify ownership after app resume or logout/login transitions
+
 ### 5.2) MQ2 Repeated-Alert Throttling
 
 - MQ2 (`moduleId = MQ2-Sensor`) uses exponential backoff when a rule stays matched.
@@ -303,6 +329,28 @@ Body:
 }
 ```
 
+Optional resolved-event body:
+
+```json
+{
+  "flowId": "69b58d513b6489cbd6655026",
+  "ruleId": "69e7cf54e463e7c6e48fb54d",
+  "nodeId": "MQ2-Sensor-1777061998955-55w",
+  "moduleId": "MQ2-Sensor",
+  "readingKey": "analog",
+  "operator": ">",
+  "value": 430,
+  "threshold": 300,
+  "eventType": "resolved"
+}
+```
+
+Behavior:
+
+- `eventType: 'alert'` is the default and creates or updates an incident, then sends a data-only push notification
+- `eventType: 'resolved'` closes the active incident and emits a resolved notification with severity `info`
+- Push payloads are data-only and include `notification_id`, `incident_id`, `user_id`, `device_id`, `rule_id`, `title`, `body`, `type`, `severity`, and `target_route`
+
 ## Dead Token Handling
 
 When Firebase returns dead-token errors (`UNREGISTERED`, `messaging/registration-token-not-registered`, `messaging/invalid-registration-token`):
@@ -315,7 +363,7 @@ When Firebase returns dead-token errors (`UNREGISTERED`, `messaging/registration
 
 Push is not durable delivery. Mobile should always call:
 
-- `GET /v1/flows/:flowId/alert-history`
+- `GET /v1/notifications/history`
 
 on app open/resume to backfill alerts that may have been missed while offline.
 
