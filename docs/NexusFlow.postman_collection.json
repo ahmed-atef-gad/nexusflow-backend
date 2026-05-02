@@ -1705,7 +1705,7 @@
             "url": "{{baseUrl}}/v1/flows/{{flowId}}/alert-rules",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"nodeId\": \"MQ2-Sensor-1777061998955-55w\",\n  \"moduleId\": \"MQ2-Sensor\",\n  \"readingKey\": \"analog\",\n  \"operator\": \">\",\n  \"threshold\": 300,\n  \"severity\": \"critical\",\n  \"enabled\": true,\n  \"actions\": [\n    {\n      \"type\": \"send_push\",\n      \"payload\": {\n        \"title\": \"Gas Leak Alert\",\n        \"body\": \"MQ2 analog level exceeded threshold\"\n      }\n    }\n  ]\n}",
+              "raw": "{\n  \"nodeId\": \"ESP32-gpio-output-led-1776190880770-ovh\",\n  \"moduleId\": \"ESP32-gpio-output-led\",\n  \"readingKey\": \"value\",\n  \"operator\": \">\",\n  \"threshold\": 50,\n  \"severity\": \"critical\",\n  \"enabled\": true,\n  \"actions\": [\n    {\n      \"type\": \"send_push\",\n      \"payload\": {\n        \"title\": \"Output Threshold Alert\",\n        \"body\": \"LED output value exceeded threshold\"\n      }\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"

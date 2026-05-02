@@ -923,6 +923,43 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  private async evaluateAlertRulesForOutput(params: {
+    flowId: string;
+    outputNodeId: string;
+    outputModuleId: string;
+    topic: string;
+    outputValue: number;
+    deviceMac: string;
+    clientId: string;
+  }): Promise<void> {
+    if (!params.outputNodeId.trim() || !params.outputModuleId.trim()) {
+      return;
+    }
+
+    const outcome = await this.notificationsService.processSensorReading({
+      flowId: params.flowId,
+      nodeId: params.outputNodeId,
+      readings: {
+        value: params.outputValue,
+        result: params.outputValue,
+        raw: params.outputValue,
+      },
+      metadata: {
+        topic: params.topic,
+        outputNodeId: params.outputNodeId,
+        outputModuleId: params.outputModuleId,
+        deviceMac: params.deviceMac,
+        clientId: params.clientId,
+      },
+    });
+
+    if (outcome.triggeredRules > 0) {
+      this.logger.log(
+        `Triggered ${outcome.triggeredRules} alert rule(s) for flowId=${params.flowId} outputNodeId=${params.outputNodeId}`
+      );
+    }
+  }
+
   private isGpioRuntimeCommand(command: RuntimeCommand): boolean {
     return (
       command.stepType === 'output' &&
@@ -1583,6 +1620,22 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
         this.logger.debug(
           `Published GPIO logic command. cmd=${step.cmd} pin=${step.pin} value=${outputValue} topic=${commandTopic}`
         );
+
+        try {
+          await this.evaluateAlertRulesForOutput({
+            flowId,
+            outputNodeId: String(step.id ?? ''),
+            outputModuleId: String(step.moduleId ?? ''),
+            topic,
+            outputValue,
+            deviceMac: this.normalizeMacAddress(deviceMac),
+            clientId: client?.id?.toString?.() ?? 'unknown',
+          });
+        } catch (error) {
+          this.logger.error(
+            `Failed to evaluate output alert rules for topic=${topic}: ${(error as Error).message}`
+          );
+        }
       }
 
       if (pathStopped) {
