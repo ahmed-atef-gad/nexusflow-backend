@@ -174,24 +174,30 @@ Create example:
 
 ```json
 {
-  "nodeId": "MQ2-Sensor-1777061998955-55w",
-  "moduleId": "MQ2-Sensor",
-  "readingKey": "analog",
+  "nodeId": "ESP32-gpio-output-led-1776190880770-ovh",
+  "moduleId": "ESP32-gpio-output-led",
+  "readingKey": "value",
   "operator": ">",
-  "threshold": 300,
+  "threshold": 50,
   "severity": "critical",
   "enabled": true,
   "actions": [
     {
       "type": "send_push",
       "payload": {
-        "title": "Gas Leak Alert",
-        "body": "MQ2 analog level exceeded threshold"
+        "title": "Output Threshold Alert",
+        "body": "LED output value exceeded threshold"
       }
     }
   ]
 }
 ```
+
+Notes:
+
+- Alert rules can be created for both input and output ESP32 nodes
+- Supported output modules include `ESP32-gpio-output`, `ESP32-gpio-output-led`, `ESP32-gpio-output-pwm`, `ESP32-gpio-output-dac`, and `ESP32-gpio-output-servo`
+- For output nodes, `readingKey` should typically be `value` (or `result`/`raw` where applicable)
 
 Validation highlights:
 

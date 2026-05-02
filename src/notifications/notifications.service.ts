@@ -157,6 +157,11 @@ const MODULE_READING_KEYS: Record<string, string[]> = {
   'ESP32-gpio-input': ['result'],
   'ESP32-gpio-input-pullup': ['result'],
   'ESP32-gpio-input-analog': ['raw', 'result'],
+  'ESP32-gpio-output': ['value', 'result', 'raw'],
+  'ESP32-gpio-output-led': ['value', 'result', 'raw'],
+  'ESP32-gpio-output-pwm': ['value', 'result', 'raw'],
+  'ESP32-gpio-output-dac': ['value', 'result', 'raw'],
+  'ESP32-gpio-output-servo': ['value', 'result', 'raw'],
 };
 
 const GAS_SENSOR_MODULE_ID = 'MQ2-Sensor';
