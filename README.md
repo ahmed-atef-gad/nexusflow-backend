@@ -311,9 +311,15 @@ Responsibilities:
   - `channels` is optional on update; the backend defaults to `['push']` when it is omitted
 - Alert rule CRUD and runtime rule evaluation (`alert_rules`)
 - Alert history persistence with cursor pagination (`alert_events`)
-- Alert notification handshake tracking (`received` / `handled`) for mobile acknowledgments
+- Incident lifecycle tracking for active alerts (`incidents`)
+- Notification audit history for every push and resolution event (`notifications`)
+- Notification history endpoints for user inbox views and acknowledgments
+- Notification receipt ingestion (`POST /v1/notifications/receipts`) for delivery sync from the mobile app
+- Notification handled tracking (`POST /v1/notifications/:notificationId/handled`) for user acknowledgments
+- Alert notification handshake tracking (`received` / `handled`) for legacy alert-history flows
 - Alert history defaults to the last 24 hours and supports `since` (hours)
-- Firebase push dispatch and dead-token cleanup on `UNREGISTERED`
+- Firebase push dispatch uses data-only payloads with severity-based priority, TTL, and incident collapse keys
+- Dead-token cleanup on `UNREGISTERED`
 - MQ2 gas alerts use exponential backoff to reduce repeated spam while condition remains active
 - Received-but-unhandled alerts use reminder throttling (`ALERT_RECEIVED_REMINDER_MS`)
 - Handled alerts are suppressed for a cool-down window then can trigger a new cycle (`ALERT_HANDLED_COOLDOWN_MS`)
@@ -324,6 +330,8 @@ Key files:
 
 - [`src/notifications/notifications.service.ts`](src/notifications/notifications.service.ts)
 - [`src/notifications/notifications.controller.ts`](src/notifications/notifications.controller.ts)
+- [`src/notifications/notifications-actions.controller.ts`](src/notifications/notifications-actions.controller.ts)
+- [`src/notifications/notifications-receipts.controller.ts`](src/notifications/notifications-receipts.controller.ts)
 - [`src/notifications/project-alert-config.controller.ts`](src/notifications/project-alert-config.controller.ts)
 - [`src/notifications/project-alert-history.controller.ts`](src/notifications/project-alert-history.controller.ts)
 - [`src/notifications/notifications-alert-handshake.controller.ts`](src/notifications/notifications-alert-handshake.controller.ts)

@@ -18,15 +18,23 @@ import {
 } from 'firebase-admin/messaging';
 import { FilterQuery, Model, Types } from 'mongoose';
 import { RegisterNotificationDeviceDto } from './dto/register-notification-device.dto';
+import { AlertHistoryQueryDto } from './dto/alert-history-query.dto';
+import { NotificationHistoryQueryDto } from './dto/notification-history-query.dto';
+import { NotificationReceiptsDto } from './dto/notification-receipts.dto';
 import { TriggerAlertDto } from './dto/trigger-alert.dto';
 import { AlertEvent, AlertEventDocument } from './schemas/alert-event.schema';
-import { AlertHistoryQueryDto } from './dto/alert-history-query.dto';
 import {
   AlertPolicy,
   AlertPolicyDocument,
 } from './schemas/alert-policy.schema';
 import { AlertRule, AlertRuleDocument } from './schemas/alert-rule.schema';
 import { Flow, FlowDocument } from 'src/flows/schemas/flow.schema';
+import { Device, DeviceDocument } from 'src/devices/schemas/device.schema';
+import { Incident, IncidentDocument } from './schemas/incident.schema';
+import {
+  Notification,
+  NotificationDocument,
+} from './schemas/notification.schema';
 import {
   NotificationPreference,
   NotificationPreferenceDocument,
@@ -86,6 +94,23 @@ type AlertHistoryItem = {
   occurredAt: Date;
   notificationReceived: boolean;
   notificationHandled: boolean;
+  createdAt?: Date;
+};
+
+type NotificationHistoryItem = {
+  id: string;
+  user_id: string;
+  incident_id: string;
+  device_id: string;
+  rule_id: string;
+  severity: AlertSeverity;
+  title: string;
+  body: string;
+  data: Record<string, string>;
+  sent_at: Date;
+  received_at: Date | null;
+  handled_at: Date | null;
+  type: 'alert' | 'resolved';
   createdAt?: Date;
 };
 
@@ -407,6 +432,12 @@ export class NotificationsService implements OnModuleInit {
   constructor(
     @InjectModel(NotificationDeviceToken.name)
     private readonly notificationDeviceTokenModel: Model<NotificationDeviceTokenDocument>,
+    @InjectModel(Notification.name)
+    private readonly notificationModel: Model<NotificationDocument>,
+    @InjectModel(Incident.name)
+    private readonly incidentModel: Model<IncidentDocument>,
+    @InjectModel(Device.name)
+    private readonly deviceModel: Model<DeviceDocument>,
     @InjectModel(AlertEvent.name)
     private readonly alertEventModel: Model<AlertEventDocument>,
     @InjectModel(NotificationPreference.name)
@@ -1003,6 +1034,107 @@ export class NotificationsService implements OnModuleInit {
     return { items, nextCursor, hasMore };
   }
 
+  async getNotificationHistory(
+    userId: string,
+    query: NotificationHistoryQueryDto
+  ): Promise<{
+    items: NotificationHistoryItem[];
+    page: number;
+    limit: number;
+    hasMore: boolean;
+  }> {
+    const parsedLimit = Number(query.limit);
+    const limit =
+      Number.isFinite(parsedLimit) && parsedLimit > 0
+        ? Math.min(parsedLimit, 100)
+        : 50;
+
+    const parsedPage = Number(query.page);
+    const page =
+      Number.isFinite(parsedPage) && parsedPage > 0
+        ? Math.trunc(parsedPage)
+        : 1;
+    const skip = (page - 1) * limit;
+
+    const since = query.since ? new Date(query.since) : null;
+    const filter: FilterQuery<NotificationDocument> = { user_id: userId };
+    if (since && !Number.isNaN(since.getTime())) {
+      filter.sent_at = { $gte: since };
+    }
+
+    const notifications = await this.notificationModel
+      .find(filter)
+      .sort({ sent_at: -1, _id: -1 })
+      .skip(skip)
+      .limit(limit + 1)
+      .lean()
+      .exec();
+
+    const hasMore = notifications.length > limit;
+    const selected = hasMore ? notifications.slice(0, limit) : notifications;
+
+    return {
+      items: selected.map((notification) => this.mapNotification(notification)),
+      page,
+      limit,
+      hasMore,
+    };
+  }
+
+  async recordNotificationReceipts(
+    body: NotificationReceiptsDto
+  ): Promise<{ updatedCount: number }> {
+    const notificationIds = Array.from(
+      new Set(
+        (body.notification_ids ?? [])
+          .map((notificationId) => notificationId.trim())
+          .filter(Boolean)
+      )
+    );
+    if (!notificationIds.length) {
+      return { updatedCount: 0 };
+    }
+
+    const receivedAt = body.received_at
+      ? new Date(body.received_at)
+      : new Date();
+    await this.notificationModel.updateMany(
+      { _id: { $in: notificationIds } },
+      { $set: { received_at: receivedAt } }
+    );
+
+    return { updatedCount: notificationIds.length };
+  }
+
+  async markNotificationHandled(
+    userId: string,
+    notificationId: string
+  ): Promise<NotificationHistoryItem> {
+    const notification = await this.getOwnedNotificationOrThrow(
+      userId,
+      notificationId
+    );
+    const now = new Date();
+
+    notification.handled_at = now;
+    if (!notification.received_at) {
+      notification.received_at = now;
+    }
+    await notification.save();
+
+    const incident = await this.incidentModel
+      .findOne({ _id: notification.incident_id, user_id: userId })
+      .exec();
+    if (incident) {
+      incident.user_acknowledged_at = now;
+      await incident.save();
+    }
+
+    return this.mapNotification(
+      notification.toObject() as NotificationDocument
+    );
+  }
+
   async markAlertNotificationReceived(
     userId: string,
     historyId: string
@@ -1052,6 +1184,8 @@ export class NotificationsService implements OnModuleInit {
   async triggerAlertFromInternal(input: TriggerAlertDto): Promise<{
     triggered: boolean;
     historyId?: string;
+    incidentId?: string;
+    notificationId?: string;
     pushSent: boolean;
     message?: string;
     reason?: string;
@@ -1076,21 +1210,10 @@ export class NotificationsService implements OnModuleInit {
       min: input.min,
       max: input.max,
     });
-    const conditionMatched = this.matchesOperator({
-      operator: input.operator,
-      value: input.value,
-      threshold: input.threshold ?? null,
-      min: input.min ?? null,
-      max: input.max ?? null,
-    });
-    if (!conditionMatched) {
-      return {
-        triggered: false,
-        reason: 'Reading does not satisfy the provided rule condition.',
-        pushSent: false,
-      };
-    }
 
+    const occurredAt = input.occurredAt
+      ? new Date(input.occurredAt)
+      : new Date();
     const flowOwnerId = await this.getFlowOwnerId(input.flowId);
     if (!flowOwnerId) {
       throw new NotFoundException('Flow not found.');
@@ -1110,9 +1233,50 @@ export class NotificationsService implements OnModuleInit {
       };
     }
 
-    const occurredAt = input.occurredAt
-      ? new Date(input.occurredAt)
-      : new Date();
+    if (input.eventType === 'resolved') {
+      const resolved = await this.resolveIncidentFromRule({
+        flowId: input.flowId,
+        rule,
+        occurredAt,
+        metadata: { source: 'internal-resolved' },
+      });
+
+      if (resolved.suppressed) {
+        return {
+          triggered: false,
+          historyId: resolved.historyId,
+          pushSent: false,
+          reason: resolved.reason,
+        };
+      }
+
+      return {
+        triggered: true,
+        historyId: resolved.historyId,
+        notificationId: resolved.notificationId,
+        incidentId: resolved.incidentId,
+        pushSent: resolved.pushSent,
+        message: resolved.pushSent
+          ? 'Resolution notification sent.'
+          : 'Resolution recorded but no active push tokens were available.',
+      };
+    }
+
+    const conditionMatched = this.matchesOperator({
+      operator: input.operator,
+      value: input.value,
+      threshold: input.threshold ?? null,
+      min: input.min ?? null,
+      max: input.max ?? null,
+    });
+    if (!conditionMatched) {
+      return {
+        triggered: false,
+        reason: 'Reading does not satisfy the provided rule condition.',
+        pushSent: false,
+      };
+    }
+
     const fired = await this.fireAlertFromRule({
       flowId: input.flowId,
       rule,
@@ -1133,6 +1297,8 @@ export class NotificationsService implements OnModuleInit {
     return {
       triggered: true,
       historyId: fired.historyId,
+      notificationId: fired.notificationId,
+      incidentId: fired.incidentId,
       pushSent: fired.pushSent,
       message: fired.pushSent
         ? 'Alert fired and push notification sent.'
@@ -1366,27 +1532,50 @@ export class NotificationsService implements OnModuleInit {
     metadata?: Record<string, string | number | boolean>;
   }): Promise<{
     historyId: string;
+    incidentId: string;
+    notificationId: string;
     pushSent: boolean;
     suppressed: boolean;
     reason?: string;
   }> {
     const rule = params.rule as AlertRule & { _id: unknown };
     const ruleId = this.toObjectIdString(rule);
-    const latestEvent = await this.findLatestAlertEventForRule(
-      params.flowId,
+    const userId = await this.getFlowOwnerId(params.flowId);
+    if (!userId) {
+      return {
+        historyId: '',
+        incidentId: '',
+        notificationId: '',
+        pushSent: false,
+        suppressed: true,
+        reason: 'Flow not found.',
+      };
+    }
+
+    const deviceId = await this.getFlowNotificationDeviceId(params.flowId);
+    const readingKey = this.normalizeReadingKey(rule.readingKey);
+    const existingIncident = await this.findOpenIncident({
+      userId,
+      flowId: params.flowId,
+      deviceId,
       ruleId,
-      rule.nodeId,
-      rule.moduleId,
-      this.normalizeReadingKey(rule.readingKey)
-    );
-    const deliveryGate = this.evaluateAlertDeliveryGate(
-      latestEvent,
-      params.occurredAt,
-      { moduleId: rule.moduleId, severity: rule.severity }
+      nodeId: rule.nodeId,
+      moduleId: rule.moduleId,
+      readingKey,
+    });
+    const deliveryGate = this.shouldSendIncidentNotification(
+      existingIncident,
+      params.occurredAt
     );
     if (!deliveryGate.allowSend) {
       return {
-        historyId: latestEvent ? this.toObjectIdString(latestEvent) : '',
+        historyId: existingIncident
+          ? this.toObjectIdString(existingIncident)
+          : '',
+        incidentId: existingIncident
+          ? this.toObjectIdString(existingIncident)
+          : '',
+        notificationId: '',
         pushSent: false,
         suppressed: true,
         reason: deliveryGate.reason,
@@ -1399,60 +1588,242 @@ export class NotificationsService implements OnModuleInit {
     const body =
       pushPayload.body ?? this.buildDefaultRuleBody(rule, params.value);
 
-    const createdEvent = await this.alertEventModel.create({
-      flowId: params.flowId,
+    const incident = existingIncident
+      ? await this.updateIncidentForAlert(
+          existingIncident,
+          params.occurredAt,
+          rule.severity
+        )
+      : await this.incidentModel.create({
+          user_id: userId,
+          flow_id: params.flowId,
+          device_id: deviceId,
+          rule_id: ruleId,
+          node_id: rule.nodeId,
+          module_id: rule.moduleId,
+          reading_key: readingKey,
+          opened_at: params.occurredAt,
+          closed_at: null,
+          user_acknowledged_at: null,
+          last_notification_sent_at: params.occurredAt,
+          notification_count: 1,
+          severity: rule.severity,
+        });
+
+    const incidentId = this.toObjectIdString(incident);
+    const notificationData = this.buildNotificationPayload({
+      type: 'alert',
+      notificationId: '',
+      incidentId,
+      userId,
+      deviceId,
       ruleId,
+      flowId: params.flowId,
       nodeId: rule.nodeId,
       moduleId: rule.moduleId,
-      readingKey: this.normalizeReadingKey(rule.readingKey),
+      readingKey,
       severity: rule.severity,
       title,
       body,
-      value: params.value,
       operator: rule.operator,
-      threshold: rule.threshold ?? null,
-      min: rule.min ?? null,
-      max: rule.max ?? null,
+      value: params.value,
+      threshold: rule.threshold,
+      min: rule.min,
+      max: rule.max,
       occurredAt: params.occurredAt,
-      notificationReceived: deliveryGate.inheritReceived,
-      notificationHandled: false,
-      notificationReceivedAt:
-        deliveryGate.inheritReceived && latestEvent?.notificationReceivedAt
-          ? latestEvent.notificationReceivedAt
-          : null,
-      notificationHandledAt: null,
-      notificationLastSentAt: params.occurredAt,
-      notificationNextReminderAt: deliveryGate.inheritReceived
-        ? new Date(params.occurredAt.getTime() + this.receivedReminderMs)
-        : null,
+      metadata: params.metadata,
     });
 
-    const historyId = this.toObjectIdString(createdEvent);
+    const notification = await this.notificationModel.create({
+      user_id: userId,
+      incident_id: incidentId,
+      device_id: deviceId,
+      rule_id: ruleId,
+      severity: rule.severity,
+      title,
+      body,
+      data: notificationData,
+      sent_at: params.occurredAt,
+      received_at: null,
+      handled_at: null,
+      type: 'alert',
+    });
+
+    const notificationId = this.toObjectIdString(notification);
+    notification.data = this.buildNotificationPayload({
+      type: 'alert',
+      notificationId,
+      incidentId,
+      userId,
+      deviceId,
+      ruleId,
+      flowId: params.flowId,
+      nodeId: rule.nodeId,
+      moduleId: rule.moduleId,
+      readingKey,
+      severity: rule.severity,
+      title,
+      body,
+      operator: rule.operator,
+      value: params.value,
+      threshold: rule.threshold,
+      min: rule.min,
+      max: rule.max,
+      occurredAt: params.occurredAt,
+      metadata: params.metadata,
+    });
+    await notification.save();
 
     const delivery = await this.sendAlertToFlowOwner({
       flowId: params.flowId,
-      title,
-      body,
       severity: rule.severity,
-      data: {
-        type: 'ALERT_TRIGGERED',
-        historyId,
-        ruleId,
-        nodeId: rule.nodeId,
-        moduleId: rule.moduleId,
-        readingKey: this.normalizeReadingKey(rule.readingKey),
-        value: params.value,
-        operator: rule.operator,
-        threshold: rule.threshold ?? '',
-        min: rule.min ?? '',
-        max: rule.max ?? '',
-        timestamp: params.occurredAt.toISOString(),
-        ...params.metadata,
-      },
+      data: notification.data,
+      ttl: this.resolveNotificationTtl(rule.severity),
+      collapseKey: `incident_${incidentId}`,
     });
 
     return {
-      historyId,
+      historyId: incidentId,
+      incidentId,
+      notificationId,
+      pushSent: delivery.successCount > 0,
+      suppressed: false,
+    };
+  }
+
+  private async resolveIncidentFromRule(params: {
+    flowId: string;
+    rule: AlertRuleDocument | (AlertRule & { _id: unknown });
+    occurredAt: Date;
+    metadata?: Record<string, string | number | boolean>;
+  }): Promise<{
+    historyId: string;
+    incidentId: string;
+    notificationId: string;
+    pushSent: boolean;
+    suppressed: boolean;
+    reason?: string;
+  }> {
+    const rule = params.rule as AlertRule & { _id: unknown };
+    const ruleId = this.toObjectIdString(rule);
+    const userId = await this.getFlowOwnerId(params.flowId);
+    if (!userId) {
+      return {
+        historyId: '',
+        incidentId: '',
+        notificationId: '',
+        pushSent: false,
+        suppressed: true,
+        reason: 'Flow not found.',
+      };
+    }
+
+    const deviceId = await this.getFlowNotificationDeviceId(params.flowId);
+    const readingKey = this.normalizeReadingKey(rule.readingKey);
+    const incident = await this.findOpenIncident({
+      userId,
+      flowId: params.flowId,
+      deviceId,
+      ruleId,
+      nodeId: rule.nodeId,
+      moduleId: rule.moduleId,
+      readingKey,
+    });
+    if (!incident) {
+      return {
+        historyId: '',
+        incidentId: '',
+        notificationId: '',
+        pushSent: false,
+        suppressed: true,
+        reason: 'No active incident found for resolution.',
+      };
+    }
+
+    incident.closed_at = params.occurredAt;
+    incident.last_notification_sent_at = params.occurredAt;
+    incident.notification_count =
+      Math.max(incident.notification_count ?? 0, 0) + 1;
+    await incident.save();
+
+    const incidentId = this.toObjectIdString(incident);
+    const title = this.buildDefaultResolvedTitle(rule);
+    const body = this.buildDefaultResolvedBody();
+    const notificationData = this.buildNotificationPayload({
+      type: 'resolved',
+      notificationId: '',
+      incidentId,
+      userId,
+      deviceId,
+      ruleId,
+      flowId: params.flowId,
+      nodeId: rule.nodeId,
+      moduleId: rule.moduleId,
+      readingKey,
+      severity: 'info',
+      title,
+      body,
+      operator: rule.operator,
+      value: 0,
+      threshold: rule.threshold,
+      min: rule.min,
+      max: rule.max,
+      occurredAt: params.occurredAt,
+      metadata: params.metadata,
+    });
+
+    const notification = await this.notificationModel.create({
+      user_id: userId,
+      incident_id: incidentId,
+      device_id: deviceId,
+      rule_id: ruleId,
+      severity: 'info',
+      title,
+      body,
+      data: notificationData,
+      sent_at: params.occurredAt,
+      received_at: null,
+      handled_at: null,
+      type: 'resolved',
+    });
+
+    const notificationId = this.toObjectIdString(notification);
+    notification.data = this.buildNotificationPayload({
+      type: 'resolved',
+      notificationId,
+      incidentId,
+      userId,
+      deviceId,
+      ruleId,
+      flowId: params.flowId,
+      nodeId: rule.nodeId,
+      moduleId: rule.moduleId,
+      readingKey,
+      severity: 'info',
+      title,
+      body,
+      operator: rule.operator,
+      value: 0,
+      threshold: rule.threshold,
+      min: rule.min,
+      max: rule.max,
+      occurredAt: params.occurredAt,
+      metadata: params.metadata,
+    });
+    await notification.save();
+
+    const delivery = await this.sendAlertToFlowOwner({
+      flowId: params.flowId,
+      severity: 'info',
+      data: notification.data,
+      ttl: this.resolveNotificationTtl('info'),
+      collapseKey: `incident_${incidentId}`,
+    });
+
+    return {
+      historyId: incidentId,
+      incidentId,
+      notificationId,
       pushSent: delivery.successCount > 0,
       suppressed: false,
     };
@@ -1701,12 +2072,209 @@ export class NotificationsService implements OnModuleInit {
     return ALERT_SEVERITIES.includes(value as AlertSeverity);
   }
 
-  private async sendAlertToFlowOwner(input: {
+  private resolveNotificationTtl(severity: AlertSeverity): number {
+    if (severity === 'critical') {
+      return 300 * 1000;
+    }
+    if (severity === 'warning') {
+      return 60 * 60 * 1000;
+    }
+    return 24 * 60 * 60 * 1000;
+  }
+
+  private async getFlowNotificationDeviceId(flowId: string): Promise<string> {
+    if (!Types.ObjectId.isValid(flowId)) {
+      return flowId;
+    }
+
+    const device = await this.deviceModel
+      .findOne({ activeFlowId: new Types.ObjectId(flowId) })
+      .select({ _id: 1 })
+      .lean<{ _id?: unknown }>()
+      .exec();
+
+    if (!device?._id) {
+      return flowId;
+    }
+
+    return (device._id as Types.ObjectId).toHexString();
+  }
+
+  private async findOpenIncident(input: {
+    userId: string;
     flowId: string;
+    deviceId: string;
+    ruleId: string;
+    nodeId: string;
+    moduleId: string;
+    readingKey: string;
+  }): Promise<IncidentDocument | null> {
+    return this.incidentModel
+      .findOne({
+        user_id: input.userId,
+        flow_id: input.flowId,
+        device_id: input.deviceId,
+        rule_id: input.ruleId,
+        node_id: input.nodeId,
+        module_id: input.moduleId,
+        reading_key: input.readingKey,
+        closed_at: null,
+      })
+      .sort({ opened_at: -1, _id: -1 })
+      .exec();
+  }
+
+  private shouldSendIncidentNotification(
+    incident: IncidentDocument | null,
+    occurredAt: Date
+  ): { allowSend: boolean; reason?: string } {
+    if (!incident) {
+      return { allowSend: true };
+    }
+
+    const baseCooldown = 5 * 60 * 1000;
+    const cooldown = incident.user_acknowledged_at
+      ? baseCooldown * 3
+      : baseCooldown;
+    const lastSentAt =
+      incident.last_notification_sent_at ?? incident.opened_at ?? occurredAt;
+    const elapsed = Math.max(0, occurredAt.getTime() - lastSentAt.getTime());
+
+    if (elapsed < cooldown) {
+      return {
+        allowSend: false,
+        reason: 'Incident notification is still within the cooldown window.',
+      };
+    }
+
+    return { allowSend: true };
+  }
+
+  private async updateIncidentForAlert(
+    incident: IncidentDocument,
+    occurredAt: Date,
+    severity: AlertSeverity
+  ): Promise<IncidentDocument> {
+    incident.last_notification_sent_at = occurredAt;
+    incident.notification_count =
+      Math.max(incident.notification_count ?? 0, 0) + 1;
+    incident.severity = severity;
+    await incident.save();
+    return incident;
+  }
+
+  private buildNotificationPayload(input: {
+    type: 'alert' | 'resolved';
+    notificationId: string;
+    incidentId: string;
+    userId: string;
+    deviceId: string;
+    ruleId: string;
+    flowId: string;
+    nodeId: string;
+    moduleId: string;
+    readingKey: string;
+    severity: AlertSeverity;
     title: string;
     body: string;
-    data?: Record<string, string | number | boolean>;
-    severity?: AlertSeverity;
+    operator: AlertRuleOperator;
+    value: number;
+    threshold?: number | null;
+    min?: number | null;
+    max?: number | null;
+    occurredAt: Date;
+    metadata?: Record<string, string | number | boolean>;
+  }): Record<string, string> {
+    return this.normalizeDataPayload({
+      notification_id: input.notificationId,
+      user_id: input.userId,
+      incident_id: input.incidentId,
+      device_id: input.deviceId,
+      rule_id: input.ruleId,
+      flow_id: input.flowId,
+      node_id: input.nodeId,
+      module_id: input.moduleId,
+      reading_key: input.readingKey,
+      severity: input.severity,
+      type: input.type,
+      title: input.title,
+      body: input.body,
+      operator: input.operator,
+      value: input.value,
+      threshold: input.threshold ?? '',
+      min: input.min ?? '',
+      max: input.max ?? '',
+      target_route: `/devices/${input.deviceId}`,
+      timestamp: input.occurredAt.toISOString(),
+      ...input.metadata,
+    });
+  }
+
+  private mapNotification(
+    notification: Pick<
+      Notification,
+      | 'user_id'
+      | 'incident_id'
+      | 'device_id'
+      | 'rule_id'
+      | 'severity'
+      | 'title'
+      | 'body'
+      | 'data'
+      | 'sent_at'
+      | 'received_at'
+      | 'handled_at'
+      | 'type'
+    > & { _id?: unknown; createdAt?: Date }
+  ): NotificationHistoryItem {
+    return {
+      id: this.toObjectIdString(notification),
+      user_id: notification.user_id,
+      incident_id: notification.incident_id,
+      device_id: notification.device_id,
+      rule_id: notification.rule_id,
+      severity: notification.severity,
+      title: notification.title,
+      body: notification.body,
+      data: notification.data ?? {},
+      sent_at: notification.sent_at,
+      received_at: notification.received_at ?? null,
+      handled_at: notification.handled_at ?? null,
+      type: notification.type,
+      createdAt: notification.createdAt,
+    };
+  }
+
+  private async getOwnedNotificationOrThrow(
+    userId: string,
+    notificationId: string
+  ): Promise<NotificationDocument> {
+    if (!Types.ObjectId.isValid(notificationId)) {
+      throw new NotFoundException('Notification not found.');
+    }
+
+    const notification = await this.notificationModel
+      .findById(notificationId)
+      .exec();
+    if (!notification) {
+      throw new NotFoundException('Notification not found.');
+    }
+
+    if (notification.user_id !== userId) {
+      throw new ForbiddenException(
+        'You are not allowed to update this notification.'
+      );
+    }
+
+    return notification;
+  }
+
+  private async sendAlertToFlowOwner(input: {
+    flowId: string;
+    severity: AlertSeverity;
+    data: Record<string, string | number | boolean>;
+    ttl: number;
+    collapseKey: string;
   }): Promise<{
     requestedTokens: number;
     successCount: number;
@@ -1750,34 +2318,31 @@ export class NotificationsService implements OnModuleInit {
     let successCount = 0;
     let failureCount = 0;
     const deadTokens: string[] = [];
+    const androidPriority = input.severity === 'info' ? 'normal' : 'high';
 
     for (const tokenBatch of batches) {
       const message: MulticastMessage = {
         tokens: tokenBatch,
-        notification: {
-          title: input.title,
-          body: input.body,
-        },
         android: {
-          priority: 'high',
-          notification: { sound: 'default' },
+          priority: androidPriority,
+          ttl: input.ttl,
+          collapseKey: input.collapseKey,
         },
         apns: {
           headers: {
-            'apns-priority': '10',
-            'apns-push-type': 'alert',
+            'apns-priority': input.severity === 'info' ? '5' : '10',
+            'apns-push-type': 'background',
           },
           payload: {
             aps: {
-              sound: 'default',
               contentAvailable: true,
             },
           },
         },
         data: this.normalizeDataPayload({
           ...input.data,
-          severity: input.severity ?? 'warning',
-          flowId: input.flowId,
+          severity: input.severity,
+          flow_id: input.flowId,
         }),
       };
 
@@ -2400,6 +2965,15 @@ export class NotificationsService implements OnModuleInit {
       return `${rule.moduleId} ${rule.readingKey} value ${value} matched ${rule.operator} range (${rule.min}..${rule.max}).`;
     }
     return `${rule.moduleId} ${rule.readingKey} value ${value} crossed threshold ${rule.threshold}.`;
+  }
+
+  private buildDefaultResolvedTitle(rule: AlertRule): string {
+    const label = `${rule.moduleId} ${rule.readingKey}`.trim();
+    return `${label} Normal ✓`;
+  }
+
+  private buildDefaultResolvedBody(): string {
+    return 'Sensor back to safe levels';
   }
 
   private getMessagingClient(): Messaging {

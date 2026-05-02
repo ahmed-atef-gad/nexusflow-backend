@@ -81,4 +81,14 @@ export class TriggerAlertDto {
   @IsOptional()
   @IsISO8601()
   occurredAt?: string;
+
+  @ApiPropertyOptional({
+    enum: ['alert', 'resolved'],
+    example: 'alert',
+    description:
+      'Internal event type. Use resolved when the sensor returns to normal.',
+  })
+  @IsOptional()
+  @IsEnum(['alert', 'resolved'])
+  eventType?: 'alert' | 'resolved';
 }
