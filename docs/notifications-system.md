@@ -224,6 +224,11 @@ Behavior:
 - `POST /v1/notifications/alert-history/:historyId/received`
 - `POST /v1/notifications/alert-history/:historyId/handled`
 
+Notes:
+
+- Both handshake endpoints now require that the authenticated user is the owner of the flow that the `alert_event` belongs to. Requests from authenticated users who are not the flow owner will receive `403 Forbidden`.
+- Authentication: include `Cookie: jwt=<token>` (the backend reads JWT from the `jwt` cookie).
+
 Contract:
 
 - Mobile app sends `received` when push reaches the device.

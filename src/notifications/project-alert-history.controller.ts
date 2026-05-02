@@ -15,6 +15,8 @@ import {
 import { AuthGuard } from 'src/guards/auth/auth.guard';
 import { AlertHistoryQueryDto } from './dto/alert-history-query.dto';
 import { NotificationsService } from './notifications.service';
+import { OwnerGuard } from 'src/guards/auth/owner.guard';
+import { IsOwner } from 'src/auth/decorators/owner.decorator';
 
 @ApiTags('Notifications')
 @ApiCookieAuth('jwt')
@@ -67,6 +69,8 @@ export class ProjectAlertHistoryController {
   @ApiUnauthorizedResponse({
     description: 'Unauthorized - Invalid or missing user token',
   })
+  @UseGuards(OwnerGuard)
+  @IsOwner({ paramKey: 'flowId', resource: 'flow' })
   @Get('alert-history')
   async getAlertHistory(
     @Req() req: AuthenticatedRequest,

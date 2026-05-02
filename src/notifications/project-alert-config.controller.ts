@@ -28,6 +28,8 @@ import {
   type AuthenticatedRequest,
 } from 'src/auth/utils/auth.util';
 import { AuthGuard } from 'src/guards/auth/auth.guard';
+import { OwnerGuard } from 'src/guards/auth/owner.guard';
+import { IsOwner } from 'src/auth/decorators/owner.decorator';
 import { RolesGuard } from 'src/guards/auth/roles.guard';
 import { Role } from 'src/users/enums/role.enum';
 import { CreateAlertRuleDto } from './dto/create-alert-rule.dto';
@@ -87,6 +89,8 @@ export class ProjectAlertConfigController {
   @ApiUnauthorizedResponse({
     description: 'Unauthorized - Invalid or missing user token',
   })
+  @UseGuards(OwnerGuard)
+  @IsOwner({ paramKey: 'flowId', resource: 'flow' })
   @Get('flows/:flowId/notification-preferences')
   async getNotificationPreferences(
     @Req() req: AuthenticatedRequest,
@@ -99,6 +103,8 @@ export class ProjectAlertConfigController {
   @ApiOperation({ summary: 'Create or replace notification preferences' })
   @ApiParam({ name: 'flowId', description: 'Flow identifier' })
   @ApiBody({ type: UpdateNotificationPreferencesDto })
+  @UseGuards(OwnerGuard)
+  @IsOwner({ paramKey: 'flowId', resource: 'flow' })
   @Put('flows/:flowId/notification-preferences')
   async updateNotificationPreferences(
     @Req() req: AuthenticatedRequest,
@@ -120,6 +126,8 @@ export class ProjectAlertConfigController {
     required: false,
     description: 'Filter by node instance id',
   })
+  @UseGuards(OwnerGuard)
+  @IsOwner({ paramKey: 'flowId', resource: 'flow' })
   @Get('flows/:flowId/alert-rules')
   async getAlertRules(
     @Req() req: AuthenticatedRequest,
@@ -133,6 +141,8 @@ export class ProjectAlertConfigController {
   @ApiOperation({ summary: 'Get a single alert rule' })
   @ApiParam({ name: 'flowId', description: 'Flow identifier' })
   @ApiParam({ name: 'ruleId', description: 'Alert rule id' })
+  @UseGuards(OwnerGuard)
+  @IsOwner({ paramKey: 'flowId', resource: 'flow' })
   @Get('flows/:flowId/alert-rules/:ruleId')
   async getAlertRule(
     @Req() req: AuthenticatedRequest,
@@ -147,6 +157,8 @@ export class ProjectAlertConfigController {
   @ApiParam({ name: 'flowId', description: 'Flow identifier' })
   @ApiBody({ type: CreateAlertRuleDto })
   @ApiResponse({ status: 201, description: 'Alert rule created' })
+  @UseGuards(OwnerGuard)
+  @IsOwner({ paramKey: 'flowId', resource: 'flow' })
   @Post('flows/:flowId/alert-rules')
   async createAlertRule(
     @Req() req: AuthenticatedRequest,
@@ -161,6 +173,8 @@ export class ProjectAlertConfigController {
   @ApiParam({ name: 'flowId', description: 'Flow identifier' })
   @ApiParam({ name: 'ruleId', description: 'Alert rule id' })
   @ApiBody({ type: UpdateAlertRuleDto })
+  @UseGuards(OwnerGuard)
+  @IsOwner({ paramKey: 'flowId', resource: 'flow' })
   @Patch('flows/:flowId/alert-rules/:ruleId')
   async updateAlertRule(
     @Req() req: AuthenticatedRequest,
@@ -182,6 +196,8 @@ export class ProjectAlertConfigController {
   @ApiParam({ name: 'ruleId', description: 'Alert rule id' })
   @ApiResponse({ status: 204, description: 'Alert rule deleted' })
   @HttpCode(204)
+  @UseGuards(OwnerGuard)
+  @IsOwner({ paramKey: 'flowId', resource: 'flow' })
   @Delete('flows/:flowId/alert-rules/:ruleId')
   async deleteAlertRule(
     @Req() req: AuthenticatedRequest,

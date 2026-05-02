@@ -4,7 +4,12 @@ export const IS_OWNER_CHECK_KEY = 'isOwnerCheck';
 export const OWNER_PARAM_KEY = 'ownerParamKey';
 export const OWNER_RESOURCE_KEY = 'ownerResourceKey';
 
-export type OwnerResource = 'user' | 'flow' | 'device' | 'deviceToken';
+export type OwnerResource =
+  | 'user'
+  | 'flow'
+  | 'device'
+  | 'deviceToken'
+  | 'alertEvent';
 
 type IsOwnerOptions = {
   paramKey?: string;

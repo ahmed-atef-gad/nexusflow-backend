@@ -21,6 +21,10 @@ import {
   DeviceTokenDocument,
 } from '../../devices/schemas/device-token.schema';
 import {
+  AlertEvent,
+  AlertEventDocument,
+} from '../../notifications/schemas/alert-event.schema';
+import {
   AuthenticatedRequest,
   getUserIdFromRequest,
 } from '../../auth/utils/auth.util';
@@ -147,6 +151,22 @@ export class OwnerGuard implements CanActivate {
           .exec();
         if (!device) return false;
         return device.ownerId?.toString() === userId;
+      }
+      case 'alertEvent': {
+        if (!Types.ObjectId.isValid(resourceId)) return false;
+        const AlertEventModel = this.connection.model<AlertEventDocument>(
+          AlertEvent.name
+        );
+        const event = await AlertEventModel.findById(resourceId)
+          .select('flowId')
+          .exec();
+        if (!event?.flowId) return false;
+        const FlowModel = this.connection.model<FlowDocument>(Flow.name);
+        const flow = await FlowModel.findById(event.flowId)
+          .select('userId')
+          .exec();
+        if (!flow) return false;
+        return flow.userId?.toString() === userId;
       }
       default:
         return false;
