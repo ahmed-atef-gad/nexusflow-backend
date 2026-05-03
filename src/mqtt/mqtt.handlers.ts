@@ -515,9 +515,14 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       }
 
       this.logger.warn(
-        `MQTT publish rejected. clientId=${client?.id ?? 'unknown'} topic=${topic}`
+        `MQTT publish rejected. clientId=${client?.id ?? 'unknown'} topic=${topic} reason=unauthorized`
       );
-      return done(new Error('Not authorized'));
+      // Return error but include descriptive message for debugging
+      const error = new Error(
+        'Not authorized to publish to this topic'
+      ) as Error & { code?: string };
+      error.code = 'UNAUTHORIZED_TOPIC';
+      return done(error);
     }
 
     if (this.isEspTopic(topic)) {
@@ -536,9 +541,14 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       }
 
       this.logger.warn(
-        `MQTT publish rejected. clientId=${client?.id ?? 'unknown'} topic=${topic}`
+        `MQTT publish rejected. clientId=${client?.id ?? 'unknown'} topic=${topic} reason=unauthorized`
       );
-      return done(new Error('Not authorized'));
+      // Return error but include descriptive message for debugging
+      const error = new Error(
+        'Not authorized to publish to this topic'
+      ) as Error & { code?: string };
+      error.code = 'UNAUTHORIZED_TOPIC';
+      return done(error);
     }
 
     return done(null);
@@ -1448,13 +1458,19 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
         this.normalizeMqttChannel(firstStep.channel) === inputNodeId
       ) {
         matchedBridgeNodes++;
-        await this.mqttService.publish(
-          this.buildMqttInUiTopic(flowId, String(firstStep.id)),
-          {
-            ...(rawPayload ?? {}),
-            sourceFlowId: forwardedBridge.sourceFlowId,
-          }
-        );
+        try {
+          await this.mqttService.publish(
+            this.buildMqttInUiTopic(flowId, String(firstStep.id)),
+            {
+              ...(rawPayload ?? {}),
+              sourceFlowId: forwardedBridge.sourceFlowId,
+            }
+          );
+        } catch (publishError) {
+          this.logger.error(
+            `Failed to publish mqtt-in UI message for flowId=${flowId} nodeId=${firstStep.id}: ${(publishError as Error).message}`
+          );
+        }
       }
 
       const matchesInput =
@@ -1494,20 +1510,26 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
           try {
             const nextMessage = this.executeFunctionStep(step, currentMessage);
             if (nextMessage === null) {
-              await this.mqttService.publish(
-                this.buildFunctionDebugTopic(deviceMac, functionNodeId),
-                {
-                  code: 'FUNCTION_RETURNED_NULL',
-                  severity: 'info',
-                  message:
-                    'Function node returned null/undefined, so this runtime path was stopped.',
-                  flowId,
-                  nodeId: functionNodeId,
-                  moduleId: step.moduleId,
-                  inputTopic: topic,
-                  timestamp: new Date().toISOString(),
-                }
-              );
+              try {
+                await this.mqttService.publish(
+                  this.buildFunctionDebugTopic(deviceMac, functionNodeId),
+                  {
+                    code: 'FUNCTION_RETURNED_NULL',
+                    severity: 'info',
+                    message:
+                      'Function node returned null/undefined, so this runtime path was stopped.',
+                    flowId,
+                    nodeId: functionNodeId,
+                    moduleId: step.moduleId,
+                    inputTopic: topic,
+                    timestamp: new Date().toISOString(),
+                  }
+                );
+              } catch (publishError) {
+                this.logger.error(
+                  `Failed to publish function debug message: ${(publishError as Error).message}`
+                );
+              }
               pathStopped = true;
               break;
             }
@@ -1518,32 +1540,44 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
             );
 
             const functionNodeId = String(step.id ?? 'unknown');
-            await this.mqttService.publish(
-              this.buildFunctionErrorTopic(deviceMac, functionNodeId),
-              {
-                code: 'FUNCTION_EXECUTION_FAILED',
-                message: (error as Error).message,
-                flowId,
-                nodeId: functionNodeId,
-                moduleId: step.moduleId,
-                inputTopic: topic,
-                timestamp: new Date().toISOString(),
-              }
-            );
+            try {
+              await this.mqttService.publish(
+                this.buildFunctionErrorTopic(deviceMac, functionNodeId),
+                {
+                  code: 'FUNCTION_EXECUTION_FAILED',
+                  message: (error as Error).message,
+                  flowId,
+                  nodeId: functionNodeId,
+                  moduleId: step.moduleId,
+                  inputTopic: topic,
+                  timestamp: new Date().toISOString(),
+                }
+              );
+            } catch (publishError) {
+              this.logger.error(
+                `Failed to publish function error message: ${(publishError as Error).message}`
+              );
+            }
 
-            await this.mqttService.publish(
-              this.buildFunctionDebugTopic(deviceMac, functionNodeId),
-              {
-                code: 'FUNCTION_EXECUTION_FAILED',
-                severity: 'error',
-                message: (error as Error).message,
-                flowId,
-                nodeId: functionNodeId,
-                moduleId: step.moduleId,
-                inputTopic: topic,
-                timestamp: new Date().toISOString(),
-              }
-            );
+            try {
+              await this.mqttService.publish(
+                this.buildFunctionDebugTopic(deviceMac, functionNodeId),
+                {
+                  code: 'FUNCTION_EXECUTION_FAILED',
+                  severity: 'error',
+                  message: (error as Error).message,
+                  flowId,
+                  nodeId: functionNodeId,
+                  moduleId: step.moduleId,
+                  inputTopic: topic,
+                  timestamp: new Date().toISOString(),
+                }
+              );
+            } catch (publishError) {
+              this.logger.error(
+                `Failed to publish function debug error message: ${(publishError as Error).message}`
+              );
+            }
             pathStopped = true;
             break;
           }
@@ -1579,11 +1613,17 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
               ),
             } as MqttPacketContext;
 
-            await this.executeInternalMqttForwardTopic(
-              bridgeTopic,
-              forwardedPacket
-            );
-            publishedCommands++;
+            try {
+              await this.executeInternalMqttForwardTopic(
+                bridgeTopic,
+                forwardedPacket
+              );
+              publishedCommands++;
+            } catch (publishError) {
+              this.logger.error(
+                `Failed to forward mqtt-out message to ${bridgeTopic}: ${(publishError as Error).message}`
+              );
+            }
           }
           continue;
         }
@@ -1607,19 +1647,27 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
           continue;
         }
 
-        await this.mqttService.publish(commandTopic, {
-          command: {
-            cmd: step.cmd,
-            pin: step.pin,
-            value: outputValue,
-            topic: step.topic,
-          },
-        });
-        publishedCommands++;
+        try {
+          await this.mqttService.publish(commandTopic, {
+            command: {
+              cmd: step.cmd,
+              pin: step.pin,
+              value: outputValue,
+              topic: step.topic,
+            },
+          });
+          publishedCommands++;
 
-        this.logger.debug(
-          `Published GPIO logic command. cmd=${step.cmd} pin=${step.pin} value=${outputValue} topic=${commandTopic}`
-        );
+          this.logger.debug(
+            `Published GPIO logic command. cmd=${step.cmd} pin=${step.pin} value=${outputValue} topic=${commandTopic}`
+          );
+        } catch (publishError) {
+          this.logger.error(
+            `Failed to publish GPIO command to ${commandTopic}: ${(publishError as Error).message} nodeId=${step.id}`
+          );
+          // Continue processing other steps instead of crashing
+          continue;
+        }
 
         try {
           await this.evaluateAlertRulesForOutput({
