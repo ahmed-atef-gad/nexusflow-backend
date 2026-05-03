@@ -983,8 +983,6 @@ export class FlowBuilderService {
     }
 
     const uiElements: UiItem[] = [];
-    const resolvedMac = this.normalizeMacAddress(deviceMac);
-    const commandTopic = resolvedMac ? `esp/${resolvedMac}/cmd` : undefined;
     const connectedOutputIds = new Set<string>(
       edges?.map((e) => e.target) ?? []
     );
@@ -1024,7 +1022,6 @@ export class FlowBuilderService {
             pin: pinNumber,
             responseTopic: this.buildOutputTopic(node.id, flowId),
             moduleType: 'output',
-            topic: commandTopic,
             isFloating: !connectedOutputIds.has(node.id),
           });
         }
