@@ -33,7 +33,7 @@ export class UiItem {
 
   @ApiProperty({ type: String, description: 'Topic for this UI item' })
   @Prop()
-  topic!: string;
+  topic?: string;
 
   @ApiProperty({
     required: false,
