@@ -116,6 +116,7 @@ type InputPayload = {
 };
 
 const INPUT_TOPIC_PATTERN = /^logic\/input\/([^/]+)$/;
+const OUTPUT_TOPIC_PATTERN = /^nexusflow\/output\/([^/]+)$/;
 const INTERNAL_MQTT_TOPIC_PATTERN =
   /^nexusflow\/internal\/([^/]+)\/([^/]+)\/([^/]+)\/([^/]+)\/([^/]+)$/;
 const DEFAULT_FUNCTION_NODE_EXECUTION_TIMEOUT_MS = 100;
@@ -787,8 +788,21 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     return INPUT_TOPIC_PATTERN.test(topic);
   }
 
+  private isOutputTopic(topic: string): boolean {
+    return OUTPUT_TOPIC_PATTERN.test(topic);
+  }
+
   private getInputNodeIdFromTopic(topic: string): string | null {
     const prefixedMatch = topic.match(INPUT_TOPIC_PATTERN);
+    if (prefixedMatch) {
+      return prefixedMatch[1] || null;
+    }
+
+    return null;
+  }
+
+  private getOutputNodeIdFromTopic(topic: string): string | null {
+    const prefixedMatch = topic.match(OUTPUT_TOPIC_PATTERN);
     if (prefixedMatch) {
       return prefixedMatch[1] || null;
     }
@@ -826,6 +840,21 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
 
     try {
       const parsed: unknown = JSON.parse(payload.toString('utf8'));
+      if (typeof parsed === 'number' && Number.isFinite(parsed)) {
+        return this.clampToByte(parsed);
+      }
+
+      if (typeof parsed === 'boolean') {
+        return parsed ? 1 : 0;
+      }
+
+      if (typeof parsed === 'string') {
+        const parsedNumber = Number(parsed);
+        return Number.isFinite(parsedNumber)
+          ? this.clampToByte(parsedNumber)
+          : null;
+      }
+
       if (!parsed || typeof parsed !== 'object') {
         return null;
       }
@@ -1004,6 +1033,82 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     if (outcome.triggeredRules > 0) {
       this.logger.log(
         `Triggered ${outcome.triggeredRules} alert rule(s) for flowId=${params.flowId} outputNodeId=${params.outputNodeId}`
+      );
+    }
+  }
+
+  private async evaluateAlertRulesForOutputTopic(params: {
+    flowId: string;
+    outputNodeId: string;
+    topic: string;
+    packet: MqttPacketContext;
+    deviceMac: string;
+    client: MqttClientContext;
+  }): Promise<void> {
+    const normalizedValue = this.extractNumericInputValue(params.packet);
+    const rawPayload = this.extractRawInputPayload(params.packet);
+    if (normalizedValue === null && rawPayload === null) {
+      return;
+    }
+
+    const readings = this.extractAlertReadings(rawPayload, normalizedValue);
+    if (!Object.keys(readings).length) {
+      return;
+    }
+
+    const outcome = await this.notificationsService.processSensorReading({
+      flowId: params.flowId,
+      nodeId: params.outputNodeId,
+      readings,
+      metadata: {
+        topic: params.topic,
+        outputNodeId: params.outputNodeId,
+        deviceMac: params.deviceMac,
+        clientId: params.client?.id?.toString?.() ?? 'unknown',
+      },
+    });
+
+    if (outcome.triggeredRules > 0) {
+      this.logger.log(
+        `Triggered ${outcome.triggeredRules} alert rule(s) for flowId=${params.flowId} outputNodeId=${params.outputNodeId}`
+      );
+    }
+  }
+
+  private async evaluateAlertRulesForInputTopic(params: {
+    flowId: string;
+    inputNodeId: string;
+    topic: string;
+    packet: MqttPacketContext;
+    deviceMac: string;
+    client: MqttClientContext;
+  }): Promise<void> {
+    const rawPayload = this.extractRawInputPayload(params.packet);
+    const normalizedValue = this.extractNumericInputValue(params.packet);
+    if (normalizedValue === null && rawPayload === null) {
+      return;
+    }
+
+    const readings = this.extractAlertReadings(rawPayload, normalizedValue);
+    if (!Object.keys(readings).length) {
+      return;
+    }
+
+    const outcome = await this.notificationsService.processSensorReading({
+      flowId: params.flowId,
+      nodeId: params.inputNodeId,
+      readings,
+      metadata: {
+        topic: params.topic,
+        inputNodeId: params.inputNodeId,
+        deviceMac: params.deviceMac,
+        clientId: params.client?.id?.toString?.() ?? 'unknown',
+      },
+    });
+
+    if (outcome.triggeredRules > 0) {
+      this.logger.log(
+        `Triggered ${outcome.triggeredRules} alert rule(s) for flowId=${params.flowId} inputNodeId=${params.inputNodeId}`
       );
     }
   }
@@ -1874,11 +1979,78 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       }
 
       if (clientId && client?.isEsp && this.isInputTopic(topic)) {
+        const inputNodeId = this.getInputNodeIdFromTopic(topic);
+        const flowId = client.linkedFlowId;
+
+        if (!flowId || !inputNodeId) {
+          try {
+            await this.executeGpioLogicForInputTopic(topic, packet, client);
+          } catch (error) {
+            this.logger.error(
+              `Failed to execute server-side GPIO logic for topic=${topic}: ${(error as Error).message}`
+            );
+          }
+        } else {
+          try {
+            const deviceMac = this.normalizeMacAddress(client.deviceMac ?? '');
+            const flows = await this.logicService.getLogicFlowsForFlowId(
+              flowId,
+              deviceMac
+            );
+            const inputIsPartOfRuntimePath = flows.some((flow) =>
+              flow.some((step) => String(step.id ?? '') === inputNodeId)
+            );
+
+            if (inputIsPartOfRuntimePath) {
+              await this.executeGpioLogicForInputTopic(topic, packet, client);
+            } else {
+              await this.evaluateAlertRulesForInputTopic({
+                flowId,
+                inputNodeId,
+                topic,
+                packet,
+                deviceMac,
+                client,
+              });
+            }
+          } catch (error) {
+            this.logger.error(
+              `Failed to process input topic for topic=${topic}: ${(error as Error).message}`
+            );
+          }
+        }
+      }
+
+      if (clientId && client?.isEsp && this.isOutputTopic(topic)) {
+        const flowId = client.linkedFlowId;
+        const outputNodeId = this.getOutputNodeIdFromTopic(topic);
+        if (!flowId || !outputNodeId) {
+          return;
+        }
+
         try {
-          await this.executeGpioLogicForInputTopic(topic, packet, client);
+          const deviceMac = this.normalizeMacAddress(client.deviceMac ?? '');
+          const flows = await this.logicService.getLogicFlowsForFlowId(
+            flowId,
+            deviceMac
+          );
+          const outputIsPartOfRuntimePath = flows.some((flow) =>
+            flow.some((step) => String(step.id ?? '') === outputNodeId)
+          );
+
+          if (!outputIsPartOfRuntimePath) {
+            await this.evaluateAlertRulesForOutputTopic({
+              flowId,
+              outputNodeId,
+              topic,
+              packet,
+              deviceMac,
+              client,
+            });
+          }
         } catch (error) {
           this.logger.error(
-            `Failed to execute server-side GPIO logic for topic=${topic}: ${(error as Error).message}`
+            `Failed to evaluate output-topic alert rules for topic=${topic}: ${(error as Error).message}`
           );
         }
       }
