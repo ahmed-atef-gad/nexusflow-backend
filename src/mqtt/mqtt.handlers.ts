@@ -116,7 +116,9 @@ type InputPayload = {
 };
 
 const INPUT_TOPIC_PATTERN = /^logic\/input\/([^/]+)$/;
+const SCOPED_INPUT_TOPIC_PATTERN = /^logic\/input\/([^/]+)\/([^/]+)$/;
 const OUTPUT_TOPIC_PATTERN = /^nexusflow\/output\/([^/]+)$/;
+const SCOPED_OUTPUT_TOPIC_PATTERN = /^nexusflow\/output\/([^/]+)\/([^/]+)$/;
 const INTERNAL_MQTT_TOPIC_PATTERN =
   /^nexusflow\/internal\/([^/]+)\/([^/]+)\/([^/]+)\/([^/]+)\/([^/]+)$/;
 const DEFAULT_FUNCTION_NODE_EXECUTION_TIMEOUT_MS = 100;
@@ -785,29 +787,68 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
   }
 
   private isInputTopic(topic: string): boolean {
-    return INPUT_TOPIC_PATTERN.test(topic);
+    return (
+      INPUT_TOPIC_PATTERN.test(topic) || SCOPED_INPUT_TOPIC_PATTERN.test(topic)
+    );
   }
 
   private isOutputTopic(topic: string): boolean {
-    return OUTPUT_TOPIC_PATTERN.test(topic);
+    return (
+      OUTPUT_TOPIC_PATTERN.test(topic) ||
+      SCOPED_OUTPUT_TOPIC_PATTERN.test(topic)
+    );
+  }
+
+  private getInputTopicParts(topic: string): {
+    flowId?: string;
+    nodeId: string;
+  } | null {
+    const scopedMatch = topic.match(SCOPED_INPUT_TOPIC_PATTERN);
+    if (scopedMatch) {
+      return {
+        flowId: scopedMatch[1] || undefined,
+        nodeId: scopedMatch[2],
+      };
+    }
+
+    const legacyMatch = topic.match(INPUT_TOPIC_PATTERN);
+    if (legacyMatch) {
+      return {
+        nodeId: legacyMatch[1],
+      };
+    }
+
+    return null;
+  }
+
+  private getOutputTopicParts(topic: string): {
+    flowId?: string;
+    nodeId: string;
+  } | null {
+    const scopedMatch = topic.match(SCOPED_OUTPUT_TOPIC_PATTERN);
+    if (scopedMatch) {
+      return {
+        flowId: scopedMatch[1] || undefined,
+        nodeId: scopedMatch[2],
+      };
+    }
+
+    const legacyMatch = topic.match(OUTPUT_TOPIC_PATTERN);
+    if (legacyMatch) {
+      return {
+        nodeId: legacyMatch[1],
+      };
+    }
+
+    return null;
   }
 
   private getInputNodeIdFromTopic(topic: string): string | null {
-    const prefixedMatch = topic.match(INPUT_TOPIC_PATTERN);
-    if (prefixedMatch) {
-      return prefixedMatch[1] || null;
-    }
-
-    return null;
+    return this.getInputTopicParts(topic)?.nodeId ?? null;
   }
 
   private getOutputNodeIdFromTopic(topic: string): string | null {
-    const prefixedMatch = topic.match(OUTPUT_TOPIC_PATTERN);
-    if (prefixedMatch) {
-      return prefixedMatch[1] || null;
-    }
-
-    return null;
+    return this.getOutputTopicParts(topic)?.nodeId ?? null;
   }
 
   private clampToByte(value: number): number {
@@ -1166,7 +1207,10 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     return `nexusflow/ui/mqtt-in/${flowId}/${nodeId}`;
   }
 
-  private buildLogicInputTopic(nodeId: string): string {
+  private buildLogicInputTopic(nodeId: string, flowId?: string): string {
+    if (flowId?.trim()) {
+      return `logic/input/${flowId.trim()}/${nodeId}`;
+    }
     return `logic/input/${nodeId}`;
   }
 
@@ -1877,6 +1921,7 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     );
 
     const inputNodeId = this.getInputNodeIdFromTopic(topic);
+    const inputTopicParts = this.getInputTopicParts(topic);
     if (!inputNodeId) {
       this.logger.debug(
         `Skip GPIO logic: failed to extract node id from topic ${topic}`
@@ -1897,6 +1942,7 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       inputNodeId,
       deviceMac,
       client,
+      flowId: inputTopicParts?.flowId,
     });
   }
 
@@ -1935,7 +1981,7 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     };
 
     await this.processRuntimeInputAndForwarding({
-      topic: this.buildLogicInputTopic(bridge.channel),
+      topic: this.buildLogicInputTopic(bridge.channel, bridge.targetFlowId),
       inputNodeId: bridge.channel,
       packet,
       deviceMac: targetDeviceMac,
@@ -1979,8 +2025,20 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       }
 
       if (clientId && client?.isEsp && this.isInputTopic(topic)) {
-        const inputNodeId = this.getInputNodeIdFromTopic(topic);
+        const inputTopicParts = this.getInputTopicParts(topic);
+        const inputNodeId = inputTopicParts?.nodeId ?? null;
         const flowId = client.linkedFlowId;
+
+        if (
+          inputTopicParts?.flowId &&
+          flowId &&
+          inputTopicParts.flowId !== flowId
+        ) {
+          this.logger.warn(
+            `Skip input topic due to flow mismatch. topic=${topic} linkedFlowId=${flowId}`
+          );
+          return;
+        }
 
         if (!flowId || !inputNodeId) {
           try {
@@ -2023,7 +2081,20 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
 
       if (clientId && client?.isEsp && this.isOutputTopic(topic)) {
         const flowId = client.linkedFlowId;
-        const outputNodeId = this.getOutputNodeIdFromTopic(topic);
+        const outputTopicParts = this.getOutputTopicParts(topic);
+        const outputNodeId = outputTopicParts?.nodeId ?? null;
+
+        if (
+          outputTopicParts?.flowId &&
+          flowId &&
+          outputTopicParts.flowId !== flowId
+        ) {
+          this.logger.warn(
+            `Skip output topic due to flow mismatch. topic=${topic} linkedFlowId=${flowId}`
+          );
+          return;
+        }
+
         if (!flowId || !outputNodeId) {
           return;
         }
