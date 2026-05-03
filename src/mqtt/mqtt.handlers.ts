@@ -170,6 +170,18 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       'publish',
       this.onClientPublish.bind(this) as (...args: unknown[]) => void
     );
+    broker.on(
+      'keepaliveTimeout',
+      this.onKeepaliveTimeout.bind(this) as (...args: unknown[]) => void
+    );
+    broker.on(
+      'clientError',
+      this.onClientError.bind(this) as (...args: unknown[]) => void
+    );
+    broker.on(
+      'connectionError',
+      this.onConnectionError.bind(this) as (...args: unknown[]) => void
+    );
 
     // start logic cache sweeper in LogicService
     this.logicService.startLogicCacheSweeper();
@@ -743,7 +755,32 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       });
       await this.devicesService.updateLastActiveByMacAddress(clientId);
     }
-    this.logger.debug(`MQTT client disconnected. clientId=${clientId}`);
+    this.logger.warn(
+      `MQTT client disconnected. clientId=${clientId} isEsp=${Boolean(client?.isEsp)} isUserClient=${Boolean(client?.isUserClient)} userId=${client?.userId ?? 'n/a'} deviceMac=${client?.deviceMac ?? 'n/a'}`
+    );
+  }
+
+  private onKeepaliveTimeout(client: MqttClientContext) {
+    const clientId = client?.id?.toString?.() ?? 'unknown';
+    this.logger.warn(
+      `MQTT keepalive timeout. clientId=${clientId} isEsp=${Boolean(client?.isEsp)} isUserClient=${Boolean(client?.isUserClient)} userId=${client?.userId ?? 'n/a'} deviceMac=${client?.deviceMac ?? 'n/a'}`
+    );
+  }
+
+  private onClientError(client: MqttClientContext, error: unknown) {
+    const clientId = client?.id?.toString?.() ?? 'unknown';
+    const message = error instanceof Error ? error.message : String(error);
+    this.logger.error(
+      `MQTT client error. clientId=${clientId} error=${message}`
+    );
+  }
+
+  private onConnectionError(client: MqttClientContext, error: unknown) {
+    const clientId = client?.id?.toString?.() ?? 'unknown';
+    const message = error instanceof Error ? error.message : String(error);
+    this.logger.error(
+      `MQTT connection error. clientId=${clientId} error=${message}`
+    );
   }
 
   private isInputTopic(topic: string): boolean {
