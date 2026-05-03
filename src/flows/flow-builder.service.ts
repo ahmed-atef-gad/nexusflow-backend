@@ -957,25 +957,6 @@ export class FlowBuilderService {
     return `${baseName}_${pinNumber ? pinNumber : randomInt(1, 9999)}`;
   }
 
-  buildTopicsForUi(dedicatedMac?: string): TopicsData {
-    const resolvedMac = this.normalizeMacAddress(dedicatedMac);
-    return {
-      commandTopic: resolvedMac ? `esp/${resolvedMac}/cmd` : 'esp/cmd',
-      resetWifiTopic: resolvedMac
-        ? `esp/${resolvedMac}/resetwifi`
-        : 'esp/resetwifi',
-      instantExecutionTopic: resolvedMac
-        ? `esp/${resolvedMac}/instant`
-        : 'esp/instant',
-      functionErrorTopicPattern: resolvedMac
-        ? `/devices/${resolvedMac}/logic/error/+`
-        : undefined,
-      logicDebugTopic: resolvedMac
-        ? `/devices/${resolvedMac}/logic/debug`
-        : undefined,
-    };
-  }
-
   buildUiFromNodes(
     nodes: Node[],
     edges: RFEdge[],
@@ -988,7 +969,7 @@ export class FlowBuilderService {
 
     const uiElements: UiItem[] = [];
     const resolvedMac = this.normalizeMacAddress(deviceMac);
-    const commandTopic = resolvedMac ? `esp/${resolvedMac}/cmd` : 'esp/cmd';
+    const commandTopic = resolvedMac ? `esp/${resolvedMac}/cmd` : undefined;
     const connectedOutputIds = new Set<string>(
       edges?.map((e) => e.target) ?? []
     );

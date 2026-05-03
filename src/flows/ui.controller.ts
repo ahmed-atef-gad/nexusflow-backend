@@ -108,14 +108,11 @@ export class UiController {
       logicDebugTopic?: string;
     };
 
+    const deviceTopics = this.uiService.buildTopicsForUi(normalizedMac);
+
     return {
       ...uiObject,
-      functionErrorTopicPattern:
-        uiObject.functionErrorTopicPattern ??
-        (normalizedMac ? `/devices/${normalizedMac}/logic/error/+` : undefined),
-      logicDebugTopic:
-        uiObject.logicDebugTopic ??
-        (normalizedMac ? `/devices/${normalizedMac}/logic/debug` : undefined),
+      ...deviceTopics,
       deviceId,
       deviceOnlineStatusTopic,
     };

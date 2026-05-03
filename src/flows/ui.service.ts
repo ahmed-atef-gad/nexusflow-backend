@@ -33,4 +33,28 @@ export class UiService {
   async findByFlowId(flowId: string) {
     return this.uiModel.findOne({ flowId }).exec();
   }
+
+  buildTopicsForUi(dedicatedMac?: string | null): TopicsData {
+    const resolvedMac = this.normalizeMacAddress(dedicatedMac);
+    return {
+      commandTopic: resolvedMac ? `esp/${resolvedMac}/cmd` : undefined,
+      resetWifiTopic: resolvedMac ? `esp/${resolvedMac}/resetwifi` : undefined,
+      instantExecutionTopic: resolvedMac
+        ? `esp/${resolvedMac}/instant`
+        : undefined,
+      functionErrorTopicPattern: resolvedMac
+        ? `/devices/${resolvedMac}/logic/error/+`
+        : undefined,
+      logicDebugTopic: resolvedMac
+        ? `/devices/${resolvedMac}/logic/debug`
+        : undefined,
+    };
+  }
+
+  private normalizeMacAddress(macAddress?: string | null): string | undefined {
+    if (!macAddress) return undefined;
+    const trimmed = macAddress.trim();
+    if (!trimmed) return undefined;
+    return trimmed.toUpperCase();
+  }
 }

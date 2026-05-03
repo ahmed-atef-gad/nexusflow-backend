@@ -472,7 +472,7 @@ export class FlowsService {
         id
       );
 
-      topicsData = this.flowBuilderService.buildTopicsForUi(device?.macAddress);
+      topicsData = this.uiService.buildTopicsForUi(device?.macAddress);
 
       // Persist setup object for this flow
       await this.setupService.upsertByFlowId(id, setupData);
