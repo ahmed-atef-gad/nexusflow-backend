@@ -422,8 +422,23 @@ export class FlowBuilderService {
     });
   }
 
-  private buildInputTopic(nodeId: string): string {
-    return `${INPUT_TOPIC_PREFIX}/${nodeId}`;
+  private normalizeFlowTopicScope(flowId?: string): string | undefined {
+    const resolved = String(flowId ?? '').trim();
+    return resolved || undefined;
+  }
+
+  private buildInputTopic(nodeId: string, flowId?: string): string {
+    const flowScope = this.normalizeFlowTopicScope(flowId);
+    return flowScope
+      ? `${INPUT_TOPIC_PREFIX}/${flowScope}/${nodeId}`
+      : `${INPUT_TOPIC_PREFIX}/${nodeId}`;
+  }
+
+  private buildOutputTopic(nodeId: string, flowId?: string): string {
+    const flowScope = this.normalizeFlowTopicScope(flowId);
+    return flowScope
+      ? `nexusflow/output/${flowScope}/${nodeId}`
+      : `nexusflow/output/${nodeId}`;
   }
 
   validateFlowStructure(nodes: Node[], edges: RFEdge[]): void {
@@ -545,7 +560,7 @@ export class FlowBuilderService {
     }
   }
 
-  buildSetupFromNodes(nodes: Node[]): SetupObject {
+  buildSetupFromNodes(nodes: Node[], flowId?: string): SetupObject {
     const setupPins: Record<number, SetupItem> = {};
     const takenPins: Set<number> = new Set();
     const gpioTask: Task = {
@@ -688,7 +703,7 @@ export class FlowBuilderService {
             gpioTask.commands!.push({
               cmd: cmd,
               pin: pinNumber,
-              topic: this.buildInputTopic(node.id),
+              topic: this.buildInputTopic(node.id, flowId),
             });
           } else if (module.moduleId.startsWith('ESP32-gpio-output')) {
             const moduleInterval = this.toOptionalNumber(
@@ -735,7 +750,7 @@ export class FlowBuilderService {
             outputTask.commands!.push({
               cmd: cmd,
               pin: pinNumber,
-              topic: `nexusflow/output/${node.id}`,
+              topic: this.buildOutputTopic(node.id, flowId),
             });
           }
         } else {
@@ -844,7 +859,7 @@ export class FlowBuilderService {
               ? this.defaultPirIntervalMs
               : this.defaultSensorIntervalMs
           ),
-          topic: this.buildInputTopic(node.id),
+          topic: this.buildInputTopic(node.id, flowId),
         };
 
         if (sensorType === 'DHT') {
@@ -919,7 +934,7 @@ export class FlowBuilderService {
               module.variables?.intervalMs,
               this.defaultSensorIntervalMs
             ),
-            topic: this.buildInputTopic(node.id),
+            topic: this.buildInputTopic(node.id, flowId),
             digitalPin: digitalPin,
             analogPin: analogPin,
             useDigital: isDigital,
@@ -1007,7 +1022,7 @@ export class FlowBuilderService {
             moduleName: module.name,
             alias: module.alias,
             pin: pinNumber,
-            responseTopic: `nexusflow/output/${node.id}`,
+            responseTopic: this.buildOutputTopic(node.id, flowId),
             moduleType: 'output',
             topic: commandTopic,
             isFloating: !connectedOutputIds.has(node.id),
@@ -1047,7 +1062,7 @@ export class FlowBuilderService {
             isDigital ? digitalPin : analogPin
           ),
           moduleType: 'input',
-          topic: this.buildInputTopic(node.id),
+          topic: this.buildInputTopic(node.id, flowId),
           pin: isDigital ? digitalPin : analogPin,
           digitalPin,
           analogPin,
@@ -1072,7 +1087,7 @@ export class FlowBuilderService {
           alias: module.alias,
           moduleType: 'input',
           pin: pinNumber,
-          topic: this.buildInputTopic(node.id),
+          topic: this.buildInputTopic(node.id, flowId),
         });
         return;
       }
@@ -1121,7 +1136,7 @@ export class FlowBuilderService {
           pin: taskPin,
           triggerPin,
           echoPin,
-          topic: this.buildInputTopic(node.id),
+          topic: this.buildInputTopic(node.id, flowId),
         });
         return;
       }
@@ -1131,7 +1146,7 @@ export class FlowBuilderService {
         moduleName: module.name,
         alias: module.alias,
         moduleType: 'input',
-        topic: this.buildInputTopic(node.id),
+        topic: this.buildInputTopic(node.id, flowId),
       });
     });
     return uiElements;
@@ -1238,7 +1253,10 @@ export class FlowBuilderService {
     return outgoingEdgesByNode;
   }
 
-  private buildOutputStepFromNode(targetNode: Node): RuntimeStep | null {
+  private buildOutputStepFromNode(
+    targetNode: Node,
+    flowId?: string
+  ): RuntimeStep | null {
     const targetModuleId = targetNode.data?.moduleId ?? '';
     if (!this.isOutputModule(targetModuleId)) {
       return null;
@@ -1294,7 +1312,7 @@ export class FlowBuilderService {
       cmd,
       pin,
       value: '$prev',
-      topic: `nexusflow/output/${targetNode.id}`,
+      topic: this.buildOutputTopic(targetNode.id, flowId),
     };
   }
 
@@ -1423,7 +1441,8 @@ export class FlowBuilderService {
     node: Node,
     nodeById: Map<string, Node>,
     outgoingEdgesByNode: Map<string, RFEdge[]>,
-    visited: Set<string>
+    visited: Set<string>,
+    flowId?: string
   ): RuntimeStep[][] {
     if (visited.has(node.id)) {
       this.appendNodeWarning(
@@ -1467,7 +1486,7 @@ export class FlowBuilderService {
         );
       }
 
-      const outputStep = this.buildOutputStepFromNode(targetNode);
+      const outputStep = this.buildOutputStepFromNode(targetNode, flowId);
       if (outputStep) {
         paths.push([outputStep]);
         continue;
@@ -1479,7 +1498,8 @@ export class FlowBuilderService {
           targetNode,
           nodeById,
           outgoingEdgesByNode,
-          nextVisited
+          nextVisited,
+          flowId
         );
 
         if (!downstreamPaths.length) {
@@ -1528,13 +1548,15 @@ export class FlowBuilderService {
   private buildLogicPathForInputNode(
     inputNode: Node,
     nodeById: Map<string, Node>,
-    outgoingEdgesByNode: Map<string, RFEdge[]>
+    outgoingEdgesByNode: Map<string, RFEdge[]>,
+    flowId?: string
   ): RuntimeStep[][] {
     const downstreamPaths = this.buildPathsFromNode(
       inputNode,
       nodeById,
       outgoingEdgesByNode,
-      new Set<string>()
+      new Set<string>(),
+      flowId
     );
 
     return downstreamPaths
@@ -1544,7 +1566,8 @@ export class FlowBuilderService {
 
   buildLogicCommandsFromGraph(
     nodes: Node[],
-    edges: RFEdge[]
+    edges: RFEdge[],
+    flowId?: string
   ): CommandExtraction {
     this.validateFunctionNodes(nodes);
     this.warnFloatingFunctionNodes(nodes, edges);
@@ -1568,7 +1591,8 @@ export class FlowBuilderService {
       const paths = this.buildLogicPathForInputNode(
         inputNode,
         nodeById,
-        outgoingEdgesByNode
+        outgoingEdgesByNode,
+        flowId
       );
       paths.forEach((path) => flows.push(path));
     }

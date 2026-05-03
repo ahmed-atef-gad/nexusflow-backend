@@ -204,11 +204,16 @@ export class FlowsService {
 
     this.flowBuilderService.validateFlowStructure(requestNodes, edges);
 
-    setupData = this.flowBuilderService.buildSetupFromNodes(requestNodes);
+    const draftFlowId = createdFlow.id as string;
+    setupData = this.flowBuilderService.buildSetupFromNodes(
+      requestNodes,
+      draftFlowId
+    );
 
     logicData = this.flowBuilderService.buildLogicCommandsFromGraph(
       requestNodes,
-      edges
+      edges,
+      draftFlowId
     );
     const nodesWithDiagnostics = this.attachDiagnosticsToNodes(
       requestNodes,
@@ -454,10 +459,11 @@ export class FlowsService {
         updatedFlow.edges
       );
 
-      setupData = this.flowBuilderService.buildSetupFromNodes(requestNodes);
+      setupData = this.flowBuilderService.buildSetupFromNodes(requestNodes, id);
       logicData = this.flowBuilderService.buildLogicCommandsFromGraph(
         requestNodes,
-        updatedFlow.edges
+        updatedFlow.edges,
+        id
       );
 
       const nodesWithDiagnostics = this.attachDiagnosticsToNodes(
