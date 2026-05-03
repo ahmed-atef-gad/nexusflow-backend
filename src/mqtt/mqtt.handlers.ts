@@ -899,7 +899,8 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     const readings: Record<string, number> = {};
     const setReading = (key: string, value: unknown) => {
       if (typeof value === 'number' && Number.isFinite(value)) {
-        readings[key] = value;
+        // Normalize key to lowercase to match NotificationsService.normalizeReadingKey()
+        readings[key.toLowerCase()] = value;
       }
     };
 
