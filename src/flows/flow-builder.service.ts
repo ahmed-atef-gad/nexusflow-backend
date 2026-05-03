@@ -1250,12 +1250,11 @@ export class FlowBuilderService {
       );
 
       if (!targetFlowIds.length) {
-        this.appendNodeWarning(
+        this.throwNodeError(
           targetNode,
-          `Flow Bridge Out node ${this.getNodeLabel(targetNode)} has no target flows and was skipped.`,
+          `Flow Bridge Out node ${this.getNodeLabel(targetNode)} must have at least one target flow.`,
           'MQTT_OUT_TARGET_FLOWS_MISSING'
         );
-        return null;
       }
 
       return {
