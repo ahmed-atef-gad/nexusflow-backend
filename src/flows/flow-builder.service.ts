@@ -1356,6 +1356,35 @@ export class FlowBuilderService {
     }
   }
 
+  private warnFloatingMqttInNodes(nodes: Node[], edges: RFEdge[]): void {
+    const connectedNodeIds = new Set<string>();
+
+    for (const edge of edges) {
+      if (edge.source) {
+        connectedNodeIds.add(edge.source);
+      }
+      if (edge.target) {
+        connectedNodeIds.add(edge.target);
+      }
+    }
+
+    for (const node of nodes) {
+      if (node.data?.moduleId !== 'mqtt-in') {
+        continue;
+      }
+
+      if (connectedNodeIds.has(node.id)) {
+        continue;
+      }
+
+      this.appendNodeWarning(
+        node,
+        `Flow Bridge In node ${this.getNodeLabel(node)} is floating and was skipped.`,
+        'MQTT_IN_FLOATING'
+      );
+    }
+  }
+
   private buildFunctionStepFromNode(node: Node): RuntimeStep {
     const code = String(node.data?.variables?.code ?? '').trim();
     if (!code) {
@@ -1519,6 +1548,7 @@ export class FlowBuilderService {
   ): CommandExtraction {
     this.validateFunctionNodes(nodes);
     this.warnFloatingFunctionNodes(nodes, edges);
+    this.warnFloatingMqttInNodes(nodes, edges);
 
     if (!nodes.length || !edges.length) {
       return { flows: [], warnings: this.collectNodeWarnings(nodes) };
