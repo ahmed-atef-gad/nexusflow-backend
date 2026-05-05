@@ -68,6 +68,8 @@ export class AuthGuard implements CanActivate {
       }
       // Assign the payload so route handlers can access it
       request.user = payload;
+      request.user.email = authState.email;
+      request.user.username = authState.username;
       request.user.roles = [...authState.roles];
       request.user.isEmailVerified = authState.emailVerified;
       request.user.isActive = authState.isActive;
@@ -94,10 +96,11 @@ export class AuthGuard implements CanActivate {
   private extractTokenFromHeader(
     request: AuthenticatedRequest
   ): string | undefined {
-    const cookies = request.cookies;
-    if (!cookies || !cookies['jwt']) {
+    const authorizationHeader = request.headers.authorization;
+    if (!authorizationHeader) {
       return undefined;
     }
-    return cookies['jwt'] as string;
+    const match = authorizationHeader.match(/^Bearer\s+(.+)$/i);
+    return match?.[1]?.trim();
   }
 }

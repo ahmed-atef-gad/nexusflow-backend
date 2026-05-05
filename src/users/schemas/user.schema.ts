@@ -7,27 +7,27 @@ export type UserDocument = HydratedDocument<User>;
 @Schema({ timestamps: true })
 export class User {
   @Prop({ required: true, unique: true })
-  username: string;
+  username!: string;
 
   @Prop({ required: true, unique: true })
-  email: string;
+  email!: string;
 
   @Prop({ required: true })
-  password: string;
+  password!: string;
 
   @Prop({ type: String, nullable: true })
   avatarUrl?: string;
 
   @Prop({ type: [String], default: [Role.User] })
-  roles: Role[];
+  roles!: Role[];
 
   @Prop({ default: true })
-  is_active: boolean;
+  is_active!: boolean;
 
   @Prop({ default: false })
-  email_verified: boolean;
+  email_verified!: boolean;
 
-  @Prop({ type: String, nullable: true })
+  @Prop({ type: String, nullable: true, select: false })
   refresh_token?: string;
 
   @Prop({ type: Date, nullable: true })
@@ -36,9 +36,9 @@ export class User {
   @Prop({ type: Date, default: null })
   deleted_at?: Date | null;
 
-  // Increment to invalidate existing JWTs (e.g. on logout)
+  // Increment to invalidate existing access and refresh tokens (e.g. on logout)
   @Prop({ default: 0 })
-  token_version: number;
+  token_version!: number;
 
   @Prop({ type: String, select: false })
   mqtt_pass_hash?: string;

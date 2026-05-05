@@ -31,7 +31,7 @@ graph TD
         end
     end
 
-    Web -->|HTTPS + jwt cookie| REST
+    Web -->|HTTPS + Bearer token| REST
     IoT -->|HTTPS + device token| REST
     IoT -->|MQTT/MQTTS| Broker
     Web -->|MQTT over WS/WSS| Broker
@@ -77,17 +77,30 @@ graph TD
 
 ## Security Model
 
-- User auth: HttpOnly cookie `jwt` (`src/gaurds/auth/auth.guard.ts`)
-- Device auth: Bearer token `tokenId.secret` (`src/gaurds/device-auth.guard.ts`)
-- Role checks: `RolesGuard` with owner as super-role
-- Ownership checks: `OwnerGuard` plus flow ownership checks in notifications service
-- Internal alerts endpoint guard:
+- **User auth** (OAuth 2.0-style token rotation):
+  - Access tokens: Short-lived (15m default), sent in `Authorization: Bearer` header, validated by `AuthGuard` (`src/guards/auth/auth.guard.ts`)
+  - Refresh tokens: Long-lived (7d default), stored as HttpOnly cookie, hashed with bcrypt before DB storage
+  - Token versioning: Invalidates all refresh tokens on logout or password reset
+  - Refresh endpoint (`POST /auth/refresh`) rotates both tokens atomically
+  - Refresh token only sent to `/auth/refresh` endpoint (selective credential sending)
+
+- **Device auth**: Bearer token `tokenId.secret` (`src/guards/device-auth.guard.ts`)
+
+- **Role checks**: `RolesGuard` with owner as super-role
+
+- **Ownership checks**: `OwnerGuard` plus flow ownership checks in notifications service
+
+- **Internal alerts endpoint guard**:
   - `POST /v1/internal/alerts/trigger` checks `x-internal-key`
   - validation enabled only when `INTERNAL_ALERTS_API_KEY` is configured
-- Important behavior:
-  - `POST /auth/register` logs user in immediately (sets cookie + returns MQTT creds)
-  - unverified users are blocked from most endpoints by `AuthGuard` with HTTP `428`
-  - allowed while unverified: `/auth/*`, `/verification/*`, `/users/profile`
+
+- **Important behavior**:
+  - `POST /auth/register` logs user in immediately (issues tokens + sets refresh cookie + returns MQTT creds)
+  - `POST /auth/login` issues tokens + sets refresh cookie on successful authentication
+  - `POST /auth/refresh` rotates both tokens (access + refresh) on valid refresh token
+  - `POST /auth/logout` invalidates all tokens by incrementing token version
+  - Unverified users are blocked from most endpoints by `AuthGuard` with HTTP `428`
+  - Allowed while unverified: `/auth/*`, `/verification/*`, `/users/profile`
 
 ## Main Domain Flows
 
@@ -106,14 +119,23 @@ sequenceDiagram
     Auth->>Verify: generateOtpForEmail
     Verify->>DB: Save OTP hash + expiry
     Verify->>Mail: Send verification OTP
-    Auth-->>Client: Set jwt cookie + MQTT credentials
+    Auth->>Auth: Issue access token + refresh token
+    Auth->>DB: Store hashed refresh token
+    Auth-->>Client: Set refresh_token HttpOnly cookie + access_token in body + MQTT credentials
 
-    Client->>Auth: Call protected endpoint
-    Auth-->>Client: 428 if email not verified
+    Client->>Auth: Call protected endpoint with Authorization: Bearer access_token
+    Auth-->>Client: 401 if access token invalid/expired, 428 if email not verified
 
     Client->>Verify: POST /verification/verify
     Verify->>DB: Validate OTP, mark email_verified=true
     Verify-->>Client: Email verified
+    
+    Note over Client,DB: On access token expiry:
+    Client->>Auth: POST /auth/refresh (with refresh_token cookie)
+    Auth->>DB: Validate refresh token hash + token version
+    Auth->>Auth: Issue new access token + refresh token pair
+    Auth->>DB: Store new hashed refresh token
+    Auth-->>Client: Set new refresh_token cookie + new access_token in body
 ```
 
 ### 2) Device Provisioning

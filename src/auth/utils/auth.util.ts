@@ -1,6 +1,8 @@
 import { UnauthorizedException } from '@nestjs/common';
 import { Request } from 'express';
 
+export const REFRESH_TOKEN_COOKIE = 'refresh_token';
+
 export interface AuthenticatedUserPayload {
   id?: string;
   sub: string;

@@ -25,6 +25,7 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import type { Response, Request } from 'express';
+import { REFRESH_TOKEN_COOKIE } from './utils/auth.util';
 
 type RequestWithCookies = Request & {
   cookies: Record<string, string | undefined>;
@@ -40,17 +41,34 @@ type ThrottleOptions = {
 const throttle = Throttle as unknown as (
   options: ThrottleOptions
 ) => ClassDecorator;
-
 /**
- * Authentication endpoints for registration, login, profile retrieval, and logout.
- * Uses an HttpOnly `jwt` cookie for session management.
+ * Authentication endpoints for registration, login, refresh, and logout.
+ * Uses short-lived access tokens for API calls and an HttpOnly refresh token cookie for session renewal.
  */
 @ApiTags('Authentication')
-@ApiCookieAuth('jwt')
 @throttle({ default: { limit: 3, ttl: 60 * 1000 } }) // Apply a default rate limit to all auth routes
 @Controller('auth')
 export class AuthController {
   constructor(private authService: AuthService) {}
+
+  private getRefreshCookieOptions() {
+    const isProduction = process.env.NODE_ENV === 'production';
+    return {
+      httpOnly: true,
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      path: '/',
+      secure: isProduction,
+      sameSite: 'strict' as const,
+    };
+  }
+
+  private setRefreshCookie(response: Response, refreshToken: string) {
+    response.cookie(
+      REFRESH_TOKEN_COOKIE,
+      refreshToken,
+      this.getRefreshCookieOptions()
+    );
+  }
 
   /**
    * Register a new user and set auth cookie.
@@ -62,14 +80,16 @@ export class AuthController {
   @ApiOperation({
     summary: 'Register a new user',
     description:
-      'Creates a new user account and sets the `jwt` cookie on success. Returns MQTT credentials for broker access.',
+      'Creates a new user account, sets the refresh token cookie on success, and returns an access token plus MQTT credentials.',
   })
   @ApiBody({ type: RegisterUserDto })
   @ApiCreatedResponse({
-    description: 'Registration successful, JWT set in HTTP-only cookie',
+    description:
+      'Registration successful, refresh cookie set and access token returned',
     schema: {
       example: {
         message: 'Registration successful',
+        access_token: 'eyJhbGciOi...access',
         mqtt: {
           username: 'john_doe',
           password: 'a1b2c3d4e5f6g7h8',
@@ -95,16 +115,10 @@ export class AuthController {
   ) {
     const user = await this.authService.register(registerUserDto);
     const loginResult = await this.authService.login(user);
-    // Set token in HttpOnly cookie
-    response.cookie('jwt', loginResult.access_token, {
-      httpOnly: true,
-      maxAge: 604800000, // 7 days
-      path: '/',
-      secure: true,
-      sameSite: 'none',
-    });
+    this.setRefreshCookie(response, loginResult.refresh_token);
     return {
       message: 'Registration successful',
+      access_token: loginResult.access_token,
       mqtt: {
         username: loginResult.mqtt_username,
         password: loginResult.mqtt_password,
@@ -123,14 +137,16 @@ export class AuthController {
   @ApiOperation({
     summary: 'Login user',
     description:
-      'Validates credentials, sets the `jwt` cookie, and returns MQTT credentials.',
+      'Validates credentials, sets the refresh token cookie, and returns an access token plus MQTT credentials.',
   })
   @ApiBody({ type: LoginUserDto })
   @ApiCreatedResponse({
-    description: 'Login successful, JWT set in HTTP-only cookie',
+    description:
+      'Login successful, refresh cookie set and access token returned',
     schema: {
       example: {
         message: 'Login successful',
+        access_token: 'eyJhbGciOi...access',
         mqtt: {
           username: 'john_doe',
           password: 'a1b2c3d4e5f6g7h8',
@@ -162,24 +178,54 @@ export class AuthController {
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
     }
-    // If valid, return a JWT
+    // If valid, issue an access token plus refresh token
     const loginResult = await this.authService.login(user);
 
-    // Set token in HttpOnly cookie
-    response.cookie('jwt', loginResult.access_token, {
-      httpOnly: true,
-      maxAge: 604800000, // 7 days
-      path: '/',
-      secure: true,
-      sameSite: 'none',
-    });
+    this.setRefreshCookie(response, loginResult.refresh_token);
     return {
       message: 'Login successful',
+      access_token: loginResult.access_token,
       mqtt: {
         username: loginResult.mqtt_username,
         password: loginResult.mqtt_password,
         clientId: loginResult.mqtt_username,
       },
+    };
+  }
+
+  @Post('refresh')
+  @ApiOperation({
+    summary: 'Refresh access token',
+    description:
+      'Rotates the refresh token cookie and returns a new access token for authenticated API calls.',
+  })
+  @ApiCookieAuth(REFRESH_TOKEN_COOKIE)
+  @ApiCreatedResponse({
+    description: 'Access token refreshed successfully',
+    schema: {
+      example: {
+        access_token: 'eyJhbGciOi...access',
+      },
+    },
+  })
+  @ApiUnauthorizedResponse({
+    description: 'Unauthorized - Refresh token is missing, invalid, or expired',
+  })
+  async refresh(
+    @Req() request: RequestWithCookies,
+    @Res({ passthrough: true }) response: Response
+  ) {
+    const cookies = request.cookies as Record<string, string | undefined>;
+    const refreshToken = cookies[REFRESH_TOKEN_COOKIE];
+    if (!refreshToken) {
+      throw new UnauthorizedException('Missing refresh token');
+    }
+
+    const refreshedTokens = await this.authService.refresh(refreshToken);
+    this.setRefreshCookie(response, refreshedTokens.refresh_token);
+
+    return {
+      access_token: refreshedTokens.access_token,
     };
   }
 
@@ -228,12 +274,7 @@ export class AuthController {
     @Body() resetPasswordDto: ResetPasswordDto
   ) {
     const result = await this.authService.resetPassword(resetPasswordDto);
-    response.clearCookie('jwt', {
-      httpOnly: true,
-      path: '/',
-      secure: true,
-      sameSite: 'none',
-    });
+    response.clearCookie(REFRESH_TOKEN_COOKIE, this.getRefreshCookieOptions());
     return result;
   }
 
@@ -247,7 +288,7 @@ export class AuthController {
   @ApiOperation({
     summary: 'Logout user',
     description:
-      'Clears the `jwt` cookie and invalidates existing tokens by bumping token version. If `deviceId` is provided, the matching FCM token registration for that authenticated user is removed.',
+      'Clears the refresh token cookie and invalidates existing tokens by bumping token version. If `deviceId` is provided, the matching FCM token registration for that authenticated user is removed.',
   })
   @ApiBody({ type: LogoutDto, required: false })
   @ApiResponse({
@@ -266,14 +307,9 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response
   ) {
     const cookies = request.cookies as Record<string, string | undefined>;
-    const token = cookies.jwt;
-    const result = await this.authService.logout(token, body?.deviceId);
-    response.clearCookie('jwt', {
-      httpOnly: true,
-      path: '/',
-      secure: true,
-      sameSite: 'none',
-    });
+    const refreshToken = cookies[REFRESH_TOKEN_COOKIE];
+    const result = await this.authService.logout(refreshToken, body?.deviceId);
+    response.clearCookie(REFRESH_TOKEN_COOKIE, this.getRefreshCookieOptions());
     return {
       message: 'Logged out successfully.',
       fcmTokenCleared: result.fcmTokenCleared,

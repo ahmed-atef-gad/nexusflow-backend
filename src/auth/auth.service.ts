@@ -22,6 +22,19 @@ interface AuthenticatedUser {
   token_version?: number;
 }
 
+interface SessionTokens {
+  access_token: string;
+  refresh_token: string;
+}
+
+interface RefreshTokenPayload {
+  sub: string;
+  email: string;
+  roles: string[];
+  username: string;
+  token_version: number;
+}
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -34,6 +47,77 @@ export class AuthService {
 
   private normalizeEmail(email: string): string {
     return email.trim().toLowerCase();
+  }
+
+  private getAccessTokenSecret(): string {
+    const secret = process.env.JWT_SECRET;
+    if (!secret) {
+      throw new Error('JWT_SECRET environment variable is not set');
+    }
+    return secret;
+  }
+
+  private getRefreshTokenSecret(): string {
+    const secret = process.env.JWT_REFRESH_SECRET ?? process.env.JWT_SECRET;
+    if (!secret) {
+      throw new Error('JWT_REFRESH_SECRET environment variable is not set');
+    }
+    return secret;
+  }
+
+  private getAccessTokenExpiresIn(): string {
+    return process.env.JWT_ACCESS_EXPIRES_IN ?? '15m';
+  }
+
+  private getRefreshTokenExpiresIn(): string {
+    return process.env.JWT_REFRESH_EXPIRES_IN ?? '7d';
+  }
+
+  private async hashRefreshToken(refreshToken: string): Promise<string> {
+    const salt = await bcrypt.genSalt();
+    return bcrypt.hash(refreshToken, salt);
+  }
+
+  private async issueSessionTokens(
+    user: AuthenticatedUser
+  ): Promise<SessionTokens> {
+    const userId = String(user._id);
+    const tokenVersion =
+      typeof user.token_version === 'number'
+        ? user.token_version
+        : await this.usersService.getTokenVersionById(userId);
+
+    const payload: RefreshTokenPayload = {
+      email: user.email,
+      sub: userId,
+      roles: user.roles,
+      username: user.username,
+      token_version: tokenVersion ?? 0,
+    };
+
+    const access_token = this.jwtService.sign(payload, {
+      secret: this.getAccessTokenSecret(),
+      expiresIn: this.getAccessTokenExpiresIn() as never,
+    });
+    const refresh_token = this.jwtService.sign(payload, {
+      secret: this.getRefreshTokenSecret(),
+      expiresIn: this.getRefreshTokenExpiresIn() as never,
+    });
+
+    await this.usersService.updateRefreshTokenHash(
+      userId,
+      await this.hashRefreshToken(refresh_token)
+    );
+
+    return { access_token, refresh_token };
+  }
+
+  private async verifyRefreshToken(
+    refreshToken: string
+  ): Promise<RefreshTokenPayload> {
+    return this.jwtService.verifyAsync<RefreshTokenPayload>(refreshToken, {
+      secret: this.getRefreshTokenSecret(),
+    });
   }
 
   /**
@@ -55,7 +139,7 @@ export class AuthService {
   }
 
   /**
-   * Handles the login request and returns a JWT.
+   * Handles the login request and returns an access token plus refresh token.
    * Called by the AuthController.
    */
   async login(user: AuthenticatedUser) {
@@ -67,22 +151,41 @@ export class AuthService {
     const salt = await bcrypt.genSalt();
     const hashedMqttPass = await bcrypt.hash(plainMqttPass, salt);
     await this.usersService.updateMqttPasswordHash(userId, hashedMqttPass);
-    const tokenVersion =
-      typeof user.token_version === 'number'
-        ? user.token_version
-        : await this.usersService.getTokenVersionById(userId);
-    const payload = {
-      email: user.email,
-      sub: userId,
-      roles: user.roles,
-      username: user.username,
-      token_version: tokenVersion ?? 0,
-    };
+    const tokens = await this.issueSessionTokens(user);
     return {
-      access_token: this.jwtService.sign(payload),
+      ...tokens,
       mqtt_password: plainMqttPass,
       mqtt_username: user.username,
     };
+  }
+
+  async refresh(refreshToken: string): Promise<SessionTokens> {
+    const payload = await this.verifyRefreshToken(refreshToken);
+    const authState = await this.usersService.getAuthStateById(payload.sub);
+    if (
+      !authState ||
+      !authState.isActive ||
+      authState.tokenVersion !== payload.token_version
+    ) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    const storedRefreshTokenHash =
+      await this.usersService.getRefreshTokenHashById(payload.sub);
+    if (
+      !storedRefreshTokenHash ||
+      !(await bcrypt.compare(refreshToken, storedRefreshTokenHash))
+    ) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    return this.issueSessionTokens({
+      _id: payload.sub,
+      email: authState.email || payload.email,
+      roles: authState.roles,
+      username: authState.username || payload.username,
+      token_version: authState.tokenVersion,
+    });
   }
 
   async forgotPassword(forgotPasswordDto: ForgotPasswordDto) {
@@ -116,18 +219,26 @@ export class AuthService {
   }
 
   async logout(
-    token?: string,
+    refreshToken?: string,
     deviceId?: string
   ): Promise<{ fcmTokenCleared: boolean }> {
-    if (!token) return { fcmTokenCleared: false };
+    if (!refreshToken) return { fcmTokenCleared: false };
 
     const normalizedDeviceId = deviceId?.trim();
     let userId: string | undefined;
     try {
-      const decoded: { sub?: string } = this.jwtService.verify(token);
-      if (!decoded?.sub) return { fcmTokenCleared: false };
+      const decoded = await this.verifyRefreshToken(refreshToken);
       userId = decoded.sub;
+      const storedRefreshTokenHash =
+        await this.usersService.getRefreshTokenHashById(userId);
+      if (
+        !storedRefreshTokenHash ||
+        !(await bcrypt.compare(refreshToken, storedRefreshTokenHash))
+      ) {
+        return { fcmTokenCleared: false };
+      }
       await this.usersService.incrementTokenVersion(userId);
+      await this.usersService.clearRefreshToken(userId);
     } catch {
       // Swallow errors to avoid leaking auth details on logout
       return { fcmTokenCleared: false };

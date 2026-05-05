@@ -3,7 +3,6 @@ import {
   CanActivate,
   ExecutionContext,
   ForbiddenException,
-  UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ROLES_KEY } from '../../auth/decorators/roles.decorator';
@@ -37,7 +36,7 @@ export class RolesGuard implements CanActivate {
     // and attached the 'user' object to the request.
     const { user } = context.switchToHttp().getRequest<RequestWithUser>();
     if (!user) {
-      throw new UnauthorizedException('Authentication required');
+      throw new ForbiddenException('Authentication required');
     }
 
     // Owner is a super-role and can access all role-protected endpoints.

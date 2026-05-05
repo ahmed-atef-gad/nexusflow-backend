@@ -73,14 +73,24 @@ Files: [`src/auth`](src/auth)
 Responsibilities:
 
 - User registration and login
-- JWT issuance
+- Token issuance: short-lived bearer access tokens and long-lived refresh tokens
+- Token rotation on refresh with hashed token storage
 - Password reset entry points
 - Shared auth guard wiring
 
-Notes:
+Token System:
 
-- JWT secret is loaded from `JWT_SECRET`
-- Tokens are currently signed with a `1d` expiration window
+- **Access tokens**: Short-lived (15m default), issued in response body, stored in-memory on frontend, sent via `Authorization: Bearer` header
+- **Refresh tokens**: Long-lived (7d default), stored as HttpOnly cookie, hashed with bcrypt before database storage, rotated on every refresh
+- **Token versioning**: On logout or password reset, token version increments, invalidating all existing refresh tokens
+- Secrets configured via `JWT_SECRET` (legacy, used for both) or `JWT_REFRESH_SECRET` (optional, separate refresh token signing key)
+- Expiration times configurable via `JWT_ACCESS_EXPIRES_IN` and `JWT_REFRESH_EXPIRES_IN` environment variables
+
+Key files:
+
+- [`src/auth/auth.controller.ts`](src/auth/auth.controller.ts): `/auth/login`, `/auth/register`, `/auth/refresh`, `/auth/logout` endpoints
+- [`src/auth/auth.service.ts`](src/auth/auth.service.ts): Token lifecycle, hashing, and rotation logic
+- [`src/guards/auth/auth.guard.ts`](src/guards/auth/auth.guard.ts): Bearer token extraction and validation
 
 ### `users`
 
@@ -373,6 +383,20 @@ JWT_SECRET=replace-with-a-strong-secret
 CORS_ORIGINS=http://localhost:8080,http://localhost:4173
 ```
 
+### Authentication / Tokens
+
+```env
+# JWT signing key (used for both access and refresh tokens if JWT_REFRESH_SECRET is not set)
+JWT_SECRET=replace-with-a-strong-secret
+
+# Optional: separate signing key for refresh tokens (falls back to JWT_SECRET if not set)
+JWT_REFRESH_SECRET=replace-with-a-strong-refresh-secret
+
+# Token expiration times
+JWT_ACCESS_EXPIRES_IN=15m
+JWT_REFRESH_EXPIRES_IN=7d
+```
+
 ### Common Core Variables
 
 ```env
@@ -457,8 +481,10 @@ Notes:
 - `MONGO_URI` is mandatory. The app throws if it is missing.
 - `CORS_ORIGINS` must contain valid `http` or `https` origins.
 - `JWT_SECRET` should always be explicitly set.
+- `JWT_REFRESH_SECRET` is optional; if omitted, `JWT_SECRET` is used for refresh token signing.
 - SMTP can be left unconfigured only if you accept mail delivery failure or use `SMTP_LOG_ONLY=true`.
 - MQTT WebSocket defaults are defined in [`src/mqtt/mqtt.module.ts`](src/mqtt/mqtt.module.ts).
+- In production, `NODE_ENV=production` enables secure cookie flags (`secure=true`, `sameSite=strict`).
 
 ## Installation
 
