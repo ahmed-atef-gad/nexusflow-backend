@@ -1,10 +1,32 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
-import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import {
+  SwaggerModule,
+  DocumentBuilder,
+  SwaggerCustomOptions,
+} from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
 
-type SwaggerResponse = {
+type SwaggerUiOptions = NonNullable<SwaggerCustomOptions['swaggerOptions']>;
+type InferredSwaggerRequest = Parameters<
+  NonNullable<SwaggerUiOptions['requestInterceptor']>
+>[0];
+type InferredSwaggerResponse = Parameters<
+  NonNullable<SwaggerUiOptions['responseInterceptor']>
+>[0];
+
+type SwaggerRequest = (InferredSwaggerRequest extends object
+  ? InferredSwaggerRequest
+  : Record<string, unknown>) & {
+  url: string;
+  method?: string;
+  headers?: Record<string, string>;
+};
+
+type SwaggerResponse = (InferredSwaggerResponse extends object
+  ? InferredSwaggerResponse
+  : Record<string, unknown>) & {
   status?: number;
   url?: string;
 };
@@ -50,6 +72,8 @@ function getAllowedCorsOrigins(): string[] {
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const allowedOrigins = getAllowedCorsOrigins();
+  let lastSwaggerRequest: SwaggerRequest | null = null;
+  let retryingAfterRefresh = false;
 
   app.enableCors({
     origin: allowedOrigins,
@@ -80,12 +104,20 @@ async function bootstrap() {
   SwaggerModule.setup('api', app, document, {
     swaggerOptions: {
       persistAuthorization: true,
+      requestInterceptor: (request: SwaggerRequest) => {
+        lastSwaggerRequest = request;
+        return request;
+      },
       responseInterceptor: async (response: SwaggerResponse) => {
+        let interceptedResponse = response;
         const status = response.status;
         const requestUrl = String(response.url || '');
-        console.log(response);
 
-        if (status === 401 && !requestUrl.includes('/auth/')) {
+        if (
+          status === 401 &&
+          !requestUrl.includes('/auth/') &&
+          !retryingAfterRefresh
+        ) {
           try {
             const refreshResponse = await fetch('/auth/refresh', {
               method: 'POST',
@@ -113,6 +145,50 @@ async function bootstrap() {
                   'access-token',
                   data.access_token
                 );
+
+                if (lastSwaggerRequest?.url) {
+                  try {
+                    retryingAfterRefresh = true;
+                    const { url, ...requestInit } = lastSwaggerRequest;
+                    const headers = {
+                      ...(requestInit.headers as Record<string, string>),
+                      Authorization: `Bearer ${data.access_token}`,
+                    };
+                    const retriedResponse = await fetch(url, {
+                      ...(requestInit as object),
+                      headers,
+                    } as never);
+                    const responseText = await retriedResponse.text();
+
+                    let parsedBody: unknown;
+                    try {
+                      parsedBody = responseText
+                        ? JSON.parse(responseText)
+                        : undefined;
+                    } catch {
+                      parsedBody = responseText;
+                    }
+
+                    interceptedResponse = {
+                      ...response,
+                      status: retriedResponse.status,
+                      url: retriedResponse.url,
+                      ok: retriedResponse.ok,
+                      statusText: retriedResponse.statusText,
+                      headers: Object.fromEntries(
+                        retriedResponse.headers.entries()
+                      ),
+                      text: responseText,
+                      data: parsedBody,
+                      body: parsedBody,
+                      obj: parsedBody,
+                    } as SwaggerResponse;
+                  } catch {
+                    // ignore retry failures; the original 401 still surfaces.
+                  } finally {
+                    retryingAfterRefresh = false;
+                  }
+                }
               }
             }
           } catch {
@@ -120,7 +196,7 @@ async function bootstrap() {
           }
         }
 
-        return response;
+        return interceptedResponse;
       },
     },
   });
