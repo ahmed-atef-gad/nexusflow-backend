@@ -29,6 +29,18 @@ type SwaggerResponse = (InferredSwaggerResponse extends object
   : Record<string, unknown>) & {
   status?: number;
   url?: string;
+  ok: boolean;
+  obj: {
+    access_token?: string;
+  };
+};
+
+type ClientWindow = Window & {
+  __lastSwaggerRequest?: SwaggerRequest;
+  __retryingAfterRefresh?: boolean;
+  ui?: {
+    preauthorizeApiKey: (schemeName: string, value: string) => void;
+  };
 };
 
 function getAllowedCorsOrigins(): string[] {
@@ -72,8 +84,8 @@ function getAllowedCorsOrigins(): string[] {
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const allowedOrigins = getAllowedCorsOrigins();
-  let lastSwaggerRequest: SwaggerRequest | null = null;
-  let retryingAfterRefresh = false;
+  // Do NOT keep retry state in server closure; the interceptor functions
+  // are serialized into the client page. Keep state on `window` instead.
 
   app.enableCors({
     origin: allowedOrigins,
@@ -105,18 +117,22 @@ async function bootstrap() {
     swaggerOptions: {
       persistAuthorization: true,
       requestInterceptor: (request: SwaggerRequest) => {
-        lastSwaggerRequest = request;
+        const clientWindow = window as ClientWindow;
+
+        clientWindow.__lastSwaggerRequest = request;
         return request;
       },
       responseInterceptor: async (response: SwaggerResponse) => {
         let interceptedResponse = response;
         const status = response.status;
         const requestUrl = String(response.url || '');
+        const clientWindow = window as ClientWindow;
+        const isLogin = requestUrl.endsWith('/auth/login');
 
         if (
           status === 401 &&
           !requestUrl.includes('/auth/') &&
-          !retryingAfterRefresh
+          !clientWindow.__retryingAfterRefresh
         ) {
           try {
             const refreshResponse = await fetch('/auth/refresh', {
@@ -131,25 +147,19 @@ async function bootstrap() {
               const data = (await refreshResponse.json()) as {
                 access_token?: string;
               };
-              const swaggerWindow = window as Window & {
-                ui?: {
-                  preauthorizeApiKey: (
-                    schemeName: string,
-                    value: string
-                  ) => void;
-                };
-              };
 
-              if (data.access_token && swaggerWindow.ui?.preauthorizeApiKey) {
-                swaggerWindow.ui.preauthorizeApiKey(
+              if (data.access_token && clientWindow.ui?.preauthorizeApiKey) {
+                clientWindow.ui.preauthorizeApiKey(
                   'access-token',
                   data.access_token
                 );
 
-                if (lastSwaggerRequest?.url) {
+                const lastReq =
+                  clientWindow.__lastSwaggerRequest as SwaggerRequest | null;
+                if (lastReq?.url) {
                   try {
-                    retryingAfterRefresh = true;
-                    const { url, ...requestInit } = lastSwaggerRequest;
+                    clientWindow.__retryingAfterRefresh = true;
+                    const { url, ...requestInit } = lastReq;
                     const headers = {
                       ...(requestInit.headers as Record<string, string>),
                       Authorization: `Bearer ${data.access_token}`,
@@ -186,13 +196,20 @@ async function bootstrap() {
                   } catch {
                     // ignore retry failures; the original 401 still surfaces.
                   } finally {
-                    retryingAfterRefresh = false;
+                    clientWindow.__retryingAfterRefresh = false;
                   }
                 }
               }
             }
           } catch {
             // Ignore refresh failures here; the original 401 still surfaces.
+          }
+        } else if (isLogin && response.ok) {
+          if (response.obj?.access_token) {
+            clientWindow.ui?.preauthorizeApiKey?.(
+              'access-token',
+              response.obj.access_token
+            );
           }
         }
 
