@@ -4,6 +4,11 @@ import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
 
+type SwaggerResponse = {
+  status?: number;
+  url?: string;
+};
+
 function getAllowedCorsOrigins(): string[] {
   const corsOrigins = process.env.CORS_ORIGINS;
 
@@ -59,16 +64,67 @@ async function bootstrap() {
   );
 
   app.use(cookieParser());
-  // Swagger Setup
+
   const config = new DocumentBuilder()
     .setTitle('NexusFlow API')
     .setDescription('API documentation for NexusFlow')
     .setVersion('1.0')
+    .addBearerAuth(
+      { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
+      'access-token'
+    )
     .build();
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api', app, document);
 
-  // Start Microservices and HTTP server
+  const document = SwaggerModule.createDocument(app, config);
+
+  SwaggerModule.setup('api', app, document, {
+    swaggerOptions: {
+      persistAuthorization: true,
+      responseInterceptor: async (response: SwaggerResponse) => {
+        const status = response.status;
+        const requestUrl = String(response.url || '');
+        console.log(response);
+
+        if (status === 401 && !requestUrl.includes('/auth/')) {
+          try {
+            const refreshResponse = await fetch('/auth/refresh', {
+              method: 'POST',
+              credentials: 'include',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+            });
+
+            if (refreshResponse.ok) {
+              const data = (await refreshResponse.json()) as {
+                access_token?: string;
+              };
+              const swaggerWindow = window as Window & {
+                ui?: {
+                  preauthorizeApiKey: (
+                    schemeName: string,
+                    value: string
+                  ) => void;
+                };
+              };
+
+              if (data.access_token && swaggerWindow.ui?.preauthorizeApiKey) {
+                swaggerWindow.ui.preauthorizeApiKey(
+                  'access-token',
+                  data.access_token
+                );
+              }
+            }
+          } catch {
+            // Ignore refresh failures here; the original 401 still surfaces.
+          }
+        }
+
+        return response;
+      },
+    },
+  });
+
   await app.startAllMicroservices();
   await app.listen(process.env.PORT ?? 3000);
 }

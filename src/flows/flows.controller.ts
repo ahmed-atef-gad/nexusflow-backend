@@ -15,7 +15,7 @@ import { Flow } from './schemas/flow.schema';
 import { AuthGuard } from '../guards/auth/auth.guard';
 import {
   ApiTags,
-  ApiCookieAuth,
+  ApiBearerAuth,
   ApiOperation,
   ApiResponse,
   ApiParam,
@@ -137,7 +137,7 @@ const FLOW_REQUEST_EXAMPLE = {
 };
 
 @ApiTags('flows')
-@ApiCookieAuth('jwt')
+@ApiBearerAuth('access-token')
 @UseGuards(AuthGuard)
 @Controller('flows')
 export class FlowsController {

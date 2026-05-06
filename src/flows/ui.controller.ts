@@ -12,7 +12,7 @@ import {
   ApiOperation,
   ApiOkResponse,
   ApiParam,
-  ApiCookieAuth,
+  ApiBearerAuth,
   ApiUnauthorizedResponse,
   ApiForbiddenResponse,
 } from '@nestjs/swagger';
@@ -22,7 +22,7 @@ import { IsOwner } from '../auth/decorators/owner.decorator';
 import { OwnerGuard } from '../guards/auth/owner.guard';
 
 @ApiTags('UI (User Interface)')
-@ApiCookieAuth('jwt')
+@ApiBearerAuth('access-token')
 @UseGuards(AuthGuard, OwnerGuard)
 @Controller('ui')
 export class UiController {

@@ -13,7 +13,7 @@ import {
 import {
   ApiBody,
   ApiBadRequestResponse,
-  ApiCookieAuth,
+  ApiBearerAuth,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
@@ -148,7 +148,7 @@ export class FlowTemplatesController {
 
   @Post()
   @UseGuards(AuthGuard, RolesGuard)
-  @ApiCookieAuth('jwt')
+  @ApiBearerAuth('access-token')
   @Roles(Role.Admin)
   @ApiOperation({
     summary: 'Create flow template (Admin)',
@@ -213,7 +213,7 @@ export class FlowTemplatesController {
 
   @Patch(':id')
   @UseGuards(AuthGuard, RolesGuard)
-  @ApiCookieAuth('jwt')
+  @ApiBearerAuth('access-token')
   @Roles(Role.Admin)
   @ApiOperation({
     summary: 'Update flow template (Admin)',
@@ -242,7 +242,7 @@ export class FlowTemplatesController {
 
   @Delete(':id')
   @UseGuards(AuthGuard, RolesGuard)
-  @ApiCookieAuth('jwt')
+  @ApiBearerAuth('access-token')
   @Roles(Role.Admin)
   @ApiOperation({
     summary: 'Delete flow template (Admin)',
@@ -261,7 +261,7 @@ export class FlowTemplatesController {
 
   @Post(':id/fork')
   @UseGuards(AuthGuard)
-  @ApiCookieAuth('jwt')
+  @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Fork a template into user flows' })
   @ApiResponse({ status: 201, description: 'Flow forked successfully' })
   @ApiBadRequestResponse({ description: 'Invalid template id format' })

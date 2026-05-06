@@ -1,6 +1,6 @@
 import { Controller, Param, Post, Req, UseGuards } from '@nestjs/common';
 import {
-  ApiCookieAuth,
+  ApiBearerAuth,
   ApiOperation,
   ApiParam,
   ApiResponse,
@@ -17,7 +17,7 @@ import { IsOwner } from 'src/auth/decorators/owner.decorator';
 import { NotificationsService } from './notifications.service';
 
 @ApiTags('Notifications')
-@ApiCookieAuth('jwt')
+@ApiBearerAuth('access-token')
 @UseGuards(AuthGuard)
 @Controller('v1/notifications/alert-history')
 export class NotificationsAlertHandshakeController {

@@ -8,7 +8,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import {
-  ApiCookieAuth,
+  ApiBearerAuth,
   ApiOperation,
   ApiParam,
   ApiQuery,
@@ -25,7 +25,7 @@ import { NotificationsService } from './notifications.service';
 import { NotificationHistoryQueryDto } from './dto/notification-history-query.dto';
 
 @ApiTags('Notifications')
-@ApiCookieAuth('jwt')
+@ApiBearerAuth('access-token')
 @UseGuards(AuthGuard)
 @Controller('v1/notifications')
 export class NotificationsActionsController {

@@ -9,7 +9,6 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { RegisterUserDto } from './dto/register-user.dto';
-// We will create LocalAuthGuard soon. For login, we'll just use a basic DTO for now.
 import { LoginUserDto } from './dto/login-user.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';

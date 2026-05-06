@@ -14,7 +14,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBody,
-  ApiCookieAuth,
+  ApiBearerAuth,
   ApiOperation,
   ApiParam,
   ApiQuery,
@@ -39,7 +39,7 @@ import { UpsertAlertPoliciesDto } from './dto/upsert-alert-policies.dto';
 import { NotificationsService } from './notifications.service';
 
 @ApiTags('Notifications')
-@ApiCookieAuth('jwt')
+@ApiBearerAuth('access-token')
 @UseGuards(AuthGuard)
 @Controller('v1')
 export class ProjectAlertConfigController {

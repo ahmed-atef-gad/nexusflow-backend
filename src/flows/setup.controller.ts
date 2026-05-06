@@ -17,7 +17,7 @@ import {
   ApiOperation,
   ApiResponse,
   ApiParam,
-  ApiCookieAuth,
+  ApiBearerAuth,
   ApiBody,
   ApiSecurity,
   ApiHeader,
@@ -55,7 +55,7 @@ export class SetupController {
    */
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(Role.Admin)
-  @ApiCookieAuth('jwt')
+  @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: 'Create a Setup document manually',
     description: 'Admin only: accessible by Admin or Owner.',
@@ -74,7 +74,7 @@ export class SetupController {
    */
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(Role.Admin)
-  @ApiCookieAuth('jwt')
+  @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: 'Get all setups',
     description: 'Admin only: accessible by Admin or Owner.',
@@ -105,7 +105,7 @@ export class SetupController {
    */
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(Role.Admin)
-  @ApiCookieAuth('jwt')
+  @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: 'Get setup by ID',
     description: 'Admin only: accessible by Admin or Owner.',
@@ -125,7 +125,7 @@ export class SetupController {
    */
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(Role.Admin)
-  @ApiCookieAuth('jwt')
+  @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: 'Get setup by Flow ID',
     description: 'Admin only: accessible by Admin or Owner.',
@@ -146,7 +146,7 @@ export class SetupController {
    */
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(Role.Admin)
-  @ApiCookieAuth('jwt')
+  @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: 'Update setup by ID',
     description: 'Admin only: accessible by Admin or Owner.',
@@ -166,7 +166,7 @@ export class SetupController {
    */
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(Role.Admin)
-  @ApiCookieAuth('jwt')
+  @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: 'Delete setup by ID',
     description: 'Admin only: accessible by Admin or Owner.',

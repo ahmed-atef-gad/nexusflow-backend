@@ -1,6 +1,6 @@
 import { Controller, Get, Param, Query, Req, UseGuards } from '@nestjs/common';
 import {
-  ApiCookieAuth,
+  ApiBearerAuth,
   ApiOperation,
   ApiParam,
   ApiQuery,
@@ -19,7 +19,7 @@ import { OwnerGuard } from 'src/guards/auth/owner.guard';
 import { IsOwner } from 'src/auth/decorators/owner.decorator';
 
 @ApiTags('Notifications')
-@ApiCookieAuth('jwt')
+@ApiBearerAuth('access-token')
 @UseGuards(AuthGuard)
 @Controller('v1/flows/:flowId')
 export class ProjectAlertHistoryController {

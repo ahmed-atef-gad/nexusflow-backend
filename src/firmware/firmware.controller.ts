@@ -18,7 +18,7 @@ import { Throttle } from '@nestjs/throttler';
 import {
   ApiBody,
   ApiConsumes,
-  ApiCookieAuth,
+  ApiBearerAuth,
   ApiHeader,
   ApiOperation,
   ApiParam,
@@ -60,7 +60,7 @@ export class FirmwareController {
     description:
       'Uploads a new firmware binary and marks it as the latest active release. Admin only: accessible by Admin or Owner.',
   })
-  @ApiCookieAuth('jwt')
+  @ApiBearerAuth('access-token')
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
@@ -152,7 +152,7 @@ export class FirmwareController {
     description:
       'Deletes firmware metadata and removes its binary file from server storage. Admin only: accessible by Admin or Owner.',
   })
-  @ApiCookieAuth('jwt')
+  @ApiBearerAuth('access-token')
   @ApiParam({
     name: 'id',
     description: 'Firmware MongoDB ID',

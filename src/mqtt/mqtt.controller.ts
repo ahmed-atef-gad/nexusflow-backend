@@ -1,6 +1,6 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import {
-  ApiCookieAuth,
+  ApiBearerAuth,
   ApiForbiddenResponse,
   ApiOkResponse,
   ApiOperation,
@@ -61,7 +61,7 @@ export class MqttController {
     };
   }
 
-  @ApiCookieAuth('jwt')
+  @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: 'Get active MQTT user count (Admin)',
     description:
@@ -88,7 +88,7 @@ export class MqttController {
     };
   }
 
-  @ApiCookieAuth('jwt')
+  @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: 'Get normalized active MQTT clients (Admin)',
     description:
