@@ -57,7 +57,7 @@ export class AuthController {
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
       path: '/',
       secure: isProduction,
-      sameSite: 'strict' as const,
+      sameSite: 'lax' as const,
     };
   }
 
