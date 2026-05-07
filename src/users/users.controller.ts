@@ -18,7 +18,7 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { UsersService } from './users.service';
 import {
   ApiBadRequestResponse,
-  ApiCookieAuth,
+  ApiBearerAuth,
   ApiCreatedResponse,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
@@ -45,7 +45,7 @@ import { ListUsersQueryDto } from './dto/list-users-query.dto';
  */
 @UseGuards(AuthGuard, RolesGuard, OwnerGuard)
 @ApiTags('Users Management')
-@ApiCookieAuth('jwt')
+@ApiBearerAuth('access-token')
 @Controller('users')
 export class UsersController {
   constructor(private userService: UsersService) {}

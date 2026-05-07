@@ -1,7 +1,7 @@
 import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
 import {
   ApiBody,
-  ApiCookieAuth,
+  ApiBearerAuth,
   ApiOperation,
   ApiResponse,
   ApiTags,
@@ -16,7 +16,7 @@ import { RegisterNotificationDeviceDto } from './dto/register-notification-devic
 import { NotificationsService } from './notifications.service';
 
 @ApiTags('Notifications')
-@ApiCookieAuth('jwt')
+@ApiBearerAuth('access-token')
 @UseGuards(AuthGuard)
 @Controller('v1/notifications/devices')
 export class NotificationsController {

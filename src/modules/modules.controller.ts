@@ -12,7 +12,7 @@ import {
 import {
   ApiBadRequestResponse,
   ApiBody,
-  ApiCookieAuth,
+  ApiBearerAuth,
   ApiForbiddenResponse,
   ApiInternalServerErrorResponse,
   ApiNotFoundResponse,
@@ -39,7 +39,7 @@ import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
  * Admin endpoints for managing the module catalog used by flows.
  */
 @ApiTags('Modules Management')
-@ApiCookieAuth('jwt')
+@ApiBearerAuth('access-token')
 @UseGuards(AuthGuard, RolesGuard)
 @Roles(Role.Admin)
 @Controller('modules')

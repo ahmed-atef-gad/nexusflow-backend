@@ -18,7 +18,7 @@ import { OwnerGuard } from '../guards/auth/owner.guard';
 import {
   ApiTags,
   ApiOperation,
-  ApiCookieAuth,
+  ApiBearerAuth,
   ApiBody,
   ApiResponse,
   ApiParam,
@@ -38,7 +38,7 @@ import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
  * Used by mobile applications to manage IoT devices.
  */
 @ApiTags('Devices Management (Mobile App)')
-@ApiCookieAuth('jwt')
+@ApiBearerAuth('access-token')
 @UseGuards(AuthGuard, OwnerGuard)
 @Controller('devices')
 export class DevicesController {

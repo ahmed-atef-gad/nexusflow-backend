@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Req, UseGuards, Post } from '@nestjs/common';
 import {
   ApiBody,
-  ApiCookieAuth,
+  ApiBearerAuth,
   ApiBadRequestResponse,
   ApiOperation,
   ApiResponse,
@@ -33,7 +33,7 @@ export class DeviceRegistrationController {
       },
     },
   })
-  @ApiCookieAuth('jwt')
+  @ApiBearerAuth('access-token')
   @ApiUnauthorizedResponse({
     description: 'Unauthorized - Invalid or missing user token',
   })

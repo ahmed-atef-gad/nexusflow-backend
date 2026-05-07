@@ -229,7 +229,38 @@ export class UsersService {
     return typeof user.token_version === 'number' ? user.token_version : 0;
   }
 
+  async getRefreshTokenHashById(userId: string): Promise<string | null> {
+    const isValidId = Types.ObjectId.isValid(userId);
+    if (!isValidId) return null;
+    const user = await this.userModel
+      .findOne({ _id: userId, deleted_at: null })
+      .select('refresh_token')
+      .exec();
+    return user?.refresh_token ?? null;
+  }
+
+  async updateRefreshTokenHash(
+    userId: string,
+    refreshTokenHash: string | null
+  ): Promise<boolean> {
+    const isValidId = Types.ObjectId.isValid(userId);
+    if (!isValidId) return false;
+    const result = await this.userModel
+      .updateOne(
+        { _id: userId, deleted_at: null },
+        { $set: { refresh_token: refreshTokenHash } }
+      )
+      .exec();
+    return result.modifiedCount === 1;
+  }
+
+  async clearRefreshToken(userId: string): Promise<boolean> {
+    return this.updateRefreshTokenHash(userId, null);
+  }
+
   async getAuthStateById(userId: string): Promise<{
+    email: string;
+    username: string;
     tokenVersion: number;
     emailVerified: boolean;
     isActive: boolean;
@@ -239,11 +270,13 @@ export class UsersService {
     if (!isValidId) return null;
     const user = await this.userModel
       .findOne({ _id: userId, deleted_at: null })
-      .select('token_version email_verified is_active roles')
+      .select('email username token_version email_verified is_active roles')
       .lean()
       .exec();
     if (!user) return null;
     return {
+      email: typeof user.email === 'string' ? user.email : '',
+      username: typeof user.username === 'string' ? user.username : '',
       tokenVersion:
         typeof user.token_version === 'number' ? user.token_version : 0,
       emailVerified: this.toStrictBoolean(user.email_verified, false),
