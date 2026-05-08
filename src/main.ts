@@ -189,6 +189,11 @@ async function bootstrap() {
 
   app.use(cookieParser());
   app.use(csrfProtectionMiddleware);
+  app.use((_, response, next) => {
+    response.setHeader('X-Frame-Options', 'DENY');
+    response.setHeader('Content-Security-Policy', "frame-ancestors 'none'");
+    next();
+  });
 
   const config = new DocumentBuilder()
     .setTitle('NexusFlow API')
