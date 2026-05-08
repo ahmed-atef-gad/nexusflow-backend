@@ -197,7 +197,9 @@ async function bootstrap() {
 
   const config = new DocumentBuilder()
     .setTitle('NexusFlow API')
-    .setDescription('API documentation for NexusFlow')
+    .setDescription(
+      'API documentation for NexusFlow.\n\nSecurity notes:\n- This service uses cookie-backed refresh tokens (HttpOnly `refresh_token`) and a double-submit CSRF cookie named `XSRF-TOKEN`.\n- Browser clients must send the `x-csrf-token` header with state-changing requests (POST/PUT/PATCH/DELETE) when cookies are used.\n- Swagger UI is configured to automatically attach the CSRF header when you use the UI from an allowed origin.'
+    )
     .setVersion('1.0')
     .addBearerAuth(
       { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },

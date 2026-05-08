@@ -633,6 +633,53 @@ Current test coverage in the repo includes:
 - [`docs/notifications-system.md`](docs/notifications-system.md): notifications deep-dive and mobile contract
 - [`docs/NexusFlow.postman_collection.json`](docs/NexusFlow.postman_collection.json): Postman collection
 
+## Security — CSRF & Clickjacking
+
+- CSRF strategy: the server issues a non-HttpOnly cookie named `XSRF-TOKEN` (double-submit cookie). For any cookie-backed requests that modify state, clients must include the `x-csrf-token` header with the token value. Safe methods (GET, HEAD, OPTIONS, TRACE) do not require the header.
+- Refresh tokens are stored in an HttpOnly cookie named `refresh_token`; access tokens are short-lived and returned in response bodies for `Authorization: Bearer` usage.
+- Clickjacking: the server sets `X-Frame-Options: DENY` and `Content-Security-Policy: frame-ancestors 'none'` on all responses.
+
+Client guidance:
+
+- Web (recommended): use `Authorization: Bearer <access_token>` for API calls where possible. If you rely on cookie-based refresh, send requests with credentials and include the CSRF header:
+  - fetch example:
+
+    ```js
+    const csrf = document.cookie
+      .split('; ')
+      .find((c) => c.startsWith('XSRF-TOKEN='))
+      ?.split('=')[1];
+    fetch('/v1/flows', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-csrf-token': decodeURIComponent(csrf || ''),
+      },
+      body: JSON.stringify(payload),
+    });
+    ```
+
+  - axios example:
+
+    ```js
+    import axios from 'axios';
+    const csrf = document.cookie
+      .split('; ')
+      .find((c) => c.startsWith('XSRF-TOKEN='))
+      ?.split('=')[1];
+    axios.post('/v1/flows', payload, {
+      withCredentials: true,
+      headers: {
+        'x-csrf-token': decodeURIComponent(csrf || ''),
+      },
+    });
+    ```
+
+- Mobile: prefer storing and sending `Authorization: Bearer` access tokens from secure storage (Keychain/Keystore). If using cookie-based flows in mobile webviews, ensure the webview exposes cookies to JS or implement a native bridge to read the `XSRF-TOKEN` value and attach it to requests.
+
+- Swagger / API docs: the Swagger UI at `/api` is configured to automatically attach the `x-csrf-token` header when used from an allowed origin and will attempt a refresh on 401s when cookie-based refresh is available.
+
 ## Integration Notes
 
 - The frontend depends on this backend for auth, flow persistence, admin data, device management, verification, and firmware workflows.

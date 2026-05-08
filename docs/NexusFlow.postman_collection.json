@@ -5,6 +5,54 @@
     "description": "Auto-generated Postman collection for NexusFlow backend endpoints.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "const safeMethods = new Set(['GET', 'HEAD', 'OPTIONS', 'TRACE']);",
+          "const path = (() => {",
+          "  try {",
+          "    const segments = pm.request.url.getPath();",
+          "    return `/${segments.join('/')}`;",
+          "  } catch (error) {",
+          "    return pm.request.url.toString();",
+          "  }",
+          "})();",
+          "const method = String(pm.request.method || 'GET').toUpperCase();",
+          "const isAuthCookieEndpoint = path === '/auth/refresh' || path === '/auth/logout';",
+          "const accessToken = pm.collectionVariables.get('accessToken');",
+          "const refreshToken = pm.collectionVariables.get('refreshToken');",
+          "const csrfToken = pm.collectionVariables.get('csrfToken');",
+          "",
+          "if (isAuthCookieEndpoint) {",
+          "  if (refreshToken) {",
+          "    pm.request.headers.upsert({ key: 'Cookie', value: `refresh_token=${refreshToken}` });",
+          "  } else if (pm.request.headers.has('Cookie')) {",
+          "    pm.request.headers.remove('Cookie');",
+          "  }",
+          "",
+          "  if (csrfToken) {",
+          "    pm.request.headers.upsert({ key: 'x-csrf-token', value: csrfToken });",
+          "  }",
+          "} else {",
+          "  if (pm.request.headers.has('Cookie')) {",
+          "    pm.request.headers.remove('Cookie');",
+          "  }",
+          "",
+          "  if (!pm.request.headers.has('Authorization') && accessToken) {",
+          "    pm.request.headers.upsert({ key: 'Authorization', value: `Bearer ${accessToken}` });",
+          "  }",
+          "",
+          "  if (!safeMethods.has(method) && csrfToken) {",
+          "    pm.request.headers.upsert({ key: 'x-csrf-token', value: csrfToken });",
+          "  }",
+          "}"
+        ]
+      }
+    }
+  ],
   "item": [
     {
       "name": "App",
@@ -47,6 +95,33 @@
       "name": "Auth",
       "item": [
         {
+          "name": "Get CSRF Token",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/auth/csrf-token"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const json = pm.response.json();",
+                  "  const csrfToken = json?.csrfToken || pm.cookies.get('XSRF-TOKEN');",
+                  "  if (csrfToken) pm.collectionVariables.set('csrfToken', String(csrfToken));",
+                  "} catch (e) {",
+                  "  const csrfToken = pm.cookies.get('XSRF-TOKEN');",
+                  "  if (csrfToken) pm.collectionVariables.set('csrfToken', String(csrfToken));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Register User",
           "request": {
             "method": "POST",
@@ -75,11 +150,14 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "const setCookie = pm.response.headers.get('Set-Cookie');",
-                  "if (setCookie) {",
-                  "  const match = setCookie.match(/jwt=([^;]+)/);",
-                  "  if (match) pm.collectionVariables.set('jwt', match[1]);",
-                  "}"
+                  "try {",
+                  "  const json = pm.response.json();",
+                  "  if (json?.access_token) pm.collectionVariables.set('accessToken', String(json.access_token));",
+                  "} catch (e) {}",
+                  "const refreshToken = pm.cookies.get('refresh_token');",
+                  "if (refreshToken) pm.collectionVariables.set('refreshToken', String(refreshToken));",
+                  "const csrfToken = pm.cookies.get('XSRF-TOKEN');",
+                  "if (csrfToken) pm.collectionVariables.set('csrfToken', String(csrfToken));"
                 ]
               }
             }
@@ -114,11 +192,41 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "const setCookie = pm.response.headers.get('Set-Cookie');",
-                  "if (setCookie) {",
-                  "  const match = setCookie.match(/jwt=([^;]+)/);",
-                  "  if (match) pm.collectionVariables.set('jwt', match[1]);",
-                  "}"
+                  "try {",
+                  "  const json = pm.response.json();",
+                  "  if (json?.access_token) pm.collectionVariables.set('accessToken', String(json.access_token));",
+                  "} catch (e) {}",
+                  "const refreshToken = pm.cookies.get('refresh_token');",
+                  "if (refreshToken) pm.collectionVariables.set('refreshToken', String(refreshToken));",
+                  "const csrfToken = pm.cookies.get('XSRF-TOKEN');",
+                  "if (csrfToken) pm.collectionVariables.set('csrfToken', String(csrfToken));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh Session",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/auth/refresh"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const json = pm.response.json();",
+                  "  if (json?.access_token) pm.collectionVariables.set('accessToken', String(json.access_token));",
+                  "} catch (e) {}",
+                  "const refreshToken = pm.cookies.get('refresh_token');",
+                  "if (refreshToken) pm.collectionVariables.set('refreshToken', String(refreshToken));",
+                  "const csrfToken = pm.cookies.get('XSRF-TOKEN');",
+                  "if (csrfToken) pm.collectionVariables.set('csrfToken', String(csrfToken));"
                 ]
               }
             }
@@ -170,7 +278,20 @@
               }
             }
           },
-          "response": []
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('accessToken', '');",
+                  "pm.collectionVariables.set('refreshToken', '');",
+                  "pm.collectionVariables.set('csrfToken', '');"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Logout User",
@@ -199,7 +320,20 @@
               }
             }
           },
-          "response": []
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('accessToken', '');",
+                  "pm.collectionVariables.set('refreshToken', '');",
+                  "pm.collectionVariables.set('csrfToken', '');"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -493,6 +627,21 @@
               }
             }
           ]
+        },
+        {
+          "name": "Get Device By Active Flow ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/devices/flow/{{flowId}}/device"
+          },
+          "response": []
         },
         {
           "name": "Generate Device Token",
@@ -1976,6 +2125,18 @@
     {
       "key": "baseUrl",
       "value": "http://localhost:3000"
+    },
+    {
+      "key": "accessToken",
+      "value": ""
+    },
+    {
+      "key": "refreshToken",
+      "value": ""
+    },
+    {
+      "key": "csrfToken",
+      "value": ""
     },
     {
       "key": "jwt",
