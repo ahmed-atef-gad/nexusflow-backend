@@ -680,6 +680,11 @@ Client guidance:
 
 - Swagger / API docs: the Swagger UI at `/api` is configured to automatically attach the `x-csrf-token` header when used from an allowed origin and will attempt a refresh on 401s when cookie-based refresh is available.
 
+- Postman: the included collection (`docs/NexusFlow.postman_collection.json`) uses collection variables `accessToken`, `refreshToken`, and `csrfToken`. The collection pre-request script:
+  - Attaches `Authorization: Bearer <accessToken>` for non-cookie flows.
+  - For cookie-backed endpoints (`/auth/refresh`, `/auth/logout`) it attaches a `Cookie: refresh_token=<refreshToken>` header and sends `x-csrf-token` when `csrfToken` is available.
+  - Safe HTTP methods are considered `GET`, `HEAD`, and `OPTIONS` (no CSRF header required).
+
 ## Integration Notes
 
 - The frontend depends on this backend for auth, flow persistence, admin data, device management, verification, and firmware workflows.

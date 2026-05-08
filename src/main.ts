@@ -7,6 +7,8 @@ import {
   SwaggerCustomOptions,
 } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
+import helmet from 'helmet';
+import { timingSafeEqual } from 'crypto';
 import type { NextFunction, Request, Response } from 'express';
 import {
   CSRF_HEADER_NAME,
@@ -53,7 +55,7 @@ type RequestWithCookies = Request & {
   cookies?: Record<string, string | undefined>;
 };
 
-const SAFE_HTTP_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'TRACE']);
+const SAFE_HTTP_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 function getHeaderValue(
   headerValue: string | string[] | undefined
@@ -78,10 +80,7 @@ function getCookieValue(
 }
 
 function hasCookieBackedSession(request: RequestWithCookies): boolean {
-  return Boolean(
-    getCookieValue(request.cookies, REFRESH_TOKEN_COOKIE) ||
-      getCookieValue(request.cookies, CSRF_TOKEN_COOKIE)
-  );
+  return Boolean(getCookieValue(request.cookies, REFRESH_TOKEN_COOKIE));
 }
 
 function validateCsrfRequest(request: RequestWithCookies): void {
@@ -101,10 +100,16 @@ function validateCsrfRequest(request: RequestWithCookies): void {
   const cookieBuffer = Buffer.from(cookieToken);
   const headerBuffer = Buffer.from(headerToken);
 
-  if (
-    cookieBuffer.length !== headerBuffer.length ||
-    !cookieBuffer.equals(headerBuffer)
-  ) {
+  if (cookieBuffer.length !== headerBuffer.length) {
+    throw new ForbiddenException('Invalid CSRF token');
+  }
+
+  try {
+    if (!timingSafeEqual(cookieBuffer, headerBuffer)) {
+      throw new ForbiddenException('Invalid CSRF token');
+    }
+  } catch {
+    // timingSafeEqual throws if buffers lengths mismatch; we've guarded above.
     throw new ForbiddenException('Invalid CSRF token');
   }
 }
@@ -188,8 +193,17 @@ async function bootstrap() {
   );
 
   app.use(cookieParser());
+  // Use Helmet for common security headers. CSP is disabled here by default
+  // to avoid breaking Swagger/UI during development — enable and tune CSP in
+  // production to harden against XSS.
+  app.use(
+    helmet({
+      contentSecurityPolicy: false,
+    } as never)
+  );
+
   app.use(csrfProtectionMiddleware);
-  app.use((_, response, next) => {
+  app.use((_: Request, response: Response, next: NextFunction) => {
     response.setHeader('X-Frame-Options', 'DENY');
     response.setHeader('Content-Security-Policy', "frame-ancestors 'none'");
     next();
