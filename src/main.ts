@@ -7,6 +7,8 @@ import {
   SwaggerCustomOptions,
 } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
+import helmet from 'helmet';
+import type { NextFunction, Request, Response } from 'express';
 
 type SwaggerUiOptions = NonNullable<SwaggerCustomOptions['swaggerOptions']>;
 type InferredSwaggerRequest = Parameters<
@@ -100,10 +102,41 @@ async function bootstrap() {
   );
 
   app.use(cookieParser());
+  // Use Helmet for common security headers: X-Frame-Options, X-Content-Type-Options,
+  // X-XSS-Protection, Referrer-Policy, etc. CSP is disabled here by default to avoid
+  // breaking Swagger/UI during development.
+  app.use(
+    helmet({
+      contentSecurityPolicy: false,
+      frameguard: { action: 'deny' }, // Set X-Frame-Options: DENY
+    } as never)
+  );
+
+  // Enforce JSON-only for state-changing requests (POST/PUT/PATCH/DELETE).
+  // This prevents form-based CSRF attacks by rejecting non-JSON content types.
+  // GET, HEAD, and OPTIONS requests bypass this check as they should not have bodies.
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+      return next();
+    }
+
+    const contentType = req.get('content-type');
+    if (!contentType?.includes('application/json')) {
+      return res.status(415).json({
+        statusCode: 415,
+        message: 'Unsupported Media Type',
+        error: 'Only application/json Content-Type is accepted for mutations',
+      });
+    }
+
+    next();
+  });
 
   const config = new DocumentBuilder()
     .setTitle('NexusFlow API')
-    .setDescription('API documentation for NexusFlow')
+    .setDescription(
+      'API documentation for NexusFlow.\n\nSecurity model:\n- All API requests use JSON payloads and Bearer token (Authorization header).\n- POST/PUT/PATCH/DELETE requests trigger CORS preflight (OPTIONS) which protects against CSRF attacks.\n- Refresh tokens are stored as HttpOnly cookies for secure refresh flow, but API operations use Bearer tokens.'
+    )
     .setVersion('1.0')
     .addBearerAuth(
       { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
@@ -118,7 +151,6 @@ async function bootstrap() {
       persistAuthorization: true,
       requestInterceptor: (request: SwaggerRequest) => {
         const clientWindow = window as ClientWindow;
-
         clientWindow.__lastSwaggerRequest = request;
         return request;
       },
@@ -135,11 +167,18 @@ async function bootstrap() {
           !clientWindow.__retryingAfterRefresh
         ) {
           try {
+            const csrfToken = window.document.cookie
+              .split('; ')
+              .find((value) => value.startsWith('XSRF-TOKEN='))
+              ?.split('=')[1];
             const refreshResponse = await fetch('/auth/refresh', {
               method: 'POST',
               credentials: 'include',
               headers: {
                 'Content-Type': 'application/json',
+                ...(csrfToken
+                  ? { 'x-csrf-token': decodeURIComponent(csrfToken) }
+                  : {}),
               },
             });
 

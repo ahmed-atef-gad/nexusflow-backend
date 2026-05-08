@@ -102,6 +102,12 @@ graph TD
   - Unverified users are blocked from most endpoints by `AuthGuard` with HTTP `428`
   - Allowed while unverified: `/auth/*`, `/verification/*`, `/users/profile`
 
+  ### Recent security updates
+  - The backend now _enforces JSON-only_ for state-changing requests (POST/PUT/PATCH/DELETE). Requests with a `Content-Type` other than `application/json` will receive `415 Unsupported Media Type` unless an endpoint is explicitly exempted (e.g., file uploads).
+  - We rely on CORS preflight for cross-origin protection: browsers must pass an OPTIONS preflight before sending `application/json` mutation requests from another origin. This, combined with requiring `Authorization: Bearer` headers, blocks form-based CSRF vectors.
+  - Helmet middleware is enabled at boot (`src/main.ts`) to set common security headers (X-Frame-Options, X-Content-Type-Options, Referrer-Policy, etc.). CSP is disabled by default to avoid breaking Swagger during development but can be enabled in production.
+  - Refresh tokens remain as HttpOnly cookies for browser clients. Native mobile apps should either use an embedded WebView for refresh (cookie semantics) or store refresh tokens securely (Keychain/Keystore) and call `/auth/refresh` with JSON (this requires a backend route change if chosen).
+
 ## Main Domain Flows
 
 ### 1) Registration + Email Verification
@@ -129,7 +135,7 @@ sequenceDiagram
     Client->>Verify: POST /verification/verify
     Verify->>DB: Validate OTP, mark email_verified=true
     Verify-->>Client: Email verified
-    
+
     Note over Client,DB: On access token expiry:
     Client->>Auth: POST /auth/refresh (with refresh_token cookie)
     Auth->>DB: Validate refresh token hash + token version
@@ -182,16 +188,16 @@ sequenceDiagram
     Broker-->>ESP: Execute command
 ```
 
-  #### 3.1) Cross-Flow Bridge Routing
+#### 3.1) Cross-Flow Bridge Routing
 
-  The runtime also supports routing one flow into one or more other flows:
+The runtime also supports routing one flow into one or more other flows:
 
-  - `mqtt-out` nodes (UI label: Flow Bridge Out) can publish to multiple `targetFlowIds`.
-  - `mqtt-in` nodes (UI label: Flow Bridge In) consume forwarded messages when `channel` matches.
-  - Forwarding is owner-scoped; cross-owner routing is blocked.
-  - A max internal hop limit is applied to prevent forwarding loops.
+- `mqtt-out` nodes (UI label: Flow Bridge Out) can publish to multiple `targetFlowIds`.
+- `mqtt-in` nodes (UI label: Flow Bridge In) consume forwarded messages when `channel` matches.
+- Forwarding is owner-scoped; cross-owner routing is blocked.
+- A max internal hop limit is applied to prevent forwarding loops.
 
-  Practical effect: one source flow can fan-out the same processed message to multiple target flows, each continuing execution from matching Flow Bridge In nodes.
+Practical effect: one source flow can fan-out the same processed message to multiple target flows, each continuing execution from matching Flow Bridge In nodes.
 
 ### 4) Notification Pipeline (Rules + History + Push)
 

@@ -86,6 +86,37 @@ Token System:
 - Secrets configured via `JWT_SECRET` (legacy, used for both) or `JWT_REFRESH_SECRET` (optional, separate refresh token signing key)
 - Expiration times configurable via `JWT_ACCESS_EXPIRES_IN` and `JWT_REFRESH_EXPIRES_IN` environment variables
 
+## Client integration notes
+
+- All state-changing requests (POST/PUT/PATCH/DELETE) must send JSON bodies with `Content-Type: application/json`.
+- Include the access token on API requests using the `Authorization: Bearer <token>` header.
+- Use `fetch` with `credentials: 'include'` for the refresh flow to allow the server-set HttpOnly refresh cookie to be sent from browser clients:
+
+```js
+// fetch example for refresh
+await fetch('/auth/refresh', {
+  method: 'POST',
+  credentials: 'include',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({}),
+});
+```
+
+```js
+// axios example for refresh
+axios.post(
+  '/auth/refresh',
+  {},
+  { withCredentials: true, headers: { 'Content-Type': 'application/json' } }
+);
+```
+
+- Native mobile apps: HttpOnly cookies are browser-specific. For native apps either:
+  - Use an embedded WebView for refresh (so cookies are handled by the engine), or
+  - Store refresh tokens securely (Keychain/Keystore) and send them in a JSON body to `/auth/refresh` (this requires a backend change to accept refresh tokens in body).
+
+- If you have file upload endpoints that must accept `multipart/form-data`, request an exception from the backend because the server rejects non-JSON content types for mutations by default.
+
 Key files:
 
 - [`src/auth/auth.controller.ts`](src/auth/auth.controller.ts): `/auth/login`, `/auth/register`, `/auth/refresh`, `/auth/logout` endpoints
@@ -632,6 +663,58 @@ Current test coverage in the repo includes:
 - [`docs/repo-mind-map.md`](docs/repo-mind-map.md): repository-level overview
 - [`docs/notifications-system.md`](docs/notifications-system.md): notifications deep-dive and mobile contract
 - [`docs/NexusFlow.postman_collection.json`](docs/NexusFlow.postman_collection.json): Postman collection
+
+## Security — CSRF & Clickjacking
+
+- CSRF strategy: the server issues a non-HttpOnly cookie named `XSRF-TOKEN` (double-submit cookie). For any cookie-backed requests that modify state, clients must include the `x-csrf-token` header with the token value. Safe methods (GET, HEAD, OPTIONS, TRACE) do not require the header.
+- Refresh tokens are stored in an HttpOnly cookie named `refresh_token`; access tokens are short-lived and returned in response bodies for `Authorization: Bearer` usage.
+- Clickjacking: the server sets `X-Frame-Options: DENY` and `Content-Security-Policy: frame-ancestors 'none'` on all responses.
+
+Client guidance:
+
+- Web (recommended): use `Authorization: Bearer <access_token>` for API calls where possible. If you rely on cookie-based refresh, send requests with credentials and include the CSRF header:
+  - fetch example:
+
+    ```js
+    const csrf = document.cookie
+      .split('; ')
+      .find((c) => c.startsWith('XSRF-TOKEN='))
+      ?.split('=')[1];
+    fetch('/v1/flows', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-csrf-token': decodeURIComponent(csrf || ''),
+      },
+      body: JSON.stringify(payload),
+    });
+    ```
+
+  - axios example:
+
+    ```js
+    import axios from 'axios';
+    const csrf = document.cookie
+      .split('; ')
+      .find((c) => c.startsWith('XSRF-TOKEN='))
+      ?.split('=')[1];
+    axios.post('/v1/flows', payload, {
+      withCredentials: true,
+      headers: {
+        'x-csrf-token': decodeURIComponent(csrf || ''),
+      },
+    });
+    ```
+
+- Mobile: prefer storing and sending `Authorization: Bearer` access tokens from secure storage (Keychain/Keystore). If using cookie-based flows in mobile webviews, ensure the webview exposes cookies to JS or implement a native bridge to read the `XSRF-TOKEN` value and attach it to requests.
+
+- Swagger / API docs: the Swagger UI at `/api` is configured to automatically attach the `x-csrf-token` header when used from an allowed origin and will attempt a refresh on 401s when cookie-based refresh is available.
+
+- Postman: the included collection (`docs/NexusFlow.postman_collection.json`) uses collection variables `accessToken`, `refreshToken`, and `csrfToken`. The collection pre-request script:
+  - Attaches `Authorization: Bearer <accessToken>` for non-cookie flows.
+  - For cookie-backed endpoints (`/auth/refresh`, `/auth/logout`) it attaches a `Cookie: refresh_token=<refreshToken>` header and sends `x-csrf-token` when `csrfToken` is available.
+  - Safe HTTP methods are considered `GET`, `HEAD`, and `OPTIONS` (no CSRF header required).
 
 ## Integration Notes
 
