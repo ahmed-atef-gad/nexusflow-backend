@@ -2,8 +2,6 @@ import { UnauthorizedException } from '@nestjs/common';
 import { Request } from 'express';
 
 export const REFRESH_TOKEN_COOKIE = 'refresh_token';
-export const CSRF_TOKEN_COOKIE = 'XSRF-TOKEN';
-export const CSRF_HEADER_NAME = 'x-csrf-token';
 
 export interface AuthenticatedUserPayload {
   id?: string;

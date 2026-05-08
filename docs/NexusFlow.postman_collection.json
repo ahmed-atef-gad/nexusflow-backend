@@ -11,43 +11,11 @@
       "script": {
         "type": "text/javascript",
         "exec": [
-          "const safeMethods = new Set(['GET', 'HEAD', 'OPTIONS']);",
-          "const path = (() => {",
-          "  try {",
-          "    const segments = pm.request.url.getPath();",
-          "    return `/${segments.join('/')}`;",
-          "  } catch (error) {",
-          "    return pm.request.url.toString();",
-          "  }",
-          "})();",
-          "const method = String(pm.request.method || 'GET').toUpperCase();",
-          "const isAuthCookieEndpoint = path === '/auth/refresh' || path === '/auth/logout';",
           "const accessToken = pm.collectionVariables.get('accessToken');",
-          "const refreshToken = pm.collectionVariables.get('refreshToken');",
-          "const csrfToken = pm.collectionVariables.get('csrfToken');",
           "",
-          "if (isAuthCookieEndpoint) {",
-          "  if (refreshToken) {",
-          "    pm.request.headers.upsert({ key: 'Cookie', value: `refresh_token=${refreshToken}` });",
-          "  } else if (pm.request.headers.has('Cookie')) {",
-          "    pm.request.headers.remove('Cookie');",
-          "  }",
-          "",
-          "  if (csrfToken) {",
-          "    pm.request.headers.upsert({ key: 'x-csrf-token', value: csrfToken });",
-          "  }",
-          "} else {",
-          "  if (pm.request.headers.has('Cookie')) {",
-          "    pm.request.headers.remove('Cookie');",
-          "  }",
-          "",
-          "  if (!pm.request.headers.has('Authorization') && accessToken) {",
-          "    pm.request.headers.upsert({ key: 'Authorization', value: `Bearer ${accessToken}` });",
-          "  }",
-          "",
-          "  if (!safeMethods.has(method) && csrfToken) {",
-          "    pm.request.headers.upsert({ key: 'x-csrf-token', value: csrfToken });",
-          "  }",
+          "// Attach Bearer token to all requests if available (protected by CORS preflight)",
+          "if (!pm.request.headers.has('Authorization') && accessToken) {",
+          "  pm.request.headers.upsert({ key: 'Authorization', value: `Bearer ${accessToken}` });",
           "}"
         ]
       }
@@ -94,33 +62,6 @@
     {
       "name": "Auth",
       "item": [
-        {
-          "name": "Get CSRF Token",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{baseUrl}}/auth/csrf-token"
-          },
-          "response": [],
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "try {",
-                  "  const json = pm.response.json();",
-                  "  const csrfToken = json?.csrfToken || pm.cookies.get('XSRF-TOKEN');",
-                  "  if (csrfToken) pm.collectionVariables.set('csrfToken', String(csrfToken));",
-                  "} catch (e) {",
-                  "  const csrfToken = pm.cookies.get('XSRF-TOKEN');",
-                  "  if (csrfToken) pm.collectionVariables.set('csrfToken', String(csrfToken));",
-                  "}"
-                ]
-              }
-            }
-          ]
-        },
         {
           "name": "Register User",
           "request": {

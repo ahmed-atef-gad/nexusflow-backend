@@ -1,6 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { ForbiddenException, ValidationPipe } from '@nestjs/common';
+import { ValidationPipe } from '@nestjs/common';
 import {
   SwaggerModule,
   DocumentBuilder,
@@ -8,13 +8,7 @@ import {
 } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
-import { timingSafeEqual } from 'crypto';
 import type { NextFunction, Request, Response } from 'express';
-import {
-  CSRF_HEADER_NAME,
-  CSRF_TOKEN_COOKIE,
-  REFRESH_TOKEN_COOKIE,
-} from './auth/utils/auth.util';
 
 type SwaggerUiOptions = NonNullable<SwaggerCustomOptions['swaggerOptions']>;
 type InferredSwaggerRequest = Parameters<
@@ -50,91 +44,6 @@ type ClientWindow = Window & {
     preauthorizeApiKey: (schemeName: string, value: string) => void;
   };
 };
-
-type RequestWithCookies = Request & {
-  cookies?: Record<string, string | undefined>;
-};
-
-const SAFE_HTTP_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
-
-function getHeaderValue(
-  headerValue: string | string[] | undefined
-): string | undefined {
-  if (Array.isArray(headerValue)) {
-    return headerValue[0];
-  }
-
-  return headerValue;
-}
-
-function getCookieValue(
-  cookies: Record<string, unknown> | undefined,
-  cookieName: string
-): string | undefined {
-  if (!cookies) {
-    return undefined;
-  }
-
-  const cookieValue = cookies[cookieName];
-  return typeof cookieValue === 'string' ? cookieValue : undefined;
-}
-
-function hasCookieBackedSession(request: RequestWithCookies): boolean {
-  return Boolean(getCookieValue(request.cookies, REFRESH_TOKEN_COOKIE));
-}
-
-function validateCsrfRequest(request: RequestWithCookies): void {
-  const method = String(request.method || 'GET').toUpperCase();
-
-  if (SAFE_HTTP_METHODS.has(method) || !hasCookieBackedSession(request)) {
-    return;
-  }
-
-  const cookieToken = getCookieValue(request.cookies, CSRF_TOKEN_COOKIE);
-  const headerToken = getHeaderValue(request.headers[CSRF_HEADER_NAME]);
-
-  if (!cookieToken || !headerToken) {
-    throw new ForbiddenException('Missing CSRF token');
-  }
-
-  const cookieBuffer = Buffer.from(cookieToken);
-  const headerBuffer = Buffer.from(headerToken);
-
-  if (cookieBuffer.length !== headerBuffer.length) {
-    throw new ForbiddenException('Invalid CSRF token');
-  }
-
-  try {
-    if (!timingSafeEqual(cookieBuffer, headerBuffer)) {
-      throw new ForbiddenException('Invalid CSRF token');
-    }
-  } catch {
-    // timingSafeEqual throws if buffers lengths mismatch; we've guarded above.
-    throw new ForbiddenException('Invalid CSRF token');
-  }
-}
-
-function csrfProtectionMiddleware(
-  request: RequestWithCookies,
-  response: Response,
-  next: NextFunction
-): void {
-  try {
-    validateCsrfRequest(request);
-    next();
-  } catch (error) {
-    if (error instanceof ForbiddenException) {
-      response.status(403).json({
-        statusCode: 403,
-        message: error.message,
-        error: 'Forbidden',
-      });
-      return;
-    }
-
-    next(error);
-  }
-}
 
 function getAllowedCorsOrigins(): string[] {
   const corsOrigins = process.env.CORS_ORIGINS;
@@ -193,26 +102,40 @@ async function bootstrap() {
   );
 
   app.use(cookieParser());
-  // Use Helmet for common security headers. CSP is disabled here by default
-  // to avoid breaking Swagger/UI during development — enable and tune CSP in
-  // production to harden against XSS.
+  // Use Helmet for common security headers: X-Frame-Options, X-Content-Type-Options,
+  // X-XSS-Protection, Referrer-Policy, etc. CSP is disabled here by default to avoid
+  // breaking Swagger/UI during development.
   app.use(
     helmet({
       contentSecurityPolicy: false,
+      frameguard: { action: 'deny' }, // Set X-Frame-Options: DENY
     } as never)
   );
 
-  app.use(csrfProtectionMiddleware);
-  app.use((_: Request, response: Response, next: NextFunction) => {
-    response.setHeader('X-Frame-Options', 'DENY');
-    response.setHeader('Content-Security-Policy', "frame-ancestors 'none'");
+  // Enforce JSON-only for state-changing requests (POST/PUT/PATCH/DELETE).
+  // This prevents form-based CSRF attacks by rejecting non-JSON content types.
+  // GET, HEAD, and OPTIONS requests bypass this check as they should not have bodies.
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+      return next();
+    }
+
+    const contentType = req.get('content-type');
+    if (!contentType?.includes('application/json')) {
+      return res.status(415).json({
+        statusCode: 415,
+        message: 'Unsupported Media Type',
+        error: 'Only application/json Content-Type is accepted for mutations',
+      });
+    }
+
     next();
   });
 
   const config = new DocumentBuilder()
     .setTitle('NexusFlow API')
     .setDescription(
-      'API documentation for NexusFlow.\n\nSecurity notes:\n- This service uses cookie-backed refresh tokens (HttpOnly `refresh_token`) and a double-submit CSRF cookie named `XSRF-TOKEN`.\n- Browser clients must send the `x-csrf-token` header with state-changing requests (POST/PUT/PATCH/DELETE) when cookies are used.\n- Swagger UI is configured to automatically attach the CSRF header when you use the UI from an allowed origin.'
+      'API documentation for NexusFlow.\n\nSecurity model:\n- All API requests use JSON payloads and Bearer token (Authorization header).\n- POST/PUT/PATCH/DELETE requests trigger CORS preflight (OPTIONS) which protects against CSRF attacks.\n- Refresh tokens are stored as HttpOnly cookies for secure refresh flow, but API operations use Bearer tokens.'
     )
     .setVersion('1.0')
     .addBearerAuth(
@@ -228,24 +151,6 @@ async function bootstrap() {
       persistAuthorization: true,
       requestInterceptor: (request: SwaggerRequest) => {
         const clientWindow = window as ClientWindow;
-
-        const method = String(request.method || 'GET').toUpperCase();
-        const csrfUnsafeMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
-
-        if (csrfUnsafeMethods.has(method)) {
-          const csrfToken = window.document.cookie
-            .split('; ')
-            .find((value) => value.startsWith('XSRF-TOKEN='))
-            ?.split('=')[1];
-
-          if (csrfToken) {
-            request.headers = {
-              ...(request.headers || {}),
-              'x-csrf-token': decodeURIComponent(csrfToken),
-            };
-          }
-        }
-
         clientWindow.__lastSwaggerRequest = request;
         return request;
       },
