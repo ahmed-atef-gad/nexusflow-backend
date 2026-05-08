@@ -1,12 +1,18 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { ValidationPipe } from '@nestjs/common';
+import { ForbiddenException, ValidationPipe } from '@nestjs/common';
 import {
   SwaggerModule,
   DocumentBuilder,
   SwaggerCustomOptions,
 } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
+import type { NextFunction, Request, Response } from 'express';
+import {
+  CSRF_HEADER_NAME,
+  CSRF_TOKEN_COOKIE,
+  REFRESH_TOKEN_COOKIE,
+} from './auth/utils/auth.util';
 
 type SwaggerUiOptions = NonNullable<SwaggerCustomOptions['swaggerOptions']>;
 type InferredSwaggerRequest = Parameters<
@@ -42,6 +48,88 @@ type ClientWindow = Window & {
     preauthorizeApiKey: (schemeName: string, value: string) => void;
   };
 };
+
+type RequestWithCookies = Request & {
+  cookies?: Record<string, string | undefined>;
+};
+
+const SAFE_HTTP_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'TRACE']);
+
+function getHeaderValue(
+  headerValue: string | string[] | undefined
+): string | undefined {
+  if (Array.isArray(headerValue)) {
+    return headerValue[0];
+  }
+
+  return headerValue;
+}
+
+function getCookieValue(
+  cookies: Record<string, unknown> | undefined,
+  cookieName: string
+): string | undefined {
+  if (!cookies) {
+    return undefined;
+  }
+
+  const cookieValue = cookies[cookieName];
+  return typeof cookieValue === 'string' ? cookieValue : undefined;
+}
+
+function hasCookieBackedSession(request: RequestWithCookies): boolean {
+  return Boolean(
+    getCookieValue(request.cookies, REFRESH_TOKEN_COOKIE) ||
+      getCookieValue(request.cookies, CSRF_TOKEN_COOKIE)
+  );
+}
+
+function validateCsrfRequest(request: RequestWithCookies): void {
+  const method = String(request.method || 'GET').toUpperCase();
+
+  if (SAFE_HTTP_METHODS.has(method) || !hasCookieBackedSession(request)) {
+    return;
+  }
+
+  const cookieToken = getCookieValue(request.cookies, CSRF_TOKEN_COOKIE);
+  const headerToken = getHeaderValue(request.headers[CSRF_HEADER_NAME]);
+
+  if (!cookieToken || !headerToken) {
+    throw new ForbiddenException('Missing CSRF token');
+  }
+
+  const cookieBuffer = Buffer.from(cookieToken);
+  const headerBuffer = Buffer.from(headerToken);
+
+  if (
+    cookieBuffer.length !== headerBuffer.length ||
+    !cookieBuffer.equals(headerBuffer)
+  ) {
+    throw new ForbiddenException('Invalid CSRF token');
+  }
+}
+
+function csrfProtectionMiddleware(
+  request: RequestWithCookies,
+  response: Response,
+  next: NextFunction
+): void {
+  try {
+    validateCsrfRequest(request);
+    next();
+  } catch (error) {
+    if (error instanceof ForbiddenException) {
+      response.status(403).json({
+        statusCode: 403,
+        message: error.message,
+        error: 'Forbidden',
+      });
+      return;
+    }
+
+    next(error);
+  }
+}
 
 function getAllowedCorsOrigins(): string[] {
   const corsOrigins = process.env.CORS_ORIGINS;
@@ -100,6 +188,7 @@ async function bootstrap() {
   );
 
   app.use(cookieParser());
+  app.use(csrfProtectionMiddleware);
 
   const config = new DocumentBuilder()
     .setTitle('NexusFlow API')
@@ -119,6 +208,23 @@ async function bootstrap() {
       requestInterceptor: (request: SwaggerRequest) => {
         const clientWindow = window as ClientWindow;
 
+        const method = String(request.method || 'GET').toUpperCase();
+        const csrfUnsafeMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+        if (csrfUnsafeMethods.has(method)) {
+          const csrfToken = window.document.cookie
+            .split('; ')
+            .find((value) => value.startsWith('XSRF-TOKEN='))
+            ?.split('=')[1];
+
+          if (csrfToken) {
+            request.headers = {
+              ...(request.headers || {}),
+              'x-csrf-token': decodeURIComponent(csrfToken),
+            };
+          }
+        }
+
         clientWindow.__lastSwaggerRequest = request;
         return request;
       },
@@ -135,11 +241,18 @@ async function bootstrap() {
           !clientWindow.__retryingAfterRefresh
         ) {
           try {
+            const csrfToken = window.document.cookie
+              .split('; ')
+              .find((value) => value.startsWith('XSRF-TOKEN='))
+              ?.split('=')[1];
             const refreshResponse = await fetch('/auth/refresh', {
               method: 'POST',
               credentials: 'include',
               headers: {
                 'Content-Type': 'application/json',
+                ...(csrfToken
+                  ? { 'x-csrf-token': decodeURIComponent(csrfToken) }
+                  : {}),
               },
             });
 

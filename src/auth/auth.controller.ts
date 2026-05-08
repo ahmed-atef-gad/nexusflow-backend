@@ -1,6 +1,8 @@
 import {
+  ForbiddenException,
   Controller,
   Post,
+  Get,
   Body,
   UnauthorizedException,
   Res,
@@ -24,7 +26,12 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import type { Response, Request } from 'express';
-import { REFRESH_TOKEN_COOKIE } from './utils/auth.util';
+import { randomBytes, timingSafeEqual } from 'crypto';
+import {
+  REFRESH_TOKEN_COOKIE,
+  CSRF_HEADER_NAME,
+  CSRF_TOKEN_COOKIE,
+} from './utils/auth.util';
 
 type RequestWithCookies = Request & {
   cookies: Record<string, string | undefined>;
@@ -61,12 +68,89 @@ export class AuthController {
     };
   }
 
+  private getCsrfCookieOptions() {
+    const isProduction = process.env.NODE_ENV === 'production';
+    return {
+      httpOnly: false,
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      path: '/',
+      secure: isProduction,
+      sameSite: 'none' as const,
+    };
+  }
+
   private setRefreshCookie(response: Response, refreshToken: string) {
     response.cookie(
       REFRESH_TOKEN_COOKIE,
       refreshToken,
       this.getRefreshCookieOptions()
     );
+  }
+
+  private setCsrfCookie(response: Response, csrfToken?: string): string {
+    const token = csrfToken ?? randomBytes(32).toString('hex');
+    response.cookie(CSRF_TOKEN_COOKIE, token, this.getCsrfCookieOptions());
+    return token;
+  }
+
+  private getHeaderValue(
+    headerValue: string | string[] | undefined
+  ): string | undefined {
+    if (Array.isArray(headerValue)) {
+      return headerValue[0];
+    }
+    return headerValue;
+  }
+
+  private getCookieValue(
+    cookies: Record<string, unknown> | undefined,
+    cookieName: string
+  ): string | undefined {
+    if (!cookies) {
+      return undefined;
+    }
+
+    const cookieValue = cookies[cookieName];
+    return typeof cookieValue === 'string' ? cookieValue : undefined;
+  }
+
+  private validateCsrfToken(request: RequestWithCookies): void {
+    const cookieToken = this.getCookieValue(request.cookies, CSRF_TOKEN_COOKIE);
+    const headerToken = this.getHeaderValue(request.headers[CSRF_HEADER_NAME]);
+
+    if (!cookieToken || !headerToken) {
+      throw new ForbiddenException('Missing CSRF token');
+    }
+
+    const cookieBuffer = Buffer.from(cookieToken);
+    const headerBuffer = Buffer.from(headerToken);
+
+    if (
+      cookieBuffer.length !== headerBuffer.length ||
+      !timingSafeEqual(cookieBuffer, headerBuffer)
+    ) {
+      throw new ForbiddenException('Invalid CSRF token');
+    }
+  }
+
+  @Get('csrf-token')
+  @ApiOperation({
+    summary: 'Issue CSRF token',
+    description:
+      'Issues a CSRF token cookie used to protect cookie-authenticated state-changing endpoints.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'CSRF token issued',
+    schema: {
+      example: {
+        csrfToken: '2f4d9f0a...token',
+      },
+    },
+  })
+  issueCsrfToken(@Res({ passthrough: true }) response: Response) {
+    const csrfToken = this.setCsrfCookie(response);
+    return { csrfToken };
   }
 
   /**
@@ -115,6 +199,7 @@ export class AuthController {
     const user = await this.authService.register(registerUserDto);
     const loginResult = await this.authService.login(user);
     this.setRefreshCookie(response, loginResult.refresh_token);
+    this.setCsrfCookie(response);
     return {
       message: 'Registration successful',
       access_token: loginResult.access_token,
@@ -181,6 +266,7 @@ export class AuthController {
     const loginResult = await this.authService.login(user);
 
     this.setRefreshCookie(response, loginResult.refresh_token);
+    this.setCsrfCookie(response);
     return {
       message: 'Login successful',
       access_token: loginResult.access_token,
@@ -214,6 +300,8 @@ export class AuthController {
     @Req() request: RequestWithCookies,
     @Res({ passthrough: true }) response: Response
   ) {
+    this.validateCsrfToken(request);
+
     const cookies = request.cookies as Record<string, string | undefined>;
     const refreshToken = cookies[REFRESH_TOKEN_COOKIE];
     if (!refreshToken) {
@@ -222,6 +310,7 @@ export class AuthController {
 
     const refreshedTokens = await this.authService.refresh(refreshToken);
     this.setRefreshCookie(response, refreshedTokens.refresh_token);
+    this.setCsrfCookie(response);
 
     return {
       access_token: refreshedTokens.access_token,
@@ -274,6 +363,7 @@ export class AuthController {
   ) {
     const result = await this.authService.resetPassword(resetPasswordDto);
     response.clearCookie(REFRESH_TOKEN_COOKIE, this.getRefreshCookieOptions());
+    response.clearCookie(CSRF_TOKEN_COOKIE, this.getCsrfCookieOptions());
     return result;
   }
 
@@ -305,10 +395,13 @@ export class AuthController {
     @Body() body: LogoutDto,
     @Res({ passthrough: true }) response: Response
   ) {
+    this.validateCsrfToken(request);
+
     const cookies = request.cookies as Record<string, string | undefined>;
     const refreshToken = cookies[REFRESH_TOKEN_COOKIE];
     const result = await this.authService.logout(refreshToken, body?.deviceId);
     response.clearCookie(REFRESH_TOKEN_COOKIE, this.getRefreshCookieOptions());
+    response.clearCookie(CSRF_TOKEN_COOKIE, this.getCsrfCookieOptions());
     return {
       message: 'Logged out successfully.',
       fcmTokenCleared: result.fcmTokenCleared,
