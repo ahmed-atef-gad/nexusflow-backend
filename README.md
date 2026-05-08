@@ -86,6 +86,37 @@ Token System:
 - Secrets configured via `JWT_SECRET` (legacy, used for both) or `JWT_REFRESH_SECRET` (optional, separate refresh token signing key)
 - Expiration times configurable via `JWT_ACCESS_EXPIRES_IN` and `JWT_REFRESH_EXPIRES_IN` environment variables
 
+## Client integration notes
+
+- All state-changing requests (POST/PUT/PATCH/DELETE) must send JSON bodies with `Content-Type: application/json`.
+- Include the access token on API requests using the `Authorization: Bearer <token>` header.
+- Use `fetch` with `credentials: 'include'` for the refresh flow to allow the server-set HttpOnly refresh cookie to be sent from browser clients:
+
+```js
+// fetch example for refresh
+await fetch('/auth/refresh', {
+  method: 'POST',
+  credentials: 'include',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({}),
+});
+```
+
+```js
+// axios example for refresh
+axios.post(
+  '/auth/refresh',
+  {},
+  { withCredentials: true, headers: { 'Content-Type': 'application/json' } }
+);
+```
+
+- Native mobile apps: HttpOnly cookies are browser-specific. For native apps either:
+  - Use an embedded WebView for refresh (so cookies are handled by the engine), or
+  - Store refresh tokens securely (Keychain/Keystore) and send them in a JSON body to `/auth/refresh` (this requires a backend change to accept refresh tokens in body).
+
+- If you have file upload endpoints that must accept `multipart/form-data`, request an exception from the backend because the server rejects non-JSON content types for mutations by default.
+
 Key files:
 
 - [`src/auth/auth.controller.ts`](src/auth/auth.controller.ts): `/auth/login`, `/auth/register`, `/auth/refresh`, `/auth/logout` endpoints

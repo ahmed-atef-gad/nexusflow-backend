@@ -94,11 +94,7 @@
                   "try {",
                   "  const json = pm.response.json();",
                   "  if (json?.access_token) pm.collectionVariables.set('accessToken', String(json.access_token));",
-                  "} catch (e) {}",
-                  "const refreshToken = pm.cookies.get('refresh_token');",
-                  "if (refreshToken) pm.collectionVariables.set('refreshToken', String(refreshToken));",
-                  "const csrfToken = pm.cookies.get('XSRF-TOKEN');",
-                  "if (csrfToken) pm.collectionVariables.set('csrfToken', String(csrfToken));"
+                  "} catch (e) {}"
                 ]
               }
             }
@@ -136,11 +132,7 @@
                   "try {",
                   "  const json = pm.response.json();",
                   "  if (json?.access_token) pm.collectionVariables.set('accessToken', String(json.access_token));",
-                  "} catch (e) {}",
-                  "const refreshToken = pm.cookies.get('refresh_token');",
-                  "if (refreshToken) pm.collectionVariables.set('refreshToken', String(refreshToken));",
-                  "const csrfToken = pm.cookies.get('XSRF-TOKEN');",
-                  "if (csrfToken) pm.collectionVariables.set('csrfToken', String(csrfToken));"
+                  "} catch (e) {}"
                 ]
               }
             }
@@ -225,11 +217,7 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": [
-                  "pm.collectionVariables.set('accessToken', '');",
-                  "pm.collectionVariables.set('refreshToken', '');",
-                  "pm.collectionVariables.set('csrfToken', '');"
-                ]
+                "exec": ["pm.collectionVariables.set('accessToken', '');"]
               }
             }
           ]
@@ -267,11 +255,7 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": [
-                  "pm.collectionVariables.set('accessToken', '');",
-                  "pm.collectionVariables.set('refreshToken', '');",
-                  "pm.collectionVariables.set('csrfToken', '');"
-                ]
+                "exec": ["pm.collectionVariables.set('accessToken', '');"]
               }
             }
           ]
@@ -2069,14 +2053,6 @@
     },
     {
       "key": "accessToken",
-      "value": ""
-    },
-    {
-      "key": "refreshToken",
-      "value": ""
-    },
-    {
-      "key": "csrfToken",
       "value": ""
     },
     {
