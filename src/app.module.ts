@@ -39,8 +39,8 @@ const throttlerGuard = ThrottlerGuard as unknown as new (
     }),
     throttlerForRoot.forRoot([
       {
-        limit: 20,
-        ttl: 10000,
+        limit: 100,
+        ttl: 60000,
       },
     ]),
     MongooseModule.forRootAsync({
