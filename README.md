@@ -664,57 +664,21 @@ Current test coverage in the repo includes:
 - [`docs/notifications-system.md`](docs/notifications-system.md): notifications deep-dive and mobile contract
 - [`docs/NexusFlow.postman_collection.json`](docs/NexusFlow.postman_collection.json): Postman collection
 
-## Security — CSRF & Clickjacking
+## Security — Request Model & Clickjacking
 
-- CSRF strategy: the server issues a non-HttpOnly cookie named `XSRF-TOKEN` (double-submit cookie). For any cookie-backed requests that modify state, clients must include the `x-csrf-token` header with the token value. Safe methods (GET, HEAD, OPTIONS, TRACE) do not require the header.
-- Refresh tokens are stored in an HttpOnly cookie named `refresh_token`; access tokens are short-lived and returned in response bodies for `Authorization: Bearer` usage.
-- Clickjacking: the server sets `X-Frame-Options: DENY` and `Content-Security-Policy: frame-ancestors 'none'` on all responses.
+- API auth model: short-lived access tokens are sent via `Authorization: Bearer <access_token>`.
+- Refresh model: refresh tokens remain in HttpOnly `refresh_token` cookies and are rotated on `/auth/refresh`.
+- Mutation requests (`POST`/`PUT`/`PATCH`/`DELETE`) are JSON-only by default. Non-JSON mutation requests return `415 Unsupported Media Type`.
+- Explicit exception: firmware upload endpoint `/firmware/admin/upload` is exempted from JSON-only checks because it requires `multipart/form-data`.
+- CSRF posture: no double-submit CSRF cookie/header flow is required in this model. Protection relies on Bearer headers plus browser CORS preflight for cross-origin JSON mutations.
+- Clickjacking: server sets `X-Frame-Options: DENY` using Helmet `frameguard`. CSP is currently disabled by default to keep Swagger behavior stable in development.
 
 Client guidance:
 
-- Web (recommended): use `Authorization: Bearer <access_token>` for API calls where possible. If you rely on cookie-based refresh, send requests with credentials and include the CSRF header:
-  - fetch example:
-
-    ```js
-    const csrf = document.cookie
-      .split('; ')
-      .find((c) => c.startsWith('XSRF-TOKEN='))
-      ?.split('=')[1];
-    fetch('/v1/flows', {
-      method: 'POST',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-csrf-token': decodeURIComponent(csrf || ''),
-      },
-      body: JSON.stringify(payload),
-    });
-    ```
-
-  - axios example:
-
-    ```js
-    import axios from 'axios';
-    const csrf = document.cookie
-      .split('; ')
-      .find((c) => c.startsWith('XSRF-TOKEN='))
-      ?.split('=')[1];
-    axios.post('/v1/flows', payload, {
-      withCredentials: true,
-      headers: {
-        'x-csrf-token': decodeURIComponent(csrf || ''),
-      },
-    });
-    ```
-
-- Mobile: prefer storing and sending `Authorization: Bearer` access tokens from secure storage (Keychain/Keystore). If using cookie-based flows in mobile webviews, ensure the webview exposes cookies to JS or implement a native bridge to read the `XSRF-TOKEN` value and attach it to requests.
-
-- Swagger / API docs: the Swagger UI at `/api` is configured to automatically attach the `x-csrf-token` header when used from an allowed origin and will attempt a refresh on 401s when cookie-based refresh is available.
-
-- Postman: the included collection (`docs/NexusFlow.postman_collection.json`) uses collection variables `accessToken`, `refreshToken`, and `csrfToken`. The collection pre-request script:
-  - Attaches `Authorization: Bearer <accessToken>` for non-cookie flows.
-  - For cookie-backed endpoints (`/auth/refresh`, `/auth/logout`) it attaches a `Cookie: refresh_token=<refreshToken>` header and sends `x-csrf-token` when `csrfToken` is available.
-  - Safe HTTP methods are considered `GET`, `HEAD`, and `OPTIONS` (no CSRF header required).
+- Web: send `Authorization: Bearer` on protected API calls, and send JSON bodies for all mutations.
+- Browser refresh flow: use credentials for `/auth/refresh` so the HttpOnly cookie is sent automatically.
+- Mobile native: keep access tokens in secure storage (Keychain/Keystore). If using native refresh-token transport (instead of WebView cookie flow), backend support is needed to accept refresh tokens outside cookies.
+- Postman: collection scripts now rely on `accessToken` only for Bearer auth. Old `csrfToken`/`refreshToken` collection-variable flow is removed.
 
 ## Integration Notes
 
