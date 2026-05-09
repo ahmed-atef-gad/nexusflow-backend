@@ -1105,6 +1105,24 @@ export class NotificationsService implements OnModuleInit {
       await incident.save();
     }
 
+    // Auto-handle all other pending notifications for the same incident
+    // This ensures that if user handles one notification, all related notifications
+    // for the same incident are automatically marked as handled
+    await this.notificationModel.updateMany(
+      {
+        incident_id: notification.incident_id,
+        user_id: userId,
+        handled_at: null,
+        _id: { $ne: notification._id },
+      },
+      {
+        $set: {
+          handled_at: now,
+          received_at: now,
+        },
+      }
+    );
+
     return this.mapNotification(
       notification.toObject() as NotificationDocument
     );
@@ -1492,6 +1510,10 @@ export class NotificationsService implements OnModuleInit {
       moduleId: rule.moduleId,
       readingKey,
     });
+    // Apply cool-off logic: only suppress notifications if:
+    // 1. There's an existing open incident (same rule = same incident)
+    // 2. AND we're still within the cool-off window since last notification
+    // If the incident is closed or doesn't exist, no cool-off is applied (new incident)
     const deliveryGate = this.shouldSendIncidentNotification(
       existingIncident,
       params.occurredAt
@@ -1841,6 +1863,11 @@ export class NotificationsService implements OnModuleInit {
     moduleId: string;
     readingKey: string;
   }): Promise<IncidentDocument | null> {
+    // Find an existing open (not closed) incident that matches ALL of these criteria:
+    // - Same user, flow, device, rule, node, module, and reading key
+    // This ensures that cool-off is only applied for notifications of the SAME incident.
+    // If the incident has been closed (resolved) or is for a different rule/reading,
+    // no cool-off will be applied to the new notification.
     return this.incidentModel
       .findOne({
         user_id: input.userId,
@@ -1860,13 +1887,18 @@ export class NotificationsService implements OnModuleInit {
     incident: IncidentDocument | null,
     occurredAt: Date
   ): { allowSend: boolean; reason?: string } {
+    // If there's no existing open incident, send the notification immediately
+    // (this is a new incident or a previous incident has been closed)
     if (!incident) {
       return { allowSend: true };
     }
 
-    const baseCooldown = 5 * 60 * 1000;
+    // Cool-off logic applies ONLY when sending a notification for an EXISTING open incident.
+    // This prevents notification spam for the same incident while the user hasn't acknowledged it.
+    // Cool-off duration increases if the user has already acknowledged the incident.
+    const baseCooldown = 5 * 60 * 1000; // 5 minutes
     const cooldown = incident.user_acknowledged_at
-      ? baseCooldown * 3
+      ? baseCooldown * 3 // 15 minutes if user has acknowledged
       : baseCooldown;
     const lastSentAt =
       incident.last_notification_sent_at ?? incident.opened_at ?? occurredAt;
