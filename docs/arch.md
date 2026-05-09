@@ -188,7 +188,7 @@ sequenceDiagram
     Broker-->>ESP: Execute command
 ```
 
-#### 3.1) Cross-Flow Bridge Routing
+### 3.1) Cross-Flow Bridge Routing
 
 The runtime also supports routing one flow into one or more other flows:
 
@@ -198,6 +198,77 @@ The runtime also supports routing one flow into one or more other flows:
 - A max internal hop limit is applied to prevent forwarding loops.
 
 Practical effect: one source flow can fan-out the same processed message to multiple target flows, each continuing execution from matching Flow Bridge In nodes.
+
+### 4) Alert Rule Evaluation and Notifications
+
+```mermaid
+sequenceDiagram
+    participant ESP as Device
+    participant Broker as MQTT Broker
+    participant Handler as MqttHandlers
+    participant NS as NotificationsService
+    participant DB as MongoDB
+    participant FCM as Firebase
+    participant Mobile as Mobile App
+
+    ESP->>Broker: Publish sensor readings
+    Broker->>Handler: on publish
+    Handler->>NS: processSensorReading(flowId, nodeId, readings)
+    NS->>DB: Load enabled alert rules for flow
+    NS->>NS: Evaluate rule operators (>, <, between, etc.)
+    NS->>DB: Find existing open incident<br/>(user+flow+device+rule+node+module+readingKey)
+    alt Rule matched && open incident exists
+        NS->>NS: Check cool-off (5 min base, 15 min if acknowledged)
+        alt Within cool-off window
+            NS-->>Handler: Suppressed (cool-off active)
+        else Cool-off expired
+            NS->>DB: Update incident notification count
+            NS->>NS: Build alert notification payload
+            NS->>FCM: Send push to user's active devices
+            FCM-->>NS: Per-token response
+            NS->>DB: Mark dead tokens as inactive
+        end
+    else Rule matched && no open incident
+        NS->>DB: Create new incident
+        NS->>NS: Build alert notification payload
+        NS->>FCM: Send push to user's active devices
+        NS->>DB: Create notification + incident records
+    else Rule not matched && open incident exists
+        NS->>DB: Close incident
+        NS->>NS: Build resolved notification
+        NS->>FCM: Send resolution push
+        NS->>DB: Create resolved notification record
+    end
+
+    Mobile->>NS: POST /v1/notifications/.../handled
+    NS->>DB: Mark notification handled
+    NS->>DB: Auto-mark all other pending notifications<br/>for same incident as handled
+    NS->>DB: Update incident acknowledged timestamp
+```
+
+#### 4.1) Cool-off and Incident Matching
+
+The system prevents notification spam through an **incident-based cool-off** mechanism:
+
+- **Incident Identity**: Defined by the unique combination of `user + flow + device + rule + node + module + reading_key`.
+  - When a rule fires with identical fields, it targets the **same incident**.
+  - If any field differs, it's a **different incident**.
+
+- **Cool-off Timing**:
+  - **Base cool-off**: 5 minutes between notifications for the same open incident.
+  - **Acknowledged cool-off**: 15 minutes if the user has already acknowledged the incident.
+  - When cool-off expires, the next matching rule evaluation immediately sends a notification.
+
+- **When cool-off does NOT apply**:
+  - If the incident was already closed (resolved).
+  - If a different incident opens (different rule/node/module/reading_key).
+  - If this is the first notification for an incident.
+
+#### 4.2) Auto-Handling Related Notifications
+
+When a user handles (acknowledges) one notification for an incident, the system **automatically marks all other pending unhandled notifications for the same incident as handled** with the same timestamp.
+
+This ensures consistency: acknowledging a single alert from an incident resolves all related notifications in that incident.
 
 ### 4) Notification Pipeline (Rules + History + Push)
 

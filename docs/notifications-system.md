@@ -245,25 +245,39 @@ Contract:
 - Mobile app sends `handled` when user opens/interacts with the alert.
 - `handled` also implies `received` if not already set.
 
-Server behavior:
+## Cool-off Logic (Incident-Based)
 
-- If latest alert state is `handled`, backend suppresses sends only during a handled cool-down window (`ALERT_HANDLED_COOLDOWN_MS`).
-- After cool-down expires, the next hazardous reading is treated as a new issue and starts a new alert cycle/history item.
-- If latest alert state is `received` but not `handled`, backend throttles reminder pushes using `ALERT_RECEIVED_REMINDER_MS`.
-- If no receive ack exists, backend keeps normal trigger behavior.
+The notification system applies a **cool-off period** (5 minutes base, 15 minutes if user acknowledged) **only between notifications for the same open incident**.
 
-Handled cool-down override precedence (highest to lowest):
+### How cool-off works:
 
-- `ALERT_HANDLED_COOLDOWN_BY_MODULE_SEVERITY_MS` (`moduleId|severity=ms`)
-- `ALERT_HANDLED_COOLDOWN_BY_MODULE_MS` (`moduleId=ms`)
-- `ALERT_HANDLED_COOLDOWN_BY_SEVERITY_MS` (`severity=ms`)
-- `ALERT_HANDLED_COOLDOWN_MS` (default fallback)
+1. **Same Incident Match**: An incident is identified by the combination of: `user + flow + device + rule + node + module + reading_key`
+   - If a new alert fires for **the same incident** (all these fields match), cool-off applies
+   - If the incident was **closed** or a **different incident** opens, cool-off does **not** apply
 
-Examples:
+2. **Cool-off Timing**:
+   - Base cool-off: **5 minutes** since last notification sent
+   - If user acknowledged: **15 minutes** since last notification sent
+   - After cool-off expires, the next hazardous reading immediately sends a new notification
 
-- `ALERT_HANDLED_COOLDOWN_BY_SEVERITY_MS=critical=900000,warning=1800000,info=3600000`
-- `ALERT_HANDLED_COOLDOWN_BY_MODULE_MS=MQ2-Sensor=600000,PIR-Sensor=1200000`
-- `ALERT_HANDLED_COOLDOWN_BY_MODULE_SEVERITY_MS=MQ2-Sensor|critical=300000`
+3. **Practical Example**:
+   - User receives notification at 10:00 AM for MQ2 gas alert
+   - At 10:03 AM, another hazardous reading is detected → **suppressed** (within 5-min cool-off)
+   - At 10:06 AM, reading returns to normal → incident closes
+   - At 10:07 AM, hazardous reading detected again → **new incident, no cool-off** (different incident)
+
+### Auto-Handling Related Notifications
+
+When the user handles one notification for an incident, **all other pending unhandled notifications for the same incident are automatically marked as handled** with the same timestamp.
+
+This ensures consistency: if the user acknowledges a gas alert through one notification, any other pending gas alert notifications from the same incident are automatically resolved in the system.
+
+## Server behavior (Legacy, kept for reference):
+
+- The backend applies an **incident-based cool-off** (5 minutes base, 15 minutes if acknowledged) between notifications for the **same incident**.
+- After cool-off expires, the next hazardous reading immediately triggers a new notification.
+- If a different incident opens (different rule/node/module/reading_key), cool-off does not apply.
+- If the incident was closed, cool-off does not apply to new incidents.
 
 Response shape for both endpoints:
 
@@ -397,8 +411,11 @@ on app open/resume to backfill alerts that may have been missed while offline.
 - `INTERNAL_ALERTS_API_KEY` (recommended outside local)
 - `ALERT_RULE_COOLDOWN_MS` (optional, default `60000`)
 - `ALERT_RULE_MAX_BACKOFF_MS` (optional, default `900000`)
-- `ALERT_RECEIVED_REMINDER_MS` (optional, default `600000`)
-- `ALERT_HANDLED_COOLDOWN_MS` (optional, default `3600000`)
-- `ALERT_HANDLED_COOLDOWN_BY_SEVERITY_MS` (optional CSV map, example `critical=900000,warning=1800000`)
-- `ALERT_HANDLED_COOLDOWN_BY_MODULE_MS` (optional CSV map, example `MQ2-Sensor=600000`)
-- `ALERT_HANDLED_COOLDOWN_BY_MODULE_SEVERITY_MS` (optional CSV map, example `MQ2-Sensor|critical=300000`)
+
+**Removed Variables** (no longer used):
+
+- `ALERT_RECEIVED_REMINDER_MS` (deprecated)
+- `ALERT_HANDLED_COOLDOWN_MS` (deprecated - cool-off is now incident-based)
+- `ALERT_HANDLED_COOLDOWN_BY_SEVERITY_MS` (deprecated)
+- `ALERT_HANDLED_COOLDOWN_BY_MODULE_MS` (deprecated)
+- `ALERT_HANDLED_COOLDOWN_BY_MODULE_SEVERITY_MS` (deprecated)
