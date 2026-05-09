@@ -9,7 +9,7 @@ export type OwnerResource =
   | 'flow'
   | 'device'
   | 'deviceToken'
-  | 'alertEvent';
+  | 'notification';
 
 type IsOwnerOptions = {
   paramKey?: string;

@@ -22,7 +22,6 @@ import { AlertHistoryQueryDto } from './dto/alert-history-query.dto';
 import { NotificationHistoryQueryDto } from './dto/notification-history-query.dto';
 import { NotificationReceiptsDto } from './dto/notification-receipts.dto';
 import { TriggerAlertDto } from './dto/trigger-alert.dto';
-import { AlertEvent, AlertEventDocument } from './schemas/alert-event.schema';
 import {
   AlertPolicy,
   AlertPolicyDocument,
@@ -192,8 +191,6 @@ const MODULE_READING_KEYS: Record<string, string[]> = {
 const GAS_SENSOR_MODULE_ID = 'MQ2-Sensor';
 const DEFAULT_HISTORY_SINCE_HOURS = 24;
 const MAX_HISTORY_SINCE_HOURS = 720;
-const DEFAULT_RECEIVED_REMINDER_MS = 10 * 60 * 1000;
-const DEFAULT_HANDLED_COOLDOWN_MS = 60 * 60 * 1000;
 
 type BaselinePolicyInput = {
   moduleId: string;
@@ -419,11 +416,6 @@ export class NotificationsService implements OnModuleInit {
   private readonly ruleCooldownMs: number;
   private readonly recentRuleTriggers = new Map<string, number>();
   private readonly gasRuleMaxBackoffMs: number;
-  private readonly receivedReminderMs: number;
-  private readonly handledCooldownMs: number;
-  private readonly handledCooldownByModuleSeverityMs: Map<string, number>;
-  private readonly handledCooldownByModuleMs: Map<string, number>;
-  private readonly handledCooldownBySeverityMs: Map<AlertSeverity, number>;
   private readonly gasRuleBackoffState = new Map<
     string,
     { lastTriggeredAtMs: number; nextDelayMs: number }
@@ -438,8 +430,6 @@ export class NotificationsService implements OnModuleInit {
     private readonly incidentModel: Model<IncidentDocument>,
     @InjectModel(Device.name)
     private readonly deviceModel: Model<DeviceDocument>,
-    @InjectModel(AlertEvent.name)
-    private readonly alertEventModel: Model<AlertEventDocument>,
     @InjectModel(NotificationPreference.name)
     private readonly notificationPreferenceModel: Model<NotificationPreferenceDocument>,
     @InjectModel(AlertPolicy.name)
@@ -457,25 +447,6 @@ export class NotificationsService implements OnModuleInit {
     this.gasRuleMaxBackoffMs = this.readPositiveConfigNumber(
       'ALERT_RULE_MAX_BACKOFF_MS',
       15 * 60000
-    );
-    this.receivedReminderMs = this.readPositiveConfigNumber(
-      'ALERT_RECEIVED_REMINDER_MS',
-      DEFAULT_RECEIVED_REMINDER_MS
-    );
-    this.handledCooldownMs = this.readPositiveConfigNumber(
-      'ALERT_HANDLED_COOLDOWN_MS',
-      DEFAULT_HANDLED_COOLDOWN_MS
-    );
-    this.handledCooldownByModuleSeverityMs = this.readDurationMapConfig(
-      'ALERT_HANDLED_COOLDOWN_BY_MODULE_SEVERITY_MS',
-      (key) => this.normalizeModuleSeverityKey(key)
-    );
-    this.handledCooldownByModuleMs = this.readDurationMapConfig(
-      'ALERT_HANDLED_COOLDOWN_BY_MODULE_MS',
-      (key) => key.trim()
-    );
-    this.handledCooldownBySeverityMs = this.readSeverityDurationMapConfig(
-      'ALERT_HANDLED_COOLDOWN_BY_SEVERITY_MS'
     );
   }
 
@@ -977,19 +948,23 @@ export class NotificationsService implements OnModuleInit {
         : DEFAULT_HISTORY_SINCE_HOURS;
     const fromDate = new Date(Date.now() - sinceHours * 60 * 60 * 1000);
 
-    const filter: FilterQuery<AlertEventDocument> = { flowId };
-    filter.occurredAt = { $gte: fromDate };
+    const filter: FilterQuery<NotificationDocument> = {
+      user_id: userId,
+      type: 'alert',
+      'data.flow_id': flowId,
+      sent_at: { $gte: fromDate },
+    };
     if (query.nodeId?.trim()) {
-      filter.nodeId = query.nodeId.trim();
+      filter['data.node_id'] = query.nodeId.trim();
     }
     if (query.severity) {
       filter.severity = query.severity;
     }
 
-    const cursorClause = await this.buildCursorFilterClause(
+    const cursorClause = await this.buildNotificationCursorFilterClause(
+      userId,
       flowId,
-      query.cursor,
-      filter
+      query.cursor
     );
     if (cursorClause) {
       filter.$and = filter.$and
@@ -997,33 +972,33 @@ export class NotificationsService implements OnModuleInit {
         : [cursorClause];
     }
 
-    const events = await this.alertEventModel
+    const notifications = await this.notificationModel
       .find(filter)
-      .sort({ occurredAt: -1, _id: -1 })
+      .sort({ sent_at: -1, _id: -1 })
       .limit(limit + 1)
       .lean()
       .exec();
 
-    const hasMore = events.length > limit;
-    const selected = hasMore ? events.slice(0, limit) : events;
+    const hasMore = notifications.length > limit;
+    const selected = hasMore ? notifications.slice(0, limit) : notifications;
     const items: AlertHistoryItem[] = selected.map((event) => ({
       id: String(event._id),
-      flowId: event.flowId,
-      ruleId: event.ruleId,
-      nodeId: event.nodeId,
-      moduleId: event.moduleId,
-      readingKey: event.readingKey,
+      flowId: String(event.data?.flow_id ?? ''),
+      ruleId: String(event.data?.rule_id ?? ''),
+      nodeId: String(event.data?.node_id ?? ''),
+      moduleId: String(event.data?.module_id ?? ''),
+      readingKey: String(event.data?.reading_key ?? ''),
       severity: event.severity,
       title: event.title,
       body: event.body,
-      value: event.value ?? 0,
-      operator: event.operator,
-      threshold: event.threshold ?? null,
-      min: event.min ?? null,
-      max: event.max ?? null,
-      occurredAt: event.occurredAt,
-      notificationReceived: Boolean(event.notificationReceived),
-      notificationHandled: Boolean(event.notificationHandled),
+      value: this.parseAlertNumber(event.data?.value),
+      operator: (event.data?.operator as AlertRuleOperator) ?? '>',
+      threshold: this.parseAlertNullableNumber(event.data?.threshold),
+      min: this.parseAlertNullableNumber(event.data?.min),
+      max: this.parseAlertNullableNumber(event.data?.max),
+      occurredAt: this.parseAlertDate(event.data?.timestamp) ?? event.sent_at,
+      notificationReceived: Boolean(event.received_at),
+      notificationHandled: Boolean(event.handled_at),
       createdAt: event.createdAt,
     }));
 
@@ -1133,52 +1108,6 @@ export class NotificationsService implements OnModuleInit {
     return this.mapNotification(
       notification.toObject() as NotificationDocument
     );
-  }
-
-  async markAlertNotificationReceived(
-    userId: string,
-    historyId: string
-  ): Promise<AlertDeliveryState> {
-    const event = await this.getOwnedAlertEventOrThrow(userId, historyId);
-    const now = new Date();
-
-    if (!event.notificationReceived) {
-      event.notificationReceived = true;
-      event.notificationReceivedAt = now;
-    }
-    if (!event.notificationLastSentAt) {
-      event.notificationLastSentAt = event.createdAt ?? now;
-    }
-    if (!event.notificationHandled) {
-      event.notificationNextReminderAt = new Date(
-        (event.notificationLastSentAt ?? now).getTime() +
-          this.receivedReminderMs
-      );
-    }
-
-    await event.save();
-    return this.mapAlertDeliveryState(event);
-  }
-
-  async markAlertNotificationHandled(
-    userId: string,
-    historyId: string
-  ): Promise<AlertDeliveryState> {
-    const event = await this.getOwnedAlertEventOrThrow(userId, historyId);
-    const now = new Date();
-
-    if (!event.notificationReceived) {
-      event.notificationReceived = true;
-      event.notificationReceivedAt = now;
-    }
-    if (!event.notificationHandled) {
-      event.notificationHandled = true;
-      event.notificationHandledAt = now;
-    }
-    event.notificationNextReminderAt = null;
-
-    await event.save();
-    return this.mapAlertDeliveryState(event);
   }
 
   async triggerAlertFromInternal(input: TriggerAlertDto): Promise<{
@@ -1478,7 +1407,7 @@ export class NotificationsService implements OnModuleInit {
   async cleanupFlowNotificationData(flowId: string): Promise<void> {
     await Promise.all([
       this.alertRuleModel.deleteMany({ flowId }).exec(),
-      this.alertEventModel.deleteMany({ flowId }).exec(),
+      this.notificationModel.deleteMany({ 'data.flow_id': flowId }).exec(),
       this.notificationPreferenceModel
         .deleteMany({
           $or: [{ flowId }, { projectId: flowId }],
@@ -1829,243 +1758,46 @@ export class NotificationsService implements OnModuleInit {
     };
   }
 
-  private async getOwnedAlertEventOrThrow(
+  private async getOwnedAlertNotificationOrThrow(
     userId: string,
     historyId: string
-  ): Promise<AlertEventDocument> {
+  ): Promise<NotificationDocument> {
     if (!Types.ObjectId.isValid(historyId)) {
-      throw new NotFoundException('Alert history event not found.');
+      throw new NotFoundException('Alert history notification not found.');
     }
 
-    const event = await this.alertEventModel.findById(historyId).exec();
-    if (!event) {
-      throw new NotFoundException('Alert history event not found.');
+    const notification = await this.notificationModel
+      .findById(historyId)
+      .exec();
+    if (!notification || notification.type !== 'alert') {
+      throw new NotFoundException('Alert history notification not found.');
     }
 
-    const ownerId = await this.getFlowOwnerId(event.flowId);
-    if (!ownerId || ownerId !== userId) {
+    if (notification.user_id !== userId) {
       throw new ForbiddenException(
-        'You are not allowed to update this alert history event.'
+        'You are not allowed to update this alert history notification.'
       );
     }
 
-    return event;
+    return notification;
   }
 
   private mapAlertDeliveryState(
-    event: Pick<
-      AlertEvent,
-      | 'flowId'
-      | 'ruleId'
-      | 'nodeId'
-      | 'notificationReceived'
-      | 'notificationHandled'
-      | 'notificationReceivedAt'
-      | 'notificationHandledAt'
-    > & { _id?: unknown }
+    event: Pick<Notification, 'data' | 'received_at' | 'handled_at'> & {
+      _id?: unknown;
+    }
   ): AlertDeliveryState {
+    const data = event.data ?? {};
     return {
       historyId: this.toObjectIdString(event),
-      flowId: event.flowId,
-      ruleId: event.ruleId,
-      nodeId: event.nodeId,
-      notificationReceived: Boolean(event.notificationReceived),
-      notificationHandled: Boolean(event.notificationHandled),
-      notificationReceivedAt: event.notificationReceivedAt ?? null,
-      notificationHandledAt: event.notificationHandledAt ?? null,
+      flowId: String(data.flow_id ?? ''),
+      ruleId: String(data.rule_id ?? ''),
+      nodeId: String(data.node_id ?? ''),
+      notificationReceived: Boolean(event.received_at),
+      notificationHandled: Boolean(event.handled_at),
+      notificationReceivedAt: event.received_at ?? null,
+      notificationHandledAt: event.handled_at ?? null,
     };
-  }
-
-  private async findLatestAlertEventForRule(
-    flowId: string,
-    ruleId: string,
-    nodeId: string,
-    moduleId: string,
-    readingKey: string
-  ): Promise<AlertEventDocument | null> {
-    return this.alertEventModel
-      .findOne({
-        flowId,
-        ruleId,
-        nodeId,
-        moduleId,
-        readingKey,
-      })
-      .sort({ occurredAt: -1, _id: -1 })
-      .exec();
-  }
-
-  private evaluateAlertDeliveryGate(
-    latestEvent: AlertEventDocument | null,
-    occurredAt: Date,
-    context?: { moduleId?: string; severity?: AlertSeverity }
-  ): { allowSend: boolean; inheritReceived: boolean; reason?: string } {
-    if (!latestEvent) {
-      return { allowSend: true, inheritReceived: false };
-    }
-
-    if (latestEvent.notificationHandled) {
-      const cooldownMs = this.resolveHandledCooldownMs(
-        context?.moduleId ?? latestEvent.moduleId,
-        context?.severity ?? latestEvent.severity
-      );
-      const handledAt =
-        latestEvent.notificationHandledAt ??
-        latestEvent.updatedAt ??
-        latestEvent.createdAt ??
-        latestEvent.occurredAt;
-      const elapsedSinceHandledMs = handledAt
-        ? Math.max(0, occurredAt.getTime() - handledAt.getTime())
-        : cooldownMs;
-
-      if (elapsedSinceHandledMs < cooldownMs) {
-        return {
-          allowSend: false,
-          inheritReceived: true,
-          reason:
-            'Alert notification already handled by user and still within handled cooldown window.',
-        };
-      }
-
-      return {
-        allowSend: true,
-        inheritReceived: false,
-      };
-    }
-
-    if (!latestEvent.notificationReceived) {
-      return { allowSend: true, inheritReceived: false };
-    }
-
-    const baseTime =
-      latestEvent.notificationLastSentAt ??
-      latestEvent.updatedAt ??
-      latestEvent.createdAt ??
-      latestEvent.occurredAt;
-
-    if (baseTime) {
-      const elapsedMs = occurredAt.getTime() - baseTime.getTime();
-      if (elapsedMs < this.receivedReminderMs) {
-        return {
-          allowSend: false,
-          inheritReceived: true,
-          reason: 'Reminder throttled after receive acknowledgement.',
-        };
-      }
-    }
-
-    return {
-      allowSend: true,
-      inheritReceived: true,
-    };
-  }
-
-  private resolveHandledCooldownMs(
-    moduleId?: string,
-    severity?: AlertSeverity
-  ): number {
-    const normalizedModuleId = moduleId?.trim() ?? '';
-    const normalizedSeverity = this.normalizeSeverity(severity);
-
-    if (normalizedModuleId && normalizedSeverity) {
-      const key = this.normalizeModuleSeverityKey(
-        `${normalizedModuleId}|${normalizedSeverity}`
-      );
-      const moduleSeverityMs = this.handledCooldownByModuleSeverityMs.get(key);
-      if (moduleSeverityMs) {
-        return moduleSeverityMs;
-      }
-    }
-
-    if (normalizedModuleId) {
-      const moduleMs = this.handledCooldownByModuleMs.get(normalizedModuleId);
-      if (moduleMs) {
-        return moduleMs;
-      }
-    }
-
-    if (normalizedSeverity) {
-      const severityMs =
-        this.handledCooldownBySeverityMs.get(normalizedSeverity);
-      if (severityMs) {
-        return severityMs;
-      }
-    }
-
-    return this.handledCooldownMs;
-  }
-
-  private readDurationMapConfig(
-    name: string,
-    normalizeKey: (key: string) => string
-  ): Map<string, number> {
-    const raw = this.configService.get<string>(name);
-    if (!raw || !raw.trim()) {
-      return new Map<string, number>();
-    }
-
-    const parsed = new Map<string, number>();
-    const entries = raw
-      .split(',')
-      .map((entry) => entry.trim())
-      .filter(Boolean);
-
-    for (const entry of entries) {
-      const separatorIndex = entry.indexOf('=');
-      if (separatorIndex <= 0 || separatorIndex === entry.length - 1) {
-        continue;
-      }
-
-      const key = normalizeKey(entry.slice(0, separatorIndex));
-      const rawValue = entry.slice(separatorIndex + 1).trim();
-      const parsedValue = Number(rawValue);
-
-      if (!key || !Number.isFinite(parsedValue) || parsedValue <= 0) {
-        continue;
-      }
-
-      parsed.set(key, Math.trunc(parsedValue));
-    }
-
-    return parsed;
-  }
-
-  private readSeverityDurationMapConfig(
-    name: string
-  ): Map<AlertSeverity, number> {
-    const rawMap = this.readDurationMapConfig(name, (key) =>
-      this.normalizeSeverity(key)
-    );
-    const result = new Map<AlertSeverity, number>();
-
-    for (const [key, value] of rawMap.entries()) {
-      if (this.isAlertSeverity(key)) {
-        result.set(key, value);
-      }
-    }
-
-    return result;
-  }
-
-  private normalizeModuleSeverityKey(value: string): string {
-    const [rawModuleId, rawSeverity] = value.split('|');
-    const moduleId = rawModuleId?.trim() ?? '';
-    const severity = this.normalizeSeverity(rawSeverity);
-
-    if (!moduleId || !severity) {
-      return '';
-    }
-
-    return `${moduleId}|${severity}`;
-  }
-
-  private normalizeSeverity(value: unknown): AlertSeverity | '' {
-    if (typeof value !== 'string') {
-      return '';
-    }
-
-    const normalized = value.trim().toLowerCase();
-    return this.isAlertSeverity(normalized) ? normalized : '';
   }
 
   private isAlertSeverity(value: string): value is AlertSeverity {
@@ -2864,36 +2596,60 @@ export class NotificationsService implements OnModuleInit {
     return null;
   }
 
-  private async buildCursorFilterClause(
+  private async buildNotificationCursorFilterClause(
+    userId: string,
     flowId: string,
-    cursor: string | undefined,
-    baseFilter: FilterQuery<AlertEventDocument>
-  ): Promise<FilterQuery<AlertEventDocument> | null> {
+    cursor: string | undefined
+  ): Promise<FilterQuery<NotificationDocument> | null> {
     if (!cursor || !Types.ObjectId.isValid(cursor)) {
       return null;
     }
 
     const cursorId = new Types.ObjectId(cursor);
-    const cursorEvent = await this.alertEventModel
+    const cursorNotification = await this.notificationModel
       .findOne({
         _id: cursorId,
-        flowId,
+        user_id: userId,
+        type: 'alert',
+        'data.flow_id': flowId,
       })
-      .select({ occurredAt: 1 })
+      .select({ sent_at: 1 })
       .lean()
       .exec();
-    if (!cursorEvent) {
+    if (!cursorNotification) {
       return null;
     }
 
     return {
       $or: [
-        { occurredAt: { $lt: cursorEvent.occurredAt } },
-        { occurredAt: cursorEvent.occurredAt, _id: { $lt: cursorId } },
+        { sent_at: { $lt: cursorNotification.sent_at } },
+        { sent_at: cursorNotification.sent_at, _id: { $lt: cursorId } },
       ],
-      ...(baseFilter.nodeId ? { nodeId: baseFilter.nodeId } : {}),
-      ...(baseFilter.severity ? { severity: baseFilter.severity } : {}),
     };
+  }
+
+  private parseAlertNumber(value: string | undefined): number {
+    if (!value) {
+      return 0;
+    }
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  private parseAlertNullableNumber(value: string | undefined): number | null {
+    if (value === undefined || value === null || value === '') {
+      return null;
+    }
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  private parseAlertDate(value: string | undefined): Date | null {
+    if (!value) {
+      return null;
+    }
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
 
   private extractPushAction(

@@ -3,7 +3,6 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { AuthModule } from 'src/auth/auth.module';
 import { UsersModule } from 'src/users/users.module';
 import { Device, DeviceSchema } from 'src/devices/schemas/device.schema';
-import { AlertEvent, AlertEventSchema } from './schemas/alert-event.schema';
 import { AlertPolicy, AlertPolicySchema } from './schemas/alert-policy.schema';
 import { AlertRule, AlertRuleSchema } from './schemas/alert-rule.schema';
 import { Flow, FlowSchema } from 'src/flows/schemas/flow.schema';
@@ -15,7 +14,6 @@ import {
 import { NotificationsActionsController } from './notifications-actions.controller';
 import { NotificationsInternalController } from './notifications-internal.controller';
 import { NotificationsController } from './notifications.controller';
-import { NotificationsAlertHandshakeController } from './notifications-alert-handshake.controller';
 import { NotificationsReceiptsController } from './notifications-receipts.controller';
 import { ProjectAlertConfigController } from './project-alert-config.controller';
 import { ProjectAlertHistoryController } from './project-alert-history.controller';
@@ -42,7 +40,6 @@ import {
       { name: Notification.name, schema: NotificationSchema },
       { name: Incident.name, schema: IncidentSchema },
       { name: Device.name, schema: DeviceSchema },
-      { name: AlertEvent.name, schema: AlertEventSchema },
       {
         name: NotificationPreference.name,
         schema: NotificationPreferenceSchema,
@@ -56,7 +53,6 @@ import {
     NotificationsController,
     NotificationsActionsController,
     NotificationsReceiptsController,
-    NotificationsAlertHandshakeController,
     NotificationsInternalController,
     ProjectAlertConfigController,
     ProjectAlertHistoryController,
