@@ -110,6 +110,7 @@ export type RuntimeStep = {
   variables?: Record<string, string | number | boolean>;
   channel?: string;
   targetFlowIds?: string[];
+  skip?: boolean;
 };
 
 export type CommandExtraction = {
@@ -972,12 +973,7 @@ export class FlowBuilderService {
     return `${baseName}_${pinNumber ? pinNumber : randomInt(1, 9999)}`;
   }
 
-  buildUiFromNodes(
-    nodes: Node[],
-    edges: RFEdge[],
-    deviceMac?: string,
-    flowId?: string
-  ): UiItem[] {
+  buildUiFromNodes(nodes: Node[], edges: RFEdge[], flowId?: string): UiItem[] {
     if (nodes.length === 0) {
       throw new BadRequestException('Flow must contain at least one node');
     }
@@ -1001,6 +997,7 @@ export class FlowBuilderService {
       if (module.moduleId === 'mqtt-in') {
         uiElements.push({
           moduleId: module.moduleId,
+          nodeId: node.id,
           moduleName: module.name,
           alias: module.alias,
           moduleType: 'input',
@@ -1018,11 +1015,13 @@ export class FlowBuilderService {
           uiElements.push({
             moduleId: module.moduleId,
             moduleName: module.name,
+            nodeId: node.id,
             alias: module.alias,
             pin: pinNumber,
             responseTopic: this.buildOutputTopic(node.id, flowId),
             moduleType: 'output',
             isFloating: !connectedOutputIds.has(node.id),
+            isConnected: connectedOutputIds.has(node.id),
           });
         }
         return;
@@ -1051,6 +1050,7 @@ export class FlowBuilderService {
         }
 
         uiElements.push({
+          nodeId: node.id,
           moduleId: module.moduleId,
           moduleName: module.name,
           alias: module.alias,
@@ -1079,6 +1079,7 @@ export class FlowBuilderService {
           );
         }
         uiElements.push({
+          nodeId: node.id,
           moduleId: module.moduleId,
           moduleName: module.name,
           alias: module.alias,
@@ -1127,6 +1128,7 @@ export class FlowBuilderService {
         uiElements.push({
           moduleId: module.moduleId,
           moduleName: module.name,
+          nodeId: node.id,
           alias: module.alias,
           taskName: this.generateTaskName(module.moduleId, taskPin),
           moduleType: 'input',
@@ -1139,6 +1141,7 @@ export class FlowBuilderService {
       }
 
       uiElements.push({
+        nodeId: node.id,
         moduleId: module.moduleId,
         moduleName: module.name,
         alias: module.alias,
@@ -1308,7 +1311,6 @@ export class FlowBuilderService {
       targetModuleType: this.resolveTargetModuleType(targetModuleId),
       cmd,
       pin,
-      value: '$prev',
       topic: this.buildOutputTopic(targetNode.id, flowId),
     };
   }
@@ -1533,6 +1535,7 @@ export class FlowBuilderService {
         node.data?.moduleId === 'mqtt-in'
           ? this.normalizeMqttChannel(node.data?.variables?.channel)
           : undefined,
+      skip: false,
     };
   }
 

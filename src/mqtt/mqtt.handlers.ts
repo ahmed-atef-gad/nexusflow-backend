@@ -41,6 +41,7 @@ type RuntimeCommand = {
   topic?: string;
   channel?: string;
   targetFlowIds?: string[];
+  skip?: boolean;
 };
 
 type RuntimeMessage = {
@@ -1634,7 +1635,10 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
         continue;
       }
       const firstStep = flow[0] as RuntimeCommand | undefined;
-      if (!firstStep) {
+      if (!firstStep || firstStep.skip) {
+        this.logger.warn(
+          `Skipping runtime path with invalid or skipped first step for flowId=${flowId}`
+        );
         continue;
       }
 

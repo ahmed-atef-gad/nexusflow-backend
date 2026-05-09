@@ -223,7 +223,6 @@ export class FlowsService {
     uiData = this.flowBuilderService.buildUiFromNodes(
       nodesWithDiagnostics,
       edges,
-      undefined,
       createdFlow.id as string
     );
 
@@ -382,7 +381,7 @@ export class FlowsService {
     } as Flow;
   }
 
-  async findFlowById(id: string): Promise<any> {
+  async findFlowById(id: string): Promise<FlowDocument> {
     if (!isValidObjectId(id)) {
       throw new BadRequestException('Invalid id format');
     }
@@ -392,13 +391,23 @@ export class FlowsService {
       throw new NotFoundException(`Flow with ID ${id} not found`);
     }
 
-    return {
-      id: flow.id as string,
-      userId: flow.userId,
-    };
+    return flow;
   }
 
-  async rebuildUiForFlow(flowId: string, deviceMac?: string): Promise<any> {
+  async findFlowOwnerId(flowId: string): Promise<string> {
+    if (!isValidObjectId(flowId)) {
+      throw new BadRequestException('Invalid id format');
+    }
+
+    const flow = await this.flowModel.findById(flowId).select('userId').exec();
+    if (!flow) {
+      throw new NotFoundException(`Flow with ID ${flowId} not found`);
+    }
+
+    return String(flow.userId ?? '');
+  }
+
+  async rebuildUiForFlow(flowId: string): Promise<UiItem[]> {
     if (!isValidObjectId(flowId)) {
       throw new BadRequestException('Invalid id format');
     }
@@ -411,7 +420,6 @@ export class FlowsService {
     const uiData = this.flowBuilderService.buildUiFromNodes(
       flow.nodes ?? [],
       flow.edges ?? [],
-      deviceMac,
       flowId
     );
     await this.uiService.upsertByFlowId(flowId, uiData);
@@ -474,7 +482,6 @@ export class FlowsService {
       uiData = this.flowBuilderService.buildUiFromNodes(
         nodesWithDiagnostics,
         updatedFlow.edges,
-        device?.macAddress,
         id
       );
 
@@ -541,5 +548,25 @@ export class FlowsService {
     await this.setupService.deleteByFlowId(id);
     await this.logicService.deleteByFlowId(id);
     await this.notificationsService.cleanupFlowNotificationData(id);
+  }
+
+  async setLogicPathSkipState(
+    nodeId: string,
+    flowId: string,
+    skip: boolean,
+    userId: string
+  ): Promise<void> {
+    if (!isValidObjectId(flowId)) {
+      throw new BadRequestException('Invalid flowId format');
+    }
+
+    const ownerId = await this.findFlowOwnerId(flowId);
+    if (ownerId !== userId) {
+      throw new NotFoundException(`Flow with ID ${flowId} not found`);
+    }
+
+    await this.logicService.setLogicPathSkipState(nodeId, flowId, skip);
+
+    await this.uiService.updateNodeFloatingState(nodeId, flowId, skip);
   }
 }

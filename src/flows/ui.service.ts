@@ -51,6 +51,17 @@ export class UiService {
     };
   }
 
+  async updateNodeFloatingState(
+    nodeId: string,
+    flowId: string,
+    isFloating: boolean
+  ): Promise<void> {
+    await this.uiModel.updateOne(
+      { flowId, 'uiItems.nodeId': nodeId },
+      { $set: { 'uiItems.$.isFloating': isFloating } }
+    );
+  }
+
   private normalizeMacAddress(macAddress?: string | null): string | undefined {
     if (!macAddress) return undefined;
     const trimmed = macAddress.trim();

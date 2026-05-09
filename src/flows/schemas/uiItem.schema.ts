@@ -10,6 +10,9 @@ export class UiItem {
   @Prop()
   moduleId!: string;
 
+  @Prop()
+  nodeId!: string;
+
   @ApiProperty({
     type: String,
     description: 'Module name associated with this UI item',
@@ -112,6 +115,14 @@ export class UiItem {
   })
   @Prop()
   isFloating?: boolean;
+
+  @ApiProperty({
+    required: false,
+    description:
+      'Indicates if this UI item is connected to at least one input module',
+  })
+  @Prop()
+  isConnected?: boolean;
 }
 
 export const UiItemSchema = SchemaFactory.createForClass(UiItem);
