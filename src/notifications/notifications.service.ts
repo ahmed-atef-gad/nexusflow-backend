@@ -113,17 +113,6 @@ type NotificationHistoryItem = {
   createdAt?: Date;
 };
 
-type AlertDeliveryState = {
-  historyId: string;
-  flowId: string;
-  ruleId: string;
-  nodeId: string;
-  notificationReceived: boolean;
-  notificationHandled: boolean;
-  notificationReceivedAt?: Date | null;
-  notificationHandledAt?: Date | null;
-};
-
 type RuleOutput = {
   id: string;
   flowId: string;
@@ -1778,52 +1767,6 @@ export class NotificationsService implements OnModuleInit {
       pushSent: delivery.successCount > 0,
       suppressed: false,
     };
-  }
-
-  private async getOwnedAlertNotificationOrThrow(
-    userId: string,
-    historyId: string
-  ): Promise<NotificationDocument> {
-    if (!Types.ObjectId.isValid(historyId)) {
-      throw new NotFoundException('Alert history notification not found.');
-    }
-
-    const notification = await this.notificationModel
-      .findById(historyId)
-      .exec();
-    if (!notification || notification.type !== 'alert') {
-      throw new NotFoundException('Alert history notification not found.');
-    }
-
-    if (notification.user_id !== userId) {
-      throw new ForbiddenException(
-        'You are not allowed to update this alert history notification.'
-      );
-    }
-
-    return notification;
-  }
-
-  private mapAlertDeliveryState(
-    event: Pick<Notification, 'data' | 'received_at' | 'handled_at'> & {
-      _id?: unknown;
-    }
-  ): AlertDeliveryState {
-    const data = event.data ?? {};
-    return {
-      historyId: this.toObjectIdString(event),
-      flowId: String(data.flow_id ?? ''),
-      ruleId: String(data.rule_id ?? ''),
-      nodeId: String(data.node_id ?? ''),
-      notificationReceived: Boolean(event.received_at),
-      notificationHandled: Boolean(event.handled_at),
-      notificationReceivedAt: event.received_at ?? null,
-      notificationHandledAt: event.handled_at ?? null,
-    };
-  }
-
-  private isAlertSeverity(value: string): value is AlertSeverity {
-    return ALERT_SEVERITIES.includes(value as AlertSeverity);
   }
 
   private resolveNotificationTtl(severity: AlertSeverity): number {
