@@ -351,20 +351,20 @@ Responsibilities:
   - Attempting to enable notifications without alert rules returns a `400 Bad Request` error
   - `channels` is optional on update; the backend defaults to `['push']` when it is omitted
 - Alert rule CRUD and runtime rule evaluation (`alert_rules`)
-- Alert history persistence with cursor pagination (`alert_events`)
-- Incident lifecycle tracking for active alerts (`incidents`)
-- Notification audit history for every push and resolution event (`notifications`)
+- Alert history persistence with cursor pagination
+- Incident lifecycle tracking (identifies incidents by `user + flow + device + rule + node + module + reading_key`)
+- Notification audit history for every push and resolution event
 - Notification history endpoints for user inbox views and acknowledgments
-- Notification receipt ingestion (`POST /v1/notifications/receipts`) for delivery sync from the mobile app
-- Notification handled tracking (`POST /v1/notifications/:notificationId/handled`) for user acknowledgments
-- Alert notification handshake tracking (`received` / `handled`) for legacy alert-history flows
+- Notification receipt ingestion and handled tracking
+- Alert notification handshake tracking (`received` / `handled`)
 - Alert history defaults to the last 24 hours and supports `since` (hours)
 - Firebase push dispatch uses data-only payloads with severity-based priority, TTL, and incident collapse keys
 - Dead-token cleanup on `UNREGISTERED`
+- **Incident-based cool-off**: Suppresses repeated notifications for **the same incident** (5-minute base, 15 minutes if acknowledged)
+  - Different incidents or closed incidents bypass cool-off
+  - When cool-off expires, next matching alert triggers new notification cycle
+- **Auto-handling**: When user acknowledges one notification for an incident, all pending notifications for that incident are auto-marked as handled
 - MQ2 gas alerts use exponential backoff to reduce repeated spam while condition remains active
-- Received-but-unhandled alerts use reminder throttling (`ALERT_RECEIVED_REMINDER_MS`)
-- Handled alerts are suppressed for a cool-down window then can trigger a new cycle (`ALERT_HANDLED_COOLDOWN_MS`)
-- Handled cool-down can be overridden by module/severity using env maps
 - Internal alert trigger endpoint for backend services
 
 Key files:
@@ -491,7 +491,7 @@ MQTT_LOGIC_CACHE_MAX_ENTRIES=1000
 MQTT_LOGIC_CACHE_SWEEP_INTERVAL_MS=30000
 ```
 
-### Notifications / FCM
+### Notifications / FCM & Alert Rules
 
 ```env
 FIREBASE_PROJECT_ID=
@@ -500,12 +500,20 @@ FIREBASE_PRIVATE_KEY=
 INTERNAL_ALERTS_API_KEY=
 ALERT_RULE_COOLDOWN_MS=60000
 ALERT_RULE_MAX_BACKOFF_MS=900000
-ALERT_RECEIVED_REMINDER_MS=600000
-ALERT_HANDLED_COOLDOWN_MS=3600000
-ALERT_HANDLED_COOLDOWN_BY_SEVERITY_MS=critical=900000,warning=1800000,info=3600000
-ALERT_HANDLED_COOLDOWN_BY_MODULE_MS=MQ2-Sensor=600000,PIR-Sensor=1200000
-ALERT_HANDLED_COOLDOWN_BY_MODULE_SEVERITY_MS=MQ2-Sensor|critical=300000
 ```
+
+**Alert Rule Cool-off Behavior**:
+
+- `ALERT_RULE_COOLDOWN_MS`: Base cool-off period (default 60 seconds) applied between notifications for the **same incident**.
+  - An incident is identified by: `user + flow + device + rule + node + module + reading_key`
+  - Cool-off is NOT applied if the incident was closed or a different incident opens
+  - If user has acknowledged the incident, cool-off increases to 3x the base (e.g., 180 seconds)
+
+- `ALERT_RULE_MAX_BACKOFF_MS`: Maximum exponential backoff for MQ2 gas sensor (default 15 minutes). Gas sensor alerts use exponential backoff instead of fixed cool-off.
+
+**Auto-Handling Feature**:
+
+- When a user handles (acknowledges) one notification for an incident, all other pending notifications for the **same incident** are automatically marked as handled in the system.
 
 Notes:
 
