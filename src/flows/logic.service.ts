@@ -1,7 +1,9 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
   NotFoundException,
+  forwardRef,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
@@ -19,6 +21,7 @@ import {
   DEFAULT_FUNCTION_NODE_MAX_CODE_LENGTH,
   validateFunctionNodeCode,
 } from './function-node-security.util';
+import { DevicesService } from 'src/devices/devices.service';
 
 const MAX_RUNTIME_FLOW_PATHS = 500;
 const MAX_RUNTIME_STEPS_PER_PATH = 64;
@@ -49,7 +52,9 @@ export class LogicService {
 
   constructor(
     @InjectModel(Logic.name) private logicModel: Model<LogicDocument>,
-    private readonly configService: ConfigService
+    private readonly configService: ConfigService,
+    @Inject(forwardRef(() => DevicesService))
+    private readonly devicesService: DevicesService
   ) {
     this.functionNodeMaxCodeLength = this.readPositiveConfigNumber(
       'FUNCTION_NODE_MAX_CODE_LENGTH',
@@ -120,6 +125,11 @@ export class LogicService {
   }
 
   evictForDevice(deviceMac: string): void {
+    if (!deviceMac) return;
+    if (deviceMac === '*') {
+      this.logicFlowsCache.clear();
+      return;
+    }
     this.logicFlowsCache.delete(this.buildLogicCacheKey(deviceMac));
   }
 
@@ -272,6 +282,7 @@ export class LogicService {
             ? step.variables
             : undefined,
         channel: typeof step.channel === 'string' ? step.channel : undefined,
+        skip: typeof step.skip === 'boolean' ? step.skip : undefined,
       };
     }
 
@@ -522,5 +533,53 @@ export class LogicService {
 
   async deleteByFlowId(flowId: string): Promise<void> {
     await this.logicModel.deleteOne({ flowId }).exec();
+  }
+
+  async setLogicPathSkipState(
+    nodeId: string,
+    flowId: string,
+    skip: boolean
+  ): Promise<void> {
+    const logic = await this.logicModel.findOne({ flowId }).exec();
+    if (!logic) {
+      throw new NotFoundException(`Logic for flow ID ${flowId} not found`);
+    }
+
+    let pathFound = false;
+    for (let i = 0; i < logic.program.flows.length; i++) {
+      const outputNode =
+        logic.program.flows[i][logic.program.flows[i].length - 1];
+      if (
+        outputNode &&
+        outputNode.stepType === 'output' &&
+        outputNode.id === nodeId
+      ) {
+        pathFound = true;
+        logic.program.flows[i][0] = {
+          ...logic.program.flows[i][0],
+          skip,
+        };
+        break;
+      }
+    }
+
+    if (!pathFound) {
+      throw new NotFoundException(
+        `Node ID ${nodeId} not found in logic for flow ID ${flowId}`
+      );
+    } else {
+      logic.markModified('program');
+      await logic.save();
+
+      try {
+        const deviceMac = (await this.devicesService.findByActiveFlowId(flowId))
+          .macAddress;
+        if (deviceMac) {
+          this.evictForDevice(deviceMac);
+        }
+      } catch {
+        //ignore errors from trying to find device by flowId
+      }
+    }
   }
 }

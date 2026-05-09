@@ -30,7 +30,6 @@ import {
 } from './schemas/device-registration-code.schema';
 import { UsersService } from 'src/users/users.service';
 import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
-import { FlowDocument } from 'src/flows/schemas/flow.schema';
 
 @Injectable()
 export class DevicesService {
@@ -376,9 +375,9 @@ export class DevicesService {
   }
 
   async updateDeviceFlow(deviceId: string, flowId: string, userId: string) {
-    let flow: FlowDocument;
+    let ownerId: string;
     try {
-      flow = (await this.flowsService.findFlowById(flowId)) as FlowDocument;
+      ownerId = await this.flowsService.findFlowOwnerId(flowId);
     } catch (error) {
       if (error instanceof NotFoundException) {
         throw new NotFoundException(`Flow with ID ${flowId} not found`);
@@ -387,7 +386,7 @@ export class DevicesService {
     }
 
     // Verify that the flow belongs to the same user who owns the device
-    if (flow.userId.toString() !== userId) {
+    if (ownerId !== userId) {
       throw new UnauthorizedException(
         'Cannot link device to a flow owned by another user'
       );
@@ -419,7 +418,7 @@ export class DevicesService {
       throw new NotFoundException(`Device with ID ${deviceId} not found`);
     }
 
-    await this.flowsService.rebuildUiForFlow(flowId, updatedDevice.macAddress);
+    await this.flowsService.rebuildUiForFlow(flowId);
 
     await this.mqttService.publishDeviceFlowChanged(
       updatedDevice.macAddress,

@@ -256,4 +256,51 @@ export class FlowsController {
 
     return { success: true, message: 'Flow deleted successfully', id };
   }
+
+  @ApiOperation({
+    summary: 'Skip logic path for and output node in a flow',
+    description:
+      'Sets the skip flag for the first step in the logic path originating from the specified output node. This allows users to temporarily disable a logic path without deleting it.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'ID of the flow containing the node to skip',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        nodeId: {
+          type: 'string',
+          description:
+            'ID of the output node whose logic path should be skipped',
+        },
+        skip: {
+          type: 'boolean',
+          description:
+            'Boolean flag to set skip state (true to skip, false to unskip)',
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 200, description: 'Logic path skipped successfully' })
+  @ApiResponse({ status: 404, description: 'Flow or node not found' })
+  @Post(':id/skip-logic')
+  async setLogicPathSkipState(
+    @Param('id') flowId: string,
+    @Body() body: { nodeId: string; skip: boolean },
+    @Request() req: AuthenticatedRequest
+  ): Promise<{ success: boolean; message: string }> {
+    const userId = getUserIdFromRequest(req);
+    await this.flowsService.setLogicPathSkipState(
+      body.nodeId,
+      flowId,
+      body.skip,
+      userId
+    );
+    return {
+      success: true,
+      message: 'Logic path skip state updated successfully',
+    };
+  }
 }
