@@ -55,8 +55,6 @@ import {
 
 type AlertSeverity = 'critical' | 'warning' | 'info';
 
-const ALERT_SEVERITIES: AlertSeverity[] = ['critical', 'warning', 'info'];
-
 type ProcessSensorReadingInput = {
   flowId: string;
   nodeId: string;
