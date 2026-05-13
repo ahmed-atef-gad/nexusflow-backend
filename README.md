@@ -198,6 +198,36 @@ The flow builder converts visual graph nodes into:
 - `ui`: frontend-facing module/topic metadata
 - logic runtime paths from input nodes through optional function nodes to output nodes
 
+### Auto/Manual Mode
+
+Flows support toggling between **automatic** and **manual execution modes** to give users control over path execution:
+
+How it works:
+
+- Each flow has an `autoMode` boolean property (default: `true`)
+- When `autoMode` is **enabled** (true): all input paths execute automatically when input triggers
+- When `autoMode` is **disabled** (false): all input paths are skipped; the device still receives input data but does not execute any logic paths
+- This allows users to **manually control output devices** via the Flow UI page instead of automatic flow execution
+
+Use cases:
+
+- Manual device control during testing or troubleshooting
+- Preventing accidental automatic commands while overriding with manual control
+- Reducing device resource usage when flows are not needed
+
+Frontend integration:
+
+- Toggle switch added to Flow UI page to enable/disable auto mode
+- When disabled, paths have `skip: true` flag in the runtime program
+- MQTT handler checks skip flag and prevents path execution
+
+Implementation:
+
+- `autoMode` property added to Flow schema (`src/flows/schemas/flow.schema.ts`)
+- `skip` property added to RuntimeStep type (`src/flows/flow-builder.service.ts`)
+- Flow builder sets `skip: true` on all input steps when `autoMode` is false
+- MQTT handler checks `skip` flag before executing paths (`src/mqtt/mqtt.handlers.ts`)
+
 ### Flow Bridge (Multi-Flow Routing)
 
 Flow graphs support cross-flow routing through the network modules with stable internal ids:
