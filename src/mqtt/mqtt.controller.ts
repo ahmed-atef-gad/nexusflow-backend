@@ -14,11 +14,16 @@ import { RolesGuard } from '../guards/auth/roles.guard';
 import { Role } from '../users/enums/role.enum';
 import { MqttService } from './mqtt.service';
 import type { NormalizedMqttConnections } from './mqtt.service';
+import { MqttPerformanceService } from './mqtt-performance.service';
+import type { MqttPerformanceSession } from './mqtt-performance.service';
 
 @ApiTags('MQTT')
 @Controller('mqtt')
 export class MqttController {
-  constructor(private readonly mqttService: MqttService) {}
+  constructor(
+    private readonly mqttService: MqttService,
+    private readonly mqttPerformanceService: MqttPerformanceService
+  ) {}
 
   @ApiOperation({
     summary: 'Publish MQTT test message',
@@ -142,5 +147,125 @@ export class MqttController {
   @Get('active-users')
   getActiveUsers(): NormalizedMqttConnections {
     return this.mqttService.getNormalizedActiveConnections();
+  }
+
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Get ESP MQTT performance metrics (Admin)',
+    description:
+      'Returns rolling in-memory latency and runtime logic timing metrics grouped by ESP MQTT session.',
+  })
+  @ApiOkResponse({
+    description: 'ESP MQTT performance metrics fetched successfully',
+    schema: {
+      example: {
+        activeSessions: [
+          {
+            sessionId: 'AA:BB:CC:DD:EE:FF:1778736712000',
+            clientId: 'AA:BB:CC:DD:EE:FF',
+            deviceMac: 'AA:BB:CC:DD:EE:FF',
+            active: true,
+            messages: {
+              received: 120,
+              withPublishedAt: 118,
+              latency: {
+                count: 118,
+                avgMs: 32.41,
+                minMs: 12.2,
+                maxMs: 91.8,
+                p95Ms: 70.5,
+                lastMs: 29.3,
+              },
+            },
+            logic: {
+              pipelineRuns: 120,
+              matchedPaths: 120,
+              publishedCommands: 85,
+              pipelineDuration: {
+                count: 120,
+                avgMs: 4.25,
+                minMs: 1.01,
+                maxMs: 14.9,
+                p95Ms: 9.8,
+                lastMs: 3.7,
+              },
+              pathDuration: {
+                count: 120,
+                avgMs: 2.9,
+                minMs: 0.8,
+                maxMs: 12.4,
+                p95Ms: 7.1,
+                lastMs: 2.2,
+              },
+            },
+          },
+        ],
+        closedSessions: [],
+      },
+    },
+  })
+  @ApiUnauthorizedResponse({
+    description: 'Unauthorized - Invalid or missing token',
+  })
+  @ApiForbiddenResponse({ description: 'Forbidden - Admin role required' })
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles(Role.Admin)
+  @Get('performance')
+  getPerformance(): {
+    activeSessions: MqttPerformanceSession[];
+    closedSessions: MqttPerformanceSession[];
+  } {
+    return this.mqttPerformanceService.getSnapshot();
+  }
+
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Get one ESP MQTT performance session (Admin)',
+  })
+  @ApiQuery({
+    name: 'sessionId',
+    required: true,
+    description: 'Session ID returned by /mqtt/performance',
+  })
+  @ApiOkResponse({
+    description: 'ESP MQTT performance session fetched successfully',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'Unauthorized - Invalid or missing token',
+  })
+  @ApiForbiddenResponse({ description: 'Forbidden - Admin role required' })
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles(Role.Admin)
+  @Get('performance/session')
+  getPerformanceSession(
+    @Query('sessionId') sessionId: string
+  ): MqttPerformanceSession | null {
+    return this.mqttPerformanceService.getSession(sessionId);
+  }
+
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Get saved ESP MQTT performance sessions (Admin)',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    description: 'Maximum number of saved sessions to return',
+    example: 100,
+  })
+  @ApiOkResponse({
+    description: 'Saved ESP MQTT performance sessions fetched successfully',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'Unauthorized - Invalid or missing token',
+  })
+  @ApiForbiddenResponse({ description: 'Forbidden - Admin role required' })
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles(Role.Admin)
+  @Get('performance/history')
+  getPerformanceHistory(
+    @Query('limit') limit?: string
+  ): Promise<MqttPerformanceSession[]> {
+    return this.mqttPerformanceService.getStoredSessions(Number(limit) || 100);
   }
 }

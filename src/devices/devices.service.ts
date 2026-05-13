@@ -436,6 +436,7 @@ export class DevicesService {
 
     const normalizedMac = this.normalizeMacAddress(device.macAddress);
     const isOnline = this.mqttService.isClientConnected(normalizedMac);
+    const connectedAt = this.mqttService.getClientConnectedAt(normalizedMac);
     const lastSeen = device.lastActiveAt
       ? device.lastActiveAt
       : device.createdAt;
@@ -443,6 +444,7 @@ export class DevicesService {
 
     return {
       deviceId,
+      connectedAt,
       lastSeen,
       status,
     };

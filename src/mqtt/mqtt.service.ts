@@ -18,6 +18,7 @@ type BrokerClient = {
   deviceName?: string;
   ownerId?: string;
   ownerUsername?: string;
+  connectedAt?: Date;
 };
 
 type BrokerClients = Map<string, BrokerClient> | Record<string, BrokerClient>;
@@ -36,6 +37,8 @@ export type ConnectedOwnerDevice = {
   deviceId: string;
   deviceName: string | null;
   macAddress: string;
+  connectedAt: string | null;
+  sessionDurationMs: number | null;
 };
 
 export type NormalizedConnectedUser = {
@@ -196,6 +199,34 @@ export class MqttService {
     return this.getBrokerClientIds().includes(normalizedClientId);
   }
 
+  getClientConnectedAt(clientId: string): Date | null {
+    const normalizedClientId = clientId.trim().toUpperCase();
+    const broker = this.getBroker();
+    if (!broker) return null;
+
+    const { clients } = broker;
+    let client: BrokerClient | undefined;
+
+    if (clients instanceof Map) {
+      Array.from(clients.entries()).forEach(([id, c]) => {
+        if (id.trim().toUpperCase() === normalizedClientId) {
+          client = c;
+        }
+      });
+    } else {
+      Object.entries(clients).forEach(([id, c]) => {
+        if (id.trim().toUpperCase() === normalizedClientId) {
+          client = c;
+        }
+      });
+    }
+
+    if (!client || !client.connectedAt) return null;
+    return client.connectedAt instanceof Date
+      ? client.connectedAt
+      : new Date(client.connectedAt);
+  }
+
   getActiveUserConnections(): ActiveMqttUser[] {
     const activeUsers = this.getBrokerClients()
       .filter((client) => {
@@ -230,6 +261,7 @@ export class MqttService {
     const brokerClients = this.getBrokerClients().filter((client) =>
       Boolean(client?.id)
     );
+    const now = Date.now();
 
     const groupedOwners = new Map<
       string,
@@ -275,10 +307,22 @@ export class MqttService {
         const existing = groupedOwners.get(ownerId);
 
         const resolvedDeviceId = client.deviceId ?? client.deviceMac;
+        const connectedAtMs =
+          client.connectedAt instanceof Date
+            ? client.connectedAt.getTime()
+            : null;
         const deviceEntry: ConnectedOwnerDevice = {
           deviceId: resolvedDeviceId,
           deviceName: client.deviceName ?? null,
           macAddress: client.deviceMac,
+          connectedAt:
+            client.connectedAt instanceof Date
+              ? client.connectedAt.toISOString()
+              : null,
+          sessionDurationMs:
+            connectedAtMs !== null && Number.isFinite(connectedAtMs)
+              ? Math.max(0, now - connectedAtMs)
+              : null,
         };
 
         if (!existing) {
