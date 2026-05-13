@@ -12,7 +12,9 @@ import { MqttService } from './mqtt.service';
 import { LogicService } from '../flows/logic.service';
 import { NotificationsService } from 'src/notifications/notifications.service';
 import * as vm from 'node:vm';
+import { performance } from 'node:perf_hooks';
 import type { PigeonBroker } from '../pigeon-mqtt/pigeon.interface';
+import { MqttPerformanceService } from './mqtt-performance.service';
 
 type RuntimeBroker = PigeonBroker & {
   authenticate?: (
@@ -109,6 +111,13 @@ type InputPayload = {
   digital?: number | boolean;
   analog?: number;
   motion?: number | boolean;
+  publishedAt?: string | number;
+  published_at?: string | number;
+  publishedAtMs?: number;
+  published_at_ms?: number;
+  sentAt?: string | number;
+  sent_at?: string | number;
+  timestamp?: string | number;
   raw?: number;
   percent?: number;
   temperature?: number;
@@ -140,6 +149,7 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     private readonly mqttService: MqttService,
     private readonly notificationsService: NotificationsService,
     private readonly logicService: LogicService,
+    private readonly mqttPerformanceService: MqttPerformanceService,
     private readonly configService: ConfigService
   ) {
     this.functionExecutionTimeoutMs = this.readPositiveConfigNumber(
@@ -439,6 +449,16 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
         client.linkedFlowId = device.activeFlowId?.toString() ?? null;
         client.isEsp = true;
         client.isUserClient = false;
+        client.connectedAt = new Date();
+        await this.mqttPerformanceService.startEspSession({
+          clientId,
+          deviceMac: normalizedClientMac,
+          deviceId,
+          deviceName,
+          ownerId,
+          ownerUsername,
+          flowId: client.linkedFlowId,
+        });
 
         this.logger.log(
           `MQTT auth accepted. clientId=${clientId} type=esp mac=${normalizedClientMac}`
@@ -751,6 +771,7 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       if (this.activeEspSessions.get(normalizedMac) === clientId) {
         this.activeEspSessions.delete(normalizedMac);
       }
+      await this.mqttPerformanceService.endEspSession(normalizedMac, clientId);
       this.logicService.evictForDevice(normalizedMac);
 
       await this.mqttService.publish(`client/${clientId}/online`, {
@@ -961,6 +982,40 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     } catch {
       return null;
     }
+  }
+
+  private extractPublishedAtMs(packet: MqttPacketContext): number | null {
+    const rawPayload = this.extractRawInputPayload(packet);
+    if (!rawPayload) return null;
+
+    const candidate =
+      rawPayload.publishedAtMs ??
+      rawPayload.published_at_ms ??
+      rawPayload.publishedAt ??
+      rawPayload.published_at ??
+      rawPayload.sentAt ??
+      rawPayload.sent_at ??
+      rawPayload.timestamp;
+
+    if (candidate === undefined || candidate === null || candidate === '') {
+      return null;
+    }
+
+    if (typeof candidate === 'number') {
+      if (!Number.isFinite(candidate) || candidate <= 0) return null;
+      return candidate < 1000000000000 ? candidate * 1000 : candidate;
+    }
+
+    const trimmed = candidate.trim();
+    if (!trimmed) return null;
+
+    const numeric = Number(trimmed);
+    if (Number.isFinite(numeric) && numeric > 0) {
+      return numeric < 1000000000000 ? numeric * 1000 : numeric;
+    }
+
+    const parsedDate = Date.parse(trimmed);
+    return Number.isFinite(parsedDate) ? parsedDate : null;
   }
 
   private extractAlertReadings(
@@ -1629,8 +1684,9 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     let matchedSteps = 0;
     let publishedCommands = 0;
     let matchedBridgeNodes = 0;
+    let rawPipelineDurationMs = 0;
 
-    for (const flow of flows) {
+    for (const [pathIndex, flow] of flows.entries()) {
       if (!Array.isArray(flow) || !flow.length) {
         continue;
       }
@@ -1673,6 +1729,19 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       }
 
       matchedSteps++;
+      const pathStartedAt = performance.now();
+      let excludedPathDurationMs = 0;
+      const pathPublishedCommandsBefore = publishedCommands;
+      const runOutsideRawLogicTimer = async <T>(
+        operation: () => Promise<T>
+      ): Promise<T> => {
+        const externalStartedAt = performance.now();
+        try {
+          return await operation();
+        } finally {
+          excludedPathDurationMs += performance.now() - externalStartedAt;
+        }
+      };
       this.logger.debug(
         `Matched runtime path for nodeId=${inputNodeId} with ${flow.length} steps`
       );
@@ -1702,19 +1771,21 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
             const nextMessage = this.executeFunctionStep(step, currentMessage);
             if (nextMessage === null) {
               try {
-                await this.mqttService.publish(
-                  this.buildFunctionDebugTopic(deviceMac, functionNodeId),
-                  {
-                    code: 'FUNCTION_RETURNED_NULL',
-                    severity: 'info',
-                    message:
-                      'Function node returned null/undefined, so this runtime path was stopped.',
-                    flowId,
-                    nodeId: functionNodeId,
-                    moduleId: step.moduleId,
-                    inputTopic: topic,
-                    timestamp: new Date().toISOString(),
-                  }
+                await runOutsideRawLogicTimer(() =>
+                  this.mqttService.publish(
+                    this.buildFunctionDebugTopic(deviceMac, functionNodeId),
+                    {
+                      code: 'FUNCTION_RETURNED_NULL',
+                      severity: 'info',
+                      message:
+                        'Function node returned null/undefined, so this runtime path was stopped.',
+                      flowId,
+                      nodeId: functionNodeId,
+                      moduleId: step.moduleId,
+                      inputTopic: topic,
+                      timestamp: new Date().toISOString(),
+                    }
+                  )
                 );
               } catch (publishError) {
                 this.logger.error(
@@ -1732,17 +1803,19 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
 
             const functionNodeId = String(step.id ?? 'unknown');
             try {
-              await this.mqttService.publish(
-                this.buildFunctionErrorTopic(deviceMac, functionNodeId),
-                {
-                  code: 'FUNCTION_EXECUTION_FAILED',
-                  message: (error as Error).message,
-                  flowId,
-                  nodeId: functionNodeId,
-                  moduleId: step.moduleId,
-                  inputTopic: topic,
-                  timestamp: new Date().toISOString(),
-                }
+              await runOutsideRawLogicTimer(() =>
+                this.mqttService.publish(
+                  this.buildFunctionErrorTopic(deviceMac, functionNodeId),
+                  {
+                    code: 'FUNCTION_EXECUTION_FAILED',
+                    message: (error as Error).message,
+                    flowId,
+                    nodeId: functionNodeId,
+                    moduleId: step.moduleId,
+                    inputTopic: topic,
+                    timestamp: new Date().toISOString(),
+                  }
+                )
               );
             } catch (publishError) {
               this.logger.error(
@@ -1751,18 +1824,20 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
             }
 
             try {
-              await this.mqttService.publish(
-                this.buildFunctionDebugTopic(deviceMac, functionNodeId),
-                {
-                  code: 'FUNCTION_EXECUTION_FAILED',
-                  severity: 'error',
-                  message: (error as Error).message,
-                  flowId,
-                  nodeId: functionNodeId,
-                  moduleId: step.moduleId,
-                  inputTopic: topic,
-                  timestamp: new Date().toISOString(),
-                }
+              await runOutsideRawLogicTimer(() =>
+                this.mqttService.publish(
+                  this.buildFunctionDebugTopic(deviceMac, functionNodeId),
+                  {
+                    code: 'FUNCTION_EXECUTION_FAILED',
+                    severity: 'error',
+                    message: (error as Error).message,
+                    flowId,
+                    nodeId: functionNodeId,
+                    moduleId: step.moduleId,
+                    inputTopic: topic,
+                    timestamp: new Date().toISOString(),
+                  }
+                )
               );
             } catch (publishError) {
               this.logger.error(
@@ -1805,9 +1880,11 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
             } as MqttPacketContext;
 
             try {
-              await this.executeInternalMqttForwardTopic(
-                bridgeTopic,
-                forwardedPacket
+              await runOutsideRawLogicTimer(() =>
+                this.executeInternalMqttForwardTopic(
+                  bridgeTopic,
+                  forwardedPacket
+                )
               );
               publishedCommands++;
             } catch (publishError) {
@@ -1839,14 +1916,16 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
         }
 
         try {
-          await this.mqttService.publish(commandTopic, {
-            command: {
-              cmd: step.cmd,
-              pin: step.pin,
-              value: outputValue,
-              topic: step.topic,
-            },
-          });
+          await runOutsideRawLogicTimer(() =>
+            this.mqttService.publish(commandTopic, {
+              command: {
+                cmd: step.cmd,
+                pin: step.pin,
+                value: outputValue,
+                topic: step.topic,
+              },
+            })
+          );
           publishedCommands++;
 
           this.logger.debug(
@@ -1861,21 +1940,41 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
         }
 
         try {
-          await this.evaluateAlertRulesForOutput({
-            flowId,
-            outputNodeId: String(step.id ?? ''),
-            outputModuleId: String(step.moduleId ?? ''),
-            topic,
-            outputValue,
-            deviceMac: this.normalizeMacAddress(deviceMac),
-            clientId: client?.id?.toString?.() ?? 'unknown',
-          });
+          await runOutsideRawLogicTimer(() =>
+            this.evaluateAlertRulesForOutput({
+              flowId,
+              outputNodeId: String(step.id ?? ''),
+              outputModuleId: String(step.moduleId ?? ''),
+              topic,
+              outputValue,
+              deviceMac: this.normalizeMacAddress(deviceMac),
+              clientId: client?.id?.toString?.() ?? 'unknown',
+            })
+          );
         } catch (error) {
           this.logger.error(
             `Failed to evaluate output alert rules for topic=${topic}: ${(error as Error).message}`
           );
         }
       }
+
+      const rawPathDurationMs = Math.max(
+        0,
+        performance.now() - pathStartedAt - excludedPathDurationMs
+      );
+      rawPipelineDurationMs += rawPathDurationMs;
+
+      this.mqttPerformanceService.recordLogicPath({
+        deviceMac,
+        clientId: client?.id?.toString?.() ?? 'unknown',
+        flowId,
+        inputNodeId,
+        pathIndex,
+        steps: flow.length,
+        durationMs: rawPathDurationMs,
+        publishedCommands: publishedCommands - pathPublishedCommandsBefore,
+        stopped: pathStopped,
+      });
 
       if (pathStopped) {
         continue;
@@ -1913,6 +2012,13 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     this.logger.debug(
       `GPIO logic processing finished. nodeId=${inputNodeId} matchedSteps=${matchedSteps} publishedCommands=${publishedCommands}`
     );
+    this.mqttPerformanceService.recordLogicPipeline({
+      deviceMac,
+      clientId: client?.id?.toString?.() ?? 'unknown',
+      durationMs: rawPipelineDurationMs,
+      matchedPaths: matchedSteps,
+      publishedCommands,
+    });
   }
 
   private async executeGpioLogicForInputTopic(
@@ -2010,6 +2116,16 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     const topic = packet?.topic ?? '';
     const clientId = client?.id?.toString?.() ?? '';
     if (topic) {
+      if (clientId && client?.isEsp && client.deviceMac) {
+        this.mqttPerformanceService.recordInboundMessage({
+          deviceMac: client.deviceMac,
+          clientId,
+          topic,
+          receivedAtMs: Date.now(),
+          publishedAtMs: this.extractPublishedAtMs(packet),
+        });
+      }
+
       if (clientId) {
         this.logger.debug(
           `MQTT message published. clientId=${clientId || 'broker'} topic=${topic}`
