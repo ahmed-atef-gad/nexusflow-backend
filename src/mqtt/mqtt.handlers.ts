@@ -2119,7 +2119,7 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
         clientId &&
         client?.isEsp &&
         client.deviceMac &&
-        this.isInputTopic(topic)
+        (this.isInputTopic(topic) || this.isOutputTopic(topic))
       ) {
         this.mqttPerformanceService.recordInboundMessage({
           deviceMac: client.deviceMac,
@@ -2128,6 +2128,24 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
           receivedAtMs: Date.now(),
           publishedAtMs: this.extractPublishedAtMs(packet),
         });
+      }
+
+      // Detect 'online' message and calibrate clock skew
+      if (
+        clientId &&
+        client?.isEsp &&
+        client.deviceMac &&
+        topic.endsWith('/online')
+      ) {
+        const publishedAt = this.extractPublishedAtMs(packet);
+        if (publishedAt) {
+          this.mqttPerformanceService.calibrateClockSkew({
+            deviceMac: client.deviceMac,
+            clientId,
+            deviceTimeMs: publishedAt,
+            receivedAtMs: Date.now(),
+          });
+        }
       }
 
       if (clientId) {
