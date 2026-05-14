@@ -55,9 +55,10 @@ At startup, the backend:
 3. Enables validated CORS from `CORS_ORIGINS`
 4. Registers a global `ValidationPipe`
 5. Enables cookie parsing
-6. Builds Swagger docs at `/api`
-7. Starts Nest microservices (if any are configured)
-8. Starts the HTTP server
+6. Enables global CSRF protection for unsafe HTTP methods
+7. Builds Swagger docs at `/api`
+8. Starts Nest microservices (if any are configured)
+9. Starts the HTTP server
 
 The backend serves two communication layers:
 
@@ -82,32 +83,51 @@ Token System:
 
 - **Access tokens**: Short-lived (15m default), issued in response body, stored in-memory on frontend, sent via `Authorization: Bearer` header
 - **Refresh tokens**: Long-lived (7d default), stored as HttpOnly cookie, hashed with bcrypt before database storage, rotated on every refresh
+- **CSRF tokens**: Signed double-submit tokens; browser clients read the `XSRF-TOKEN` cookie and send it in the `x-csrf-token` header on unsafe requests
 - **Token versioning**: On logout or password reset, token version increments, invalidating all existing refresh tokens
-- Secrets configured via `JWT_SECRET` (legacy, used for both) or `JWT_REFRESH_SECRET` (optional, separate refresh token signing key)
+- Secrets configured via `JWT_SECRET`, `JWT_REFRESH_SECRET` (optional, separate refresh token signing key), and `CSRF_SECRET` (optional but recommended, falls back to `JWT_SECRET`)
 - Expiration times configurable via `JWT_ACCESS_EXPIRES_IN` and `JWT_REFRESH_EXPIRES_IN` environment variables
 
 ## Client integration notes
 
-- All state-changing requests (POST/PUT/PATCH/DELETE) must send JSON bodies with `Content-Type: application/json`.
 - Include the access token on API requests using the `Authorization: Bearer <token>` header.
-- Use `fetch` with `credentials: 'include'` for the refresh flow to allow the server-set HttpOnly refresh cookie to be sent from browser clients:
+- Before any browser mutation request, call `GET /auth/csrf-token` with credentials enabled. The server sets a readable `XSRF-TOKEN` cookie and also returns the same token as `csrf_token`.
+- All unsafe requests (`POST`, `PUT`, `PATCH`, `DELETE`) must send `x-csrf-token: <token>` where `<token>` matches the signed `XSRF-TOKEN` cookie. The alternate `x-xsrf-token` header is also accepted.
+- Use `fetch` with `credentials: 'include'` when a request must send or receive auth/CSRF cookies, including `/auth/csrf-token` and `/auth/refresh`:
 
 ```js
-// fetch example for refresh
+const csrfResponse = await fetch('/auth/csrf-token', {
+  credentials: 'include',
+});
+const { csrf_token } = await csrfResponse.json();
+
 await fetch('/auth/refresh', {
   method: 'POST',
   credentials: 'include',
-  headers: { 'Content-Type': 'application/json' },
+  headers: {
+    'Content-Type': 'application/json',
+    'x-csrf-token': csrf_token,
+  },
   body: JSON.stringify({}),
 });
 ```
 
 ```js
 // axios example for refresh
+const { data } = await axios.get('/auth/csrf-token', {
+  withCredentials: true,
+});
+
 axios.post(
   '/auth/refresh',
   {},
-  { withCredentials: true, headers: { 'Content-Type': 'application/json' } }
+  {
+    withCredentials: true,
+    headers: {
+      'Content-Type': 'application/json',
+      'x-csrf-token': data.csrf_token,
+    },
+  }
 );
 ```
 
@@ -115,12 +135,14 @@ axios.post(
   - Use an embedded WebView for refresh (so cookies are handled by the engine), or
   - Store refresh tokens securely (Keychain/Keystore) and send them in a JSON body to `/auth/refresh` (this requires a backend change to accept refresh tokens in body).
 
-- If you have file upload endpoints that must accept `multipart/form-data`, request an exception from the backend because the server rejects non-JSON content types for mutations by default.
+- File upload endpoints that use `multipart/form-data`, such as `/firmware/admin/upload`, still need the `x-csrf-token` header when called from browser clients.
 
 Key files:
 
-- [`src/auth/auth.controller.ts`](src/auth/auth.controller.ts): `/auth/login`, `/auth/register`, `/auth/refresh`, `/auth/logout` endpoints
+- [`src/auth/auth.controller.ts`](src/auth/auth.controller.ts): `/auth/csrf-token`, `/auth/login`, `/auth/register`, `/auth/refresh`, `/auth/logout` endpoints
 - [`src/auth/auth.service.ts`](src/auth/auth.service.ts): Token lifecycle, hashing, and rotation logic
+- [`src/security/csrf.middleware.ts`](src/security/csrf.middleware.ts): Global unsafe-method CSRF enforcement
+- [`src/security/csrf.util.ts`](src/security/csrf.util.ts): Signed CSRF token creation, validation, and cookie helpers
 - [`src/guards/auth/auth.guard.ts`](src/guards/auth/auth.guard.ts): Bearer token extraction and validation
 
 ### `users`
@@ -453,6 +475,9 @@ JWT_SECRET=replace-with-a-strong-secret
 # Optional: separate signing key for refresh tokens (falls back to JWT_SECRET if not set)
 JWT_REFRESH_SECRET=replace-with-a-strong-refresh-secret
 
+# Optional but recommended: separate signing key for CSRF tokens (falls back to JWT_SECRET if not set)
+CSRF_SECRET=replace-with-a-strong-csrf-secret
+
 # Token expiration times
 JWT_ACCESS_EXPIRES_IN=15m
 JWT_REFRESH_EXPIRES_IN=7d
@@ -551,9 +576,10 @@ Notes:
 - `CORS_ORIGINS` must contain valid `http` or `https` origins.
 - `JWT_SECRET` should always be explicitly set.
 - `JWT_REFRESH_SECRET` is optional; if omitted, `JWT_SECRET` is used for refresh token signing.
+- `CSRF_SECRET` is optional but recommended; if omitted, `JWT_SECRET` is used to sign CSRF tokens.
 - SMTP can be left unconfigured only if you accept mail delivery failure or use `SMTP_LOG_ONLY=true`.
 - MQTT WebSocket defaults are defined in [`src/mqtt/mqtt.module.ts`](src/mqtt/mqtt.module.ts).
-- In production, `NODE_ENV=production` enables secure cookie flags (`secure=true`, `sameSite=strict`).
+- Auth cookies use `secure=true` and `sameSite=none` so the configured frontend origins can use the refresh/CSRF browser flow over HTTPS.
 
 ## Installation
 
@@ -706,17 +732,16 @@ Current test coverage in the repo includes:
 
 - API auth model: short-lived access tokens are sent via `Authorization: Bearer <access_token>`.
 - Refresh model: refresh tokens remain in HttpOnly `refresh_token` cookies and are rotated on `/auth/refresh`.
-- Mutation requests (`POST`/`PUT`/`PATCH`/`DELETE`) are JSON-only by default. Non-JSON mutation requests return `415 Unsupported Media Type`.
-- Explicit exception: firmware upload endpoint `/firmware/admin/upload` is exempted from JSON-only checks because it requires `multipart/form-data`.
-- CSRF posture: no double-submit CSRF cookie/header flow is required in this model. Protection relies on Bearer headers plus browser CORS preflight for cross-origin JSON mutations.
+- CSRF model: unsafe requests (`POST`/`PUT`/`PATCH`/`DELETE`) must include an `x-csrf-token` header matching the signed `XSRF-TOKEN` cookie. Get or refresh that token through `GET /auth/csrf-token`.
+- The CSRF cookie is readable by browser JavaScript by design; the refresh token cookie remains HttpOnly.
 - Clickjacking: server sets `X-Frame-Options: DENY` using Helmet `frameguard`. CSP is currently disabled by default to keep Swagger behavior stable in development.
 
 Client guidance:
 
-- Web: send `Authorization: Bearer` on protected API calls, and send JSON bodies for all mutations.
-- Browser refresh flow: use credentials for `/auth/refresh` so the HttpOnly cookie is sent automatically.
+- Web: send `Authorization: Bearer` on protected API calls. For every unsafe request, also send `x-csrf-token` and use `credentials: 'include'` when browser cookies are involved.
+- Browser refresh flow: use credentials for `/auth/refresh` so the HttpOnly refresh cookie and readable CSRF cookie are sent automatically.
 - Mobile native: keep access tokens in secure storage (Keychain/Keystore). If using native refresh-token transport (instead of WebView cookie flow), backend support is needed to accept refresh tokens outside cookies.
-- Postman: collection scripts now rely on `accessToken` only for Bearer auth. Old `csrfToken`/`refreshToken` collection-variable flow is removed.
+- Postman: run `Auth / Get CSRF Token` before unsafe requests. The collection stores `csrfToken` and automatically attaches it as `x-csrf-token`.
 
 ## Integration Notes
 

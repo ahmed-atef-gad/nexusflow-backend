@@ -64,7 +64,7 @@ sequenceDiagram
 
 ## API Contract
 
-All user-facing endpoints require `Cookie: jwt=<token>`.
+Authenticated user-facing endpoints require `Authorization: Bearer <access_token>`. Browser clients must also include a valid `x-csrf-token` header on every unsafe request (`POST`, `PUT`, `PATCH`, `DELETE`).
 
 ### 1) Register Device Token
 
@@ -237,7 +237,8 @@ Behavior:
 Notes:
 
 - Both handshake endpoints now require that the authenticated user is the owner of the flow that the `alert_event` belongs to. Requests from authenticated users who are not the flow owner will receive `403 Forbidden`.
-- Authentication: include `Cookie: jwt=<token>` (the backend reads JWT from the `jwt` cookie).
+- Authentication: include `Authorization: Bearer <access_token>`.
+- CSRF: because these are `POST` routes, browser clients must also send `x-csrf-token` matching the signed `XSRF-TOKEN` cookie. Call `GET /auth/csrf-token` before sending notification handshake mutations.
 
 Contract:
 
@@ -315,6 +316,7 @@ Notes:
 - `receipts` is unauthenticated and accepts a batch of notification ids plus an optional `received_at`
 - `handled` is authenticated and marks the notification as handled while acknowledging the underlying incident
 - Every notification payload includes `user_id` so the client can verify ownership after app resume or logout/login transitions
+- Browser clients still need a valid `x-csrf-token` header for both `POST` endpoints, even when the endpoint itself is unauthenticated.
 
 ### 5.2) MQ2 Repeated-Alert Throttling
 
@@ -399,6 +401,7 @@ on app open/resume to backfill alerts that may have been missed while offline.
 ```
 
 - If `deviceId` is provided, backend removes the matching token only for the authenticated user.
+- Browser clients must include a valid `x-csrf-token` header because logout is a `POST` request.
 - Response includes `fcmTokenCleared`:
   - `true` when token record was deleted
   - `false` when no matching token was found or `deviceId` was not provided
@@ -411,6 +414,8 @@ on app open/resume to backfill alerts that may have been missed while offline.
 - `INTERNAL_ALERTS_API_KEY` (recommended outside local)
 - `ALERT_RULE_COOLDOWN_MS` (optional, default `60000`)
 - `ALERT_RULE_MAX_BACKOFF_MS` (optional, default `900000`)
+
+Related global security variable: `CSRF_SECRET` is recommended for signing CSRF tokens and falls back to `JWT_SECRET` if omitted.
 
 **Removed Variables** (no longer used):
 
