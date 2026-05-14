@@ -989,13 +989,12 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     if (!rawPayload) return null;
 
     const candidate =
+      rawPayload.published_at ??
       rawPayload.publishedAtMs ??
       rawPayload.published_at_ms ??
       rawPayload.publishedAt ??
-      rawPayload.published_at ??
       rawPayload.sentAt ??
-      rawPayload.sent_at ??
-      rawPayload.timestamp;
+      rawPayload.sent_at;
 
     if (candidate === undefined || candidate === null || candidate === '') {
       return null;
@@ -2116,7 +2115,12 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     const topic = packet?.topic ?? '';
     const clientId = client?.id?.toString?.() ?? '';
     if (topic) {
-      if (clientId && client?.isEsp && client.deviceMac) {
+      if (
+        clientId &&
+        client?.isEsp &&
+        client.deviceMac &&
+        this.isInputTopic(topic)
+      ) {
         this.mqttPerformanceService.recordInboundMessage({
           deviceMac: client.deviceMac,
           clientId,
