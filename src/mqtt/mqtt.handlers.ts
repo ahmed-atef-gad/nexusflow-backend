@@ -2130,21 +2130,49 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
         });
       }
 
-      // Detect 'online' message and calibrate clock skew
+      // Detect 'online' message and initiate ping-pong calibration
       if (
         clientId &&
         client?.isEsp &&
         client.deviceMac &&
         topic.endsWith('/online')
       ) {
-        const publishedAt = this.extractPublishedAtMs(packet);
-        if (publishedAt) {
-          this.mqttPerformanceService.calibrateClockSkew({
-            deviceMac: client.deviceMac,
-            clientId,
-            deviceTimeMs: publishedAt,
-            receivedAtMs: Date.now(),
+        const syncTopic = `esp/${client.deviceMac}/sync`;
+        const syncPayload = JSON.stringify({
+          serverSentAt: Date.now(),
+        });
+        this.mqttService
+          .publish(syncTopic, syncPayload)
+          .catch((err: unknown) => {
+            this.logger.error(
+              `Failed to send sync request: ${(err as Error).message}`
+            );
           });
+      }
+
+      // Handle 'sync-resp' message
+      if (
+        clientId &&
+        client?.isEsp &&
+        client.deviceMac &&
+        topic.endsWith('/sync-resp')
+      ) {
+        const rawPayload = this.extractRawInputPayload(packet);
+        if (rawPayload && typeof rawPayload.timestamp === 'number') {
+          const deviceTimeMs = rawPayload.timestamp;
+          const serverSentAtMs = (
+            rawPayload as unknown as { serverSentAt?: number }
+          ).serverSentAt;
+
+          if (typeof serverSentAtMs === 'number') {
+            this.mqttPerformanceService.calibrateClockSkew({
+              deviceMac: client.deviceMac,
+              clientId,
+              deviceTimeMs,
+              receivedAtMs: Date.now(),
+              serverSentAtMs,
+            });
+          }
         }
       }
 

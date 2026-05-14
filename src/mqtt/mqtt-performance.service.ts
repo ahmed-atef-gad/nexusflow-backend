@@ -162,20 +162,33 @@ export class MqttPerformanceService {
     clientId: string;
     deviceTimeMs: number;
     receivedAtMs: number;
+    serverSentAtMs?: number;
   }): void {
     const session = this.getActiveSession(params.deviceMac, params.clientId);
     if (!session) return;
 
-    // Skew = DeviceTime - ServerTime (if positive, device is ahead; if negative, server is ahead)
-    // We want correctedLatency = (ServerTime - DeviceTime) + Skew
-    // Actually, simpler: Skew = DeviceTime - (ServerTime - NetworkOneWayDelay)
-    // Since we don't know the delay, we assume ~50ms.
-    // Skew = deviceTimeMs - receivedAtMs
-    const skew = params.deviceTimeMs - params.receivedAtMs;
-    session.clockSkewMs = skew;
-    this.logger.log(
-      `Calibrated clock skew for ${params.deviceMac}: ${skew}ms (Device is ${skew > 0 ? 'ahead' : 'behind'})`
-    );
+    if (params.serverSentAtMs) {
+      // Dynamic RTT Calibration (Ping-Pong)
+      const rtt = params.receivedAtMs - params.serverSentAtMs;
+      const oneWayDelay = Math.max(0, rtt / 2);
+
+      // Device sent its response at deviceTimeMs.
+      // At that exact moment, the Server's clock was roughly: (serverSentAtMs + oneWayDelay)
+      // Skew = DeviceClock - ServerClock
+      const skew = params.deviceTimeMs - (params.serverSentAtMs + oneWayDelay);
+
+      session.clockSkewMs = skew;
+      this.logger.log(
+        `Dynamic calibration for ${params.deviceMac}: RTT=${rtt}ms, OneWay=${oneWayDelay.toFixed(1)}ms, Skew=${skew.toFixed(1)}ms`
+      );
+    } else {
+      // Basic fallback calibration
+      const skew = params.deviceTimeMs - params.receivedAtMs;
+      session.clockSkewMs = skew;
+      this.logger.log(
+        `Basic calibration for ${params.deviceMac}: Skew=${skew}ms`
+      );
+    }
   }
 
   async endEspSession(deviceMac: string, clientId: string): Promise<void> {
