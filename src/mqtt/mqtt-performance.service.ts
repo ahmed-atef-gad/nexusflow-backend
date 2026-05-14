@@ -50,6 +50,7 @@ export type MqttPerformanceSession = {
   connectedAt: string;
   disconnectedAt: string | null;
   active: boolean;
+  clockSkewMs: number;
   messages: {
     received: number;
     withPublishedAt: number;
@@ -133,6 +134,7 @@ export class MqttPerformanceService {
       connectedAt: now.toISOString(),
       disconnectedAt: null,
       active: true,
+      clockSkewMs: 0,
       messages: {
         received: 0,
         withPublishedAt: 0,
@@ -153,6 +155,27 @@ export class MqttPerformanceService {
 
     this.activeSessionsByMac.set(normalizedMac, session);
     return sessionId;
+  }
+
+  calibrateClockSkew(params: {
+    deviceMac: string;
+    clientId: string;
+    deviceTimeMs: number;
+    receivedAtMs: number;
+  }): void {
+    const session = this.getActiveSession(params.deviceMac, params.clientId);
+    if (!session) return;
+
+    // Skew = DeviceTime - ServerTime (if positive, device is ahead; if negative, server is ahead)
+    // We want correctedLatency = (ServerTime - DeviceTime) + Skew
+    // Actually, simpler: Skew = DeviceTime - (ServerTime - NetworkOneWayDelay)
+    // Since we don't know the delay, we assume ~50ms.
+    // Skew = deviceTimeMs - receivedAtMs
+    const skew = params.deviceTimeMs - params.receivedAtMs;
+    session.clockSkewMs = skew;
+    this.logger.log(
+      `Calibrated clock skew for ${params.deviceMac}: ${skew}ms (Device is ${skew > 0 ? 'ahead' : 'behind'})`
+    );
   }
 
   async endEspSession(deviceMac: string, clientId: string): Promise<void> {
@@ -179,8 +202,18 @@ export class MqttPerformanceService {
 
     let latencyMs: number | null = null;
     if (params.publishedAtMs !== null) {
-      latencyMs = params.receivedAtMs - params.publishedAtMs;
-      if (Number.isFinite(latencyMs) && latencyMs >= 0) {
+      // Correct for clock skew: (ServerTime - DeviceTime) - Skew
+      // Wait, if Skew = DeviceTime - ServerTime
+      // then Latency = (ServerReceived - DevicePublished) + Skew
+      // No. Latency = ServerReceived - DevicePublished - (ServerTime_at_DevicePublish - DeviceTime_at_DevicePublish)
+      // Skew = DeviceClock - ServerClock
+      // Corrected = (ServerRecv - DevicePub) + Skew
+      latencyMs =
+        params.receivedAtMs - params.publishedAtMs + session.clockSkewMs;
+
+      // Ensure we don't get negative latency due to jitter
+      if (Number.isFinite(latencyMs)) {
+        latencyMs = Math.max(0, latencyMs);
         session.messages.withPublishedAt += 1;
         this.addTimingSample(session.messages.latency, latencyMs);
       } else {
@@ -287,6 +320,7 @@ export class MqttPerformanceService {
 
     return records.map((record) => {
       const messages = record.messages as MqttPerformanceSession['messages'];
+      const rawRecord = record as unknown as { clockSkewMs?: number };
       return {
         sessionId: record.sessionId,
         clientId: record.clientId,
@@ -301,6 +335,7 @@ export class MqttPerformanceService {
           ? record.disconnectedAt.toISOString()
           : null,
         active: record.active,
+        clockSkewMs: rawRecord.clockSkewMs ?? 0,
         messages: {
           ...messages,
           recentMessages: messages.recentMessages ?? [],
@@ -346,6 +381,7 @@ export class MqttPerformanceService {
                 ? new Date(snapshot.disconnectedAt)
                 : null,
               active: false,
+              clockSkewMs: snapshot.clockSkewMs,
               messages: snapshot.messages,
               logic: snapshot.logic,
             },

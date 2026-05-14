@@ -39,6 +39,9 @@ export class MqttPerformanceSessionRecord {
   @Prop({ type: Boolean, default: false, index: true })
   active!: boolean;
 
+  @Prop({ type: Number, default: 0 })
+  clockSkewMs!: number;
+
   @Prop({ type: Object, required: true })
   messages!: Record<string, unknown>;
 
