@@ -31,6 +31,13 @@ export type MqttLogicPathSample = {
   finishedAt: string;
 };
 
+export type MqttMessageSample = {
+  topic: string;
+  receivedAt: string;
+  publishedAt: string | null;
+  latencyMs: number | null;
+};
+
 export type MqttPerformanceSession = {
   sessionId: string;
   clientId: string;
@@ -49,6 +56,7 @@ export type MqttPerformanceSession = {
     lastTopic: string | null;
     lastReceivedAt: string | null;
     latency: TimingStats;
+    recentMessages: MqttMessageSample[];
   };
   logic: {
     pipelineRuns: number;
@@ -77,6 +85,7 @@ type MutableMqttPerformanceSession = Omit<
 };
 
 const MAX_TIMING_SAMPLES = 200;
+const MAX_RECENT_MESSAGES = 50;
 const MAX_RECENT_PATHS = 50;
 const MAX_CLOSED_SESSIONS = 100;
 
@@ -130,6 +139,7 @@ export class MqttPerformanceService {
         lastTopic: null,
         lastReceivedAt: null,
         latency: this.createTimingStats(),
+        recentMessages: [],
       },
       logic: {
         pipelineRuns: 0,
@@ -164,17 +174,33 @@ export class MqttPerformanceService {
 
     session.messages.received += 1;
     session.messages.lastTopic = params.topic;
-    session.messages.lastReceivedAt = new Date(
-      params.receivedAtMs
-    ).toISOString();
+    const receivedAt = new Date(params.receivedAtMs).toISOString();
+    session.messages.lastReceivedAt = receivedAt;
 
+    let latencyMs: number | null = null;
     if (params.publishedAtMs !== null) {
-      const latencyMs = params.receivedAtMs - params.publishedAtMs;
+      latencyMs = params.receivedAtMs - params.publishedAtMs;
       if (Number.isFinite(latencyMs) && latencyMs >= 0) {
         session.messages.withPublishedAt += 1;
         this.addTimingSample(session.messages.latency, latencyMs);
+      } else {
+        latencyMs = null;
       }
     }
+
+    session.messages.recentMessages.unshift({
+      topic: params.topic,
+      receivedAt,
+      publishedAt:
+        params.publishedAtMs === null
+          ? null
+          : new Date(params.publishedAtMs).toISOString(),
+      latencyMs: latencyMs === null ? null : this.round(latencyMs),
+    });
+    session.messages.recentMessages = session.messages.recentMessages.slice(
+      0,
+      MAX_RECENT_MESSAGES
+    );
   }
 
   recordLogicPipeline(params: {
@@ -259,23 +285,29 @@ export class MqttPerformanceService {
       .lean()
       .exec();
 
-    return records.map((record) => ({
-      sessionId: record.sessionId,
-      clientId: record.clientId,
-      deviceMac: record.deviceMac,
-      deviceId: record.deviceId ?? null,
-      deviceName: record.deviceName ?? null,
-      ownerId: record.ownerId ?? null,
-      ownerUsername: record.ownerUsername ?? null,
-      flowId: record.flowId ?? null,
-      connectedAt: record.connectedAt.toISOString(),
-      disconnectedAt: record.disconnectedAt
-        ? record.disconnectedAt.toISOString()
-        : null,
-      active: record.active,
-      messages: record.messages as MqttPerformanceSession['messages'],
-      logic: record.logic as MqttPerformanceSession['logic'],
-    }));
+    return records.map((record) => {
+      const messages = record.messages as MqttPerformanceSession['messages'];
+      return {
+        sessionId: record.sessionId,
+        clientId: record.clientId,
+        deviceMac: record.deviceMac,
+        deviceId: record.deviceId ?? null,
+        deviceName: record.deviceName ?? null,
+        ownerId: record.ownerId ?? null,
+        ownerUsername: record.ownerUsername ?? null,
+        flowId: record.flowId ?? null,
+        connectedAt: record.connectedAt.toISOString(),
+        disconnectedAt: record.disconnectedAt
+          ? record.disconnectedAt.toISOString()
+          : null,
+        active: record.active,
+        messages: {
+          ...messages,
+          recentMessages: messages.recentMessages ?? [],
+        },
+        logic: record.logic as MqttPerformanceSession['logic'],
+      };
+    });
   }
 
   private async closeSession(
@@ -389,6 +421,7 @@ export class MqttPerformanceService {
       messages: {
         ...session.messages,
         latency: this.toTimingSnapshot(session.messages.latency),
+        recentMessages: [...session.messages.recentMessages],
       },
       logic: {
         ...session.logic,
