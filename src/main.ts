@@ -105,39 +105,13 @@ async function bootstrap() {
   // Use Helmet for common security headers: X-Frame-Options, X-Content-Type-Options,
   // X-XSS-Protection, Referrer-Policy, etc. CSP is disabled here by default to avoid
   // breaking Swagger/UI during development.
-  //app.use(
-  // helmet({
-  //  contentSecurityPolicy: false,
-  //  frameguard: { action: 'deny' }, // Set X-Frame-Options: DENY
-  //  } as never)
-  //  );
+  app.use(
+  helmet({
+   contentSecurityPolicy: false,
+   frameguard: { action: 'deny' }, // Set X-Frame-Options: DENY
+   } as never)
+   );
 
-  // Enforce JSON-only for state-changing requests (POST/PUT/PATCH/DELETE).
-  // This prevents form-based CSRF attacks by rejecting non-JSON content types.
-  // GET, HEAD, and OPTIONS requests bypass this check as they should not have bodies.
-  // File upload endpoints (multipart/form-data) are explicitly exempted.
-  // app.use((req: Request, res: Response, next: NextFunction) => {
-  //   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
-  // return next();
-  //   }
-
-  // Exempt file upload endpoints that require multipart/form-data
-  //  const fileUploadPaths = ['/firmware/admin/upload'];
-  //if (fileUploadPaths.some((path) => req.path.includes(path))) {
-  //  return next();
-  // }
-
-  // const contentType = req.get('content-type');
-  //   if (!contentType?.includes('application/json')) {
-  //  return res.status(415).json({
-  //  statusCode: 415,
-  //   message: 'Unsupported Media Type',
-  //   error: 'Only application/json Content-Type is accepted for mutations',
-  //   });
-  // }
-
-  //   next();
-  // });
 
   const config = new DocumentBuilder()
     .setTitle('NexusFlow API')
