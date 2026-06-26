@@ -129,8 +129,7 @@ const INPUT_TOPIC_PATTERN = /^logic\/input\/([^/]+)$/;
 const SCOPED_INPUT_TOPIC_PATTERN = /^logic\/input\/([^/]+)\/([^/]+)$/;
 const OUTPUT_TOPIC_PATTERN = /^nexusflow\/output\/([^/]+)$/;
 const SCOPED_OUTPUT_TOPIC_PATTERN = /^nexusflow\/output\/([^/]+)\/([^/]+)$/;
-const INTERNAL_MQTT_TOPIC_PATTERN =
-  /^nexusflow\/internal\/([^/]+)\/([^/]+)\/([^/]+)\/([^/]+)\/([^/]+)$/;
+
 const DEFAULT_FUNCTION_NODE_EXECUTION_TIMEOUT_MS = 100;
 const DEFAULT_FUNCTION_NODE_MAX_PAYLOAD_BYTES = 8192;
 const MAX_USER_MQTT_SESSIONS = 5;
@@ -1240,24 +1239,6 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     return normalized || 'default';
   }
 
-  private buildInternalMqttTopic(params: {
-    ownerId: string;
-    sourceDeviceMac: string;
-    sourceFlowId: string;
-    targetFlowId: string;
-    channel: string;
-  }): string {
-    return [
-      'nexusflow',
-      'internal',
-      params.ownerId,
-      this.normalizeMacAddress(params.sourceDeviceMac),
-      params.sourceFlowId,
-      params.targetFlowId,
-      this.normalizeMqttChannel(params.channel),
-    ].join('/');
-  }
-
   private buildMqttInUiTopic(flowId: string, nodeId: string): string {
     return `nexusflow/ui/mqtt-in/${flowId}/${nodeId}`;
   }
@@ -1267,24 +1248,6 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       return `logic/input/${flowId.trim()}/${nodeId}`;
     }
     return `logic/input/${nodeId}`;
-  }
-
-  private parseInternalMqttTopic(topic: string): {
-    ownerId: string;
-    sourceDeviceMac: string;
-    sourceFlowId: string;
-    targetFlowId: string;
-    channel: string;
-  } | null {
-    const match = topic.match(INTERNAL_MQTT_TOPIC_PATTERN);
-    if (!match) return null;
-    return {
-      ownerId: match[1],
-      sourceDeviceMac: this.normalizeMacAddress(match[2]),
-      sourceFlowId: match[3],
-      targetFlowId: match[4],
-      channel: this.normalizeMqttChannel(match[5]),
-    };
   }
 
   private buildForwardPayload(
@@ -1861,15 +1824,8 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
           const channel = this.normalizeMqttChannel(step.channel);
 
           for (const targetFlowId of targetFlowIds) {
-            const bridgeTopic = this.buildInternalMqttTopic({
-              ownerId,
-              sourceDeviceMac: deviceMac,
-              sourceFlowId: flowId,
-              targetFlowId,
-              channel,
-            });
             const forwardedPacket = {
-              topic: bridgeTopic,
+              topic: '',
               payload: Buffer.from(
                 JSON.stringify({
                   ...this.buildForwardPayload(currentMessage),
@@ -1880,15 +1836,19 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
 
             try {
               await runOutsideRawLogicTimer(() =>
-                this.executeInternalMqttForwardTopic(
-                  bridgeTopic,
-                  forwardedPacket
-                )
+                this.executeInternalMqttForward({
+                  ownerId,
+                  sourceDeviceMac: deviceMac,
+                  sourceFlowId: flowId,
+                  targetFlowId,
+                  channel,
+                  packet: forwardedPacket,
+                })
               );
               publishedCommands++;
             } catch (publishError) {
               this.logger.error(
-                `Failed to forward mqtt-out message to ${bridgeTopic}: ${(publishError as Error).message}`
+                `Failed to forward mqtt-out message from flow ${flowId} to flow ${targetFlowId}: ${(publishError as Error).message}`
               );
             }
           }
@@ -2055,56 +2015,65 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  private async executeInternalMqttForwardTopic(
-    topic: string,
-    packet: MqttPacketContext
-  ): Promise<void> {
-    const bridge = this.parseInternalMqttTopic(topic);
-    if (!bridge) return;
+  private async executeInternalMqttForward(params: {
+    ownerId: string;
+    sourceDeviceMac: string;
+    sourceFlowId: string;
+    targetFlowId: string;
+    channel: string;
+    packet: MqttPacketContext;
+  }): Promise<void> {
+    const {
+      ownerId,
+      sourceDeviceMac,
+      sourceFlowId,
+      targetFlowId,
+      channel,
+      packet,
+    } = params;
 
     let targetDeviceMac: string | null = null;
     try {
-      const targetDevice = await this.devicesService.findByActiveFlowId(
-        bridge.targetFlowId
-      );
-      if (targetDevice.ownerId.toString() !== bridge.ownerId) {
+      const targetDevice =
+        await this.devicesService.findByActiveFlowId(targetFlowId);
+      if (targetDevice.ownerId.toString() !== ownerId) {
         this.logger.warn(
-          `Blocked MQTT flow forward across owners. targetFlowId=${bridge.targetFlowId}`
+          `Blocked MQTT flow forward across owners. targetFlowId=${targetFlowId}`
         );
         return;
       }
       targetDeviceMac = targetDevice.macAddress;
     } catch (error) {
       this.logger.warn(
-        `MQTT flow forward skipped. targetFlowId=${bridge.targetFlowId} has no active device: ${(error as Error).message}`
+        `MQTT flow forward skipped. targetFlowId=${targetFlowId} has no active device: ${(error as Error).message}`
       );
       return;
     }
 
     const forwardedClient: MqttClientContext = {
-      id: `internal-forward-${bridge.sourceFlowId}-${bridge.targetFlowId}`,
+      id: `internal-forward-${sourceFlowId}-${targetFlowId}`,
       deviceMac: targetDeviceMac,
-      ownerId: bridge.ownerId,
-      linkedFlowId: bridge.targetFlowId,
+      ownerId: ownerId,
+      linkedFlowId: targetFlowId,
       isEsp: true,
     };
 
     await this.processRuntimeInputAndForwarding({
-      topic: this.buildLogicInputTopic(bridge.channel, bridge.targetFlowId),
-      inputNodeId: bridge.channel,
+      topic: this.buildLogicInputTopic(channel, targetFlowId),
+      inputNodeId: channel,
       packet,
       deviceMac: targetDeviceMac,
       client: forwardedClient,
-      flowId: bridge.targetFlowId,
+      flowId: targetFlowId,
       forwardedBridge: {
-        sourceFlowId: bridge.sourceFlowId,
-        sourceDeviceMac: bridge.sourceDeviceMac,
-        channel: bridge.channel,
+        sourceFlowId,
+        sourceDeviceMac,
+        channel,
       },
     });
 
     this.logger.debug(
-      `Flow Bridge In processing finished. targetFlowId=${bridge.targetFlowId} channel=${bridge.channel}`
+      `Flow Bridge In processing finished. targetFlowId=${targetFlowId} channel=${channel}`
     );
   }
 
