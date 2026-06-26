@@ -41,6 +41,7 @@ const CMD_MAP: Record<string, number> = {
 const SETUP_CMD_BY_MODULE_ID: Record<string, number> = {
   'ESP32-gpio-output-dac': CMD_MAP['SET_DAC'],
   'ESP32-gpio-output-servo': CMD_MAP['SET_UP_SERVO'],
+  'ESP32-gpio-output-pwm': CMD_MAP['ANALOG_WRITE'],
 };
 
 const INPUT_TOPIC_PREFIX = 'logic/input';
@@ -648,9 +649,26 @@ export class FlowBuilderService {
             pin: pinNumber,
             mode: pinMode,
           };
-          // For outputs, set an initial value of 0
-          if (module.moduleId === 'ESP32-gpio-output') {
-            setupItem.value = 0;
+          // For outputs, set an initial value
+          if (
+            module.moduleId === 'ESP32-gpio-output' ||
+            module.moduleId === 'ESP32-gpio-output-led'
+          ) {
+            const initialState = this.toOptionalNumber(
+              module.variables?.initialState
+            );
+            setupItem.value = initialState === 1 ? 1 : 0;
+          } else if (
+            module.moduleId === 'ESP32-gpio-output-pwm' ||
+            module.moduleId === 'ESP32-gpio-output-dac'
+          ) {
+            const initialValue = this.toOptionalNumber(
+              module.variables?.initialValue
+            );
+            setupItem.value = Math.min(
+              255,
+              Math.max(0, Math.trunc(initialValue ?? 0))
+            );
           } else if (module.moduleId === 'ESP32-gpio-output-servo') {
             const initialAngle = this.toOptionalNumber(
               module.variables?.initialAngle
