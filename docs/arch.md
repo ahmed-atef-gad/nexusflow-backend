@@ -14,7 +14,7 @@ graph TD
         direction TB
 
         REST[HTTP API and Swagger]
-        Broker[Embedded MQTT Broker<br/>TCP 8883 + WS 8884]
+        Broker[Embedded Aedes MQTT Broker<br/>TCP or TLS 8883 + WS 8884]
         Guards[AuthGuard + RolesGuard + OwnerGuard + DeviceAuthGuard]
 
         subgraph Modules[Feature Modules]
@@ -27,6 +27,7 @@ graph TD
             Catalog[Modules Catalog]
             Firmware[Firmware OTA]
             Mqtt[Mqtt Service and Handlers]
+            Perf[MQTT Performance Sessions]
             Notifications[Notifications]
         end
     end
@@ -46,6 +47,7 @@ graph TD
     Broker --> Mqtt
     Mqtt --> Devices
     Mqtt --> Flows
+    Mqtt --> Perf
     Mqtt --> Notifications
 ```
 
@@ -62,9 +64,11 @@ graph TD
   - Swagger at `/api`
 - Embedded MQTT broker:
   - configured in `src/mqtt/mqtt.module.ts`
-  - TCP on `8883`
+  - TCP on `8883`; switches to TLS on the same port when valid TLS key/cert material is configured
   - WS on `MQTT_WS_PORT` (default `8884`) and `MQTT_WS_PATH` (default `/mqtt-ws`)
   - optional TLS/WSS cert material from env
+  - Aedes broker is created by `src/pigeon-mqtt/pigeon.provider.ts`
+  - broker auth, topic authorization, publish handling, disconnect handling, and performance hooks are installed by `src/mqtt/mqtt.handlers.ts`
 - Notifications runtime:
   - configured in `src/notifications/notifications.module.ts`
   - Firebase Admin credentials via:
@@ -74,6 +78,189 @@ graph TD
   - optional internal trigger key: `INTERNAL_ALERTS_API_KEY`
   - rule cooldown tuning: `ALERT_RULE_COOLDOWN_MS`
   - gas alert max backoff tuning: `ALERT_RULE_MAX_BACKOFF_MS`
+
+## MQTT Server Internals
+
+```mermaid
+flowchart TD
+    ESP[ESP32 device MQTT client<br/>clientId = MAC address]
+    AppClient[Web or mobile MQTT client<br/>user MQTT credentials]
+    TCP[TCP or TLS listener<br/>port 8883]
+    WS[WebSocket listener<br/>port 8884 path /mqtt-ws]
+
+    subgraph Nest[NexusFlow NestJS process]
+        direction TB
+
+        subgraph Pigeon[Pigeon MQTT module]
+            Provider[Pigeon provider<br/>creates Aedes broker]
+            Broker[Aedes broker<br/>clients + subscriptions + packet routing]
+        end
+
+        subgraph Hooks[MqttHandlers broker hooks]
+            Auth[authenticate]
+            PubAuth[authorizePublish]
+            SubAuth[authorizeSubscribe]
+            ForwardAuth[authorizeForward]
+            Publish[on publish]
+            Disconnect[on clientDisconnect]
+        end
+
+        MqttService[MqttService<br/>server-side publish + active connection views]
+        Perf[MqttPerformanceService<br/>sessions, latency, logic timing]
+        Devices[DevicesService<br/>device credentials, owner, active flow]
+        Users[UsersService<br/>user MQTT credentials]
+        Logic[LogicService<br/>compiled runtime paths + cache]
+        Notify[NotificationsService<br/>alert rules, incidents, push]
+    end
+
+    DB[(MongoDB)]
+    FCM[Firebase Cloud Messaging]
+
+    ESP --> TCP
+    AppClient --> WS
+    TCP --> Broker
+    WS --> Broker
+    Provider --> Broker
+
+    Broker --> Auth
+    Broker --> PubAuth
+    Broker --> SubAuth
+    Broker --> ForwardAuth
+    Broker --> Publish
+    Broker --> Disconnect
+
+    Auth --> Devices
+    Auth --> Users
+    Auth --> Perf
+    PubAuth --> Devices
+    SubAuth --> Devices
+    ForwardAuth --> Devices
+
+    Publish --> Logic
+    Publish --> MqttService
+    Publish --> Notify
+    Publish --> Perf
+    Disconnect --> MqttService
+    Disconnect --> Devices
+    Disconnect --> Logic
+    Disconnect --> Perf
+
+    Devices <--> DB
+    Users <--> DB
+    Logic <--> DB
+    Notify <--> DB
+    Perf <--> DB
+    Notify --> FCM
+```
+
+### MQTT Connection and Authorization
+
+- **ESP clients** identify themselves with a MAC-address `clientId`.
+  - Optional MQTT username must match the MAC address.
+  - Password is checked by `DevicesService.authenticateByMacAndPassword`.
+  - Revoked devices are rejected.
+  - Only one live MQTT session is reserved per device MAC.
+  - The broker client object is enriched with `deviceMac`, `deviceId`, `ownerId`, `ownerUsername`, `linkedFlowId`, and `connectedAt`.
+  - A performance session starts when authentication succeeds.
+
+- **User clients** authenticate with user MQTT username/password.
+  - User account must be active.
+  - A user can have at most 5 active MQTT sessions.
+  - The broker client object is enriched with `userId`, `mqttUsername`, `authorizedDeviceMacs`, and `connectedAt`.
+
+- **Protected topic authorization**:
+  - `/devices/{mac}/...` and `devices/{mac}/...` are scoped to the matching ESP device or to a user who owns that device.
+  - `esp/{mac}/...` is scoped to the matching ESP device or to a user who owns that device.
+  - Wildcard subscriptions on protected topic families are accepted only when the filter still resolves to an authorized MAC.
+  - Other topics are passed through the broker without custom ownership checks.
+
+### MQTT Publish Runtime
+
+```mermaid
+sequenceDiagram
+    participant ESP as ESP32
+    participant Broker as Aedes Broker
+    participant H as MqttHandlers
+    participant Perf as MqttPerformanceService
+    participant Logic as LogicService
+    participant MS as MqttService
+    participant NS as NotificationsService
+    participant Device as Target Device
+
+    ESP->>Broker: PUBLISH logic/input/{flowId}/{nodeId}<br/>or logic/input/{nodeId}
+    Broker->>H: authorizePublish + publish event
+    H->>Perf: recordInboundMessage(topic, receivedAt, publishedAt?)
+    H->>H: Validate scoped flowId against client.linkedFlowId
+    H->>Logic: getLogicFlowsForFlowId(flowId, deviceMac)
+
+    alt node participates in compiled runtime path
+        H->>H: Parse payload into raw readings and normalized byte value
+        loop Each matching runtime path
+            H->>H: Build runtime message
+            opt Function step
+                H->>H: Validate code at runtime and execute in restricted VM
+                alt Function fails or returns null
+                    H->>MS: Publish /devices/{MAC}/logic/error/{nodeId}<br/>and /devices/{MAC}/logic/debug/{nodeId}
+                    H->>Perf: recordLogicPath(stopped=true)
+                end
+            end
+            alt GPIO output step
+                H->>MS: Publish command to esp/{MAC}/cmd
+                Broker-->>Device: Deliver GPIO command
+                H->>NS: Evaluate output alert rules
+            else Flow Bridge Out step
+                H->>H: Resolve target active device by targetFlowId
+                H->>H: Block if target flow owner differs
+                H->>H: Re-enter runtime as logic/input/{targetFlowId}/{channel}
+                opt Matching Flow Bridge In node
+                    H->>MS: Publish nexusflow/ui/mqtt-in/{targetFlowId}/{nodeId}
+                end
+            end
+            H->>Perf: recordLogicPath(duration, publishedCommands)
+        end
+        H->>NS: Evaluate input alert rules
+        H->>Perf: recordLogicPipeline(duration, matchedPaths, publishedCommands)
+    else node is not part of runtime path
+        H->>NS: Evaluate input alert rules only
+    end
+
+    opt ESP publishes nexusflow/output/{flowId}/{nodeId}
+        Broker->>H: publish event
+        H->>Logic: Check whether output node belongs to runtime path
+        alt output node is not runtime-controlled
+            H->>NS: Evaluate output-topic alert rules
+        end
+    end
+
+    opt Flow metadata update
+        MS->>Broker: Publish /devices/{MAC}/flowupdated or flowchanged
+        Broker->>H: publish event
+        H->>Logic: Evict compiled logic cache for device MAC
+    end
+```
+
+### MQTT Operational Topics
+
+- Device flow-cache notifications:
+  - `/devices/{MAC}/flowupdated`
+  - `/devices/{MAC}/flowchanged`
+- Runtime input topics:
+  - `logic/input/{nodeId}` legacy shape
+  - `logic/input/{flowId}/{nodeId}` scoped shape
+- Runtime output observation topics:
+  - `nexusflow/output/{nodeId}` legacy shape
+  - `nexusflow/output/{flowId}/{nodeId}` scoped shape
+- Server command topic:
+  - `esp/{MAC}/cmd`
+- Performance clock sync:
+  - ESP publishes an `.../online` topic
+  - server publishes `esp/{MAC}/sync`
+  - ESP responds on an `.../sync-resp` topic
+- Function-node diagnostics:
+  - `/devices/{MAC}/logic/error/{nodeId}`
+  - `/devices/{MAC}/logic/debug/{nodeId}`
+- Flow Bridge In UI fanout:
+  - `nexusflow/ui/mqtt-in/{flowId}/{nodeId}`
 
 ## Security Model
 
@@ -174,18 +361,25 @@ sequenceDiagram
     participant DB as MongoDB
     participant Broker as MQTT Broker
     participant Handler as MqttHandlers
+    participant Logic as LogicService
+    participant Notify as NotificationsService
     participant ESP as Device
 
     UI->>Flows: Create or update flow graph (nodes + edges)
     Flows->>Builder: Build setup + logic + ui documents
-    Builder->>DB: Persist setup/logic/ui by flowId
+    Builder->>DB: Persist setup, logic, and ui by flowId
+    Flows->>Broker: Publish /devices/{MAC}/flowupdated or flowchanged
+    Broker->>Handler: publish event
+    Handler->>Logic: Evict compiled logic cache for device MAC
 
-    ESP->>Broker: Publish telemetry to logic/input/<nodeId>
-    Broker->>Handler: on publish
-    Handler->>DB: Resolve linked flow logic
+    ESP->>Broker: Publish telemetry to logic/input/{flowId}/{nodeId}
+    Broker->>Handler: authorizePublish + publish event
+    Handler->>Logic: Load compiled runtime paths for active flow
+    Handler->>Handler: Normalize payload and run matching paths
     Handler->>Handler: Optional function-node VM execution
     Handler->>Broker: Publish GPIO command to esp/<MAC>/cmd
     Broker-->>ESP: Execute command
+    Handler->>Notify: Evaluate input/output alert rules
 ```
 
 ### 3.1) Cross-Flow Bridge Routing
@@ -195,7 +389,7 @@ The runtime also supports routing one flow into one or more other flows:
 - `mqtt-out` nodes (UI label: Flow Bridge Out) can publish to multiple `targetFlowIds`.
 - `mqtt-in` nodes (UI label: Flow Bridge In) consume forwarded messages when `channel` matches.
 - Forwarding is owner-scoped; cross-owner routing is blocked.
-- A max internal hop limit is applied to prevent forwarding loops.
+- Bridge loops are blocked by validation: runtime paths cannot start with `mqtt-in` and terminate at `mqtt-out`.
 
 Practical effect: one source flow can fan-out the same processed message to multiple target flows, each continuing execution from matching Flow Bridge In nodes.
 
@@ -270,7 +464,7 @@ When a user handles (acknowledges) one notification for an incident, the system 
 
 This ensures consistency: acknowledging a single alert from an incident resolves all related notifications in that incident.
 
-### 4) Notification Pipeline (Rules + History + Push)
+### 5) Notification Pipeline (Rules + History + Push)
 
 ```mermaid
 sequenceDiagram
