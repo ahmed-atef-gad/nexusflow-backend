@@ -1,5 +1,6 @@
 import {
   Controller,
+  Get,
   Post,
   Body,
   UnauthorizedException,
@@ -18,6 +19,7 @@ import {
   ApiBody,
   ApiCookieAuth,
   ApiCreatedResponse,
+  ApiOkResponse,
   ApiOperation,
   ApiResponse,
   ApiTags,
@@ -25,6 +27,8 @@ import {
 } from '@nestjs/swagger';
 import type { Response, Request } from 'express';
 import { REFRESH_TOKEN_COOKIE } from './utils/auth.util';
+import { CSRF_COOKIE_NAME, CSRF_HEADER_NAME } from '../security/csrf.constants';
+import { clearCsrfCookie, ensureCsrfCookie } from '../security/csrf.util';
 
 type RequestWithCookies = Request & {
   cookies: Record<string, string | undefined>;
@@ -66,6 +70,35 @@ export class AuthController {
       refreshToken,
       this.getRefreshCookieOptions()
     );
+  }
+
+  @Get('csrf-token')
+  @Throttle({ default: { limit: 60, ttl: 60 * 1000 } })
+  @ApiOperation({
+    summary: 'Get CSRF token',
+    description:
+      'Sets a signed CSRF cookie and returns the same token. Send this value in the x-csrf-token header for POST, PUT, PATCH, and DELETE requests.',
+  })
+  @ApiCookieAuth(CSRF_COOKIE_NAME)
+  @ApiOkResponse({
+    description: 'CSRF token issued successfully',
+    schema: {
+      example: {
+        csrf_token: 'nonce.signature',
+        header_name: CSRF_HEADER_NAME,
+        cookie_name: CSRF_COOKIE_NAME,
+      },
+    },
+  })
+  getCsrfToken(
+    @Req() request: RequestWithCookies,
+    @Res({ passthrough: true }) response: Response
+  ) {
+    return {
+      csrf_token: ensureCsrfCookie(request, response),
+      header_name: CSRF_HEADER_NAME,
+      cookie_name: CSRF_COOKIE_NAME,
+    };
   }
 
   /**
@@ -273,6 +306,7 @@ export class AuthController {
   ) {
     const result = await this.authService.resetPassword(resetPasswordDto);
     response.clearCookie(REFRESH_TOKEN_COOKIE, this.getRefreshCookieOptions());
+    clearCsrfCookie(response);
     return result;
   }
 
@@ -308,6 +342,7 @@ export class AuthController {
     const refreshToken = cookies[REFRESH_TOKEN_COOKIE];
     const result = await this.authService.logout(refreshToken, body?.deviceId);
     response.clearCookie(REFRESH_TOKEN_COOKIE, this.getRefreshCookieOptions());
+    clearCsrfCookie(response);
     return {
       message: 'Logged out successfully.',
       fcmTokenCleared: result.fcmTokenCleared,

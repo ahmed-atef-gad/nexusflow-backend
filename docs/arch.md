@@ -61,6 +61,7 @@ graph TD
   - CORS required and validated from `CORS_ORIGINS`
   - global `ValidationPipe`
   - cookie parser
+  - global CSRF middleware for unsafe HTTP methods
   - Swagger at `/api`
 - Embedded MQTT broker:
   - configured in `src/mqtt/mqtt.module.ts`
@@ -267,8 +268,10 @@ sequenceDiagram
 - **User auth** (OAuth 2.0-style token rotation):
   - Access tokens: Short-lived (15m default), sent in `Authorization: Bearer` header, validated by `AuthGuard` (`src/guards/auth/auth.guard.ts`)
   - Refresh tokens: Long-lived (7d default), stored as HttpOnly cookie, hashed with bcrypt before DB storage
+  - CSRF tokens: Signed double-submit token in readable `XSRF-TOKEN` cookie plus `x-csrf-token` request header
   - Token versioning: Invalidates all refresh tokens on logout or password reset
-  - Refresh endpoint (`POST /auth/refresh`) rotates both tokens atomically
+  - CSRF bootstrap endpoint (`GET /auth/csrf-token`) issues or reuses a valid signed CSRF token
+  - Refresh endpoint (`POST /auth/refresh`) rotates both tokens atomically and requires a valid CSRF header/cookie pair
   - Refresh token only sent to `/auth/refresh` endpoint (selective credential sending)
 
 - **Device auth**: Bearer token `tokenId.secret` (`src/guards/device-auth.guard.ts`)
@@ -290,10 +293,11 @@ sequenceDiagram
   - Allowed while unverified: `/auth/*`, `/verification/*`, `/users/profile`
 
   ### Recent security updates
-  - The backend now _enforces JSON-only_ for state-changing requests (POST/PUT/PATCH/DELETE). Requests with a `Content-Type` other than `application/json` will receive `415 Unsupported Media Type` unless an endpoint is explicitly exempted (e.g., file uploads).
-  - We rely on CORS preflight for cross-origin protection: browsers must pass an OPTIONS preflight before sending `application/json` mutation requests from another origin. This, combined with requiring `Authorization: Bearer` headers, blocks form-based CSRF vectors.
+  - The backend now enforces signed double-submit CSRF protection for all unsafe HTTP methods (`POST`, `PUT`, `PATCH`, `DELETE`).
+  - Browser clients call `GET /auth/csrf-token`, then send the returned token or the `XSRF-TOKEN` cookie value in `x-csrf-token` on every unsafe request. The server accepts `x-xsrf-token` as an alternate header.
+  - The CSRF token is signed with `CSRF_SECRET`, falling back to `JWT_SECRET` if `CSRF_SECRET` is not configured.
   - Helmet middleware is enabled at boot (`src/main.ts`) to set common security headers (X-Frame-Options, X-Content-Type-Options, Referrer-Policy, etc.). CSP is disabled by default to avoid breaking Swagger during development but can be enabled in production.
-  - Refresh tokens remain as HttpOnly cookies for browser clients. Native mobile apps should either use an embedded WebView for refresh (cookie semantics) or store refresh tokens securely (Keychain/Keystore) and call `/auth/refresh` with JSON (this requires a backend route change if chosen).
+  - Refresh tokens remain as HttpOnly cookies for browser clients. Native mobile apps should either use an embedded WebView for refresh (cookie semantics) or store refresh tokens securely (Keychain/Keystore) and call `/auth/refresh` with JSON (this requires a backend route change if chosen). Native clients that use this HTTP API directly should still fetch and send CSRF tokens for unsafe methods.
 
 ## Main Domain Flows
 
@@ -307,7 +311,10 @@ sequenceDiagram
     participant Mail as SMTP
     participant DB as MongoDB
 
-    Client->>Auth: POST /auth/register
+    Client->>Auth: GET /auth/csrf-token
+    Auth-->>Client: Set XSRF-TOKEN cookie + csrf_token in body
+
+    Client->>Auth: POST /auth/register + x-csrf-token
     Auth->>DB: Create user (email normalized, password hashed)
     Auth->>Verify: generateOtpForEmail
     Verify->>DB: Save OTP hash + expiry
@@ -319,12 +326,12 @@ sequenceDiagram
     Client->>Auth: Call protected endpoint with Authorization: Bearer access_token
     Auth-->>Client: 401 if access token invalid/expired, 428 if email not verified
 
-    Client->>Verify: POST /verification/verify
+    Client->>Verify: POST /verification/verify + x-csrf-token
     Verify->>DB: Validate OTP, mark email_verified=true
     Verify-->>Client: Email verified
 
     Note over Client,DB: On access token expiry:
-    Client->>Auth: POST /auth/refresh (with refresh_token cookie)
+    Client->>Auth: POST /auth/refresh (refresh_token cookie + x-csrf-token)
     Auth->>DB: Validate refresh token hash + token version
     Auth->>Auth: Issue new access token + refresh token pair
     Auth->>DB: Store new hashed refresh token

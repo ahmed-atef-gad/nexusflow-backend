@@ -8,6 +8,7 @@ mindmap
         CORS from CORS_ORIGINS
         Global ValidationPipe
         Cookie parser
+        CSRF middleware
         Swagger at /api
       src/app.module.ts
         ConfigModule global
@@ -20,6 +21,7 @@ mindmap
           JWT + Passport wiring
           Depends on Users + Verification
         src/auth/auth.controller.ts
+          csrf-token
           register, login, logout
           forgot-password, reset-password
         src/auth/auth.service.ts
@@ -162,6 +164,7 @@ mindmap
         MongoDB with Mongoose schemas per domain
       Security
         JWT cookie auth
+        signed double-submit CSRF token
         Role + ownership authorization
         device token authentication
         Internal alerts key via INTERNAL_ALERTS_API_KEY

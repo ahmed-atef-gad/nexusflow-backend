@@ -8,7 +8,9 @@ import {
 } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
-import type { NextFunction, Request, Response } from 'express';
+import type { Request, Response } from 'express';
+import { csrfProtectionMiddleware } from './security/csrf.middleware';
+import { CSRF_COOKIE_NAME, CSRF_HEADER_NAME } from './security/csrf.constants';
 
 type SwaggerUiOptions = NonNullable<SwaggerCustomOptions['swaggerOptions']>;
 type InferredSwaggerRequest = Parameters<
@@ -24,6 +26,7 @@ type SwaggerRequest = (InferredSwaggerRequest extends object
   url: string;
   method?: string;
   headers?: Record<string, string>;
+  credentials?: RequestCredentials;
 };
 
 type SwaggerResponse = (InferredSwaggerResponse extends object
@@ -102,26 +105,35 @@ async function bootstrap() {
   );
 
   app.use(cookieParser());
+  app.use(csrfProtectionMiddleware);
   // Use Helmet for common security headers: X-Frame-Options, X-Content-Type-Options,
   // X-XSS-Protection, Referrer-Policy, etc. CSP is disabled here by default to avoid
   // breaking Swagger/UI during development.
   app.use(
-  helmet({
-   contentSecurityPolicy: false,
-   frameguard: { action: 'deny' }, // Set X-Frame-Options: DENY
-   } as never)
-   );
-
+    helmet({
+      contentSecurityPolicy: false,
+      frameguard: { action: 'deny' }, // Set X-Frame-Options: DENY
+    } as never)
+  );
 
   const config = new DocumentBuilder()
     .setTitle('NexusFlow API')
     .setDescription(
-      'API documentation for NexusFlow.\n\nSecurity model:\n- All API requests use JSON payloads and Bearer token (Authorization header).\n- POST/PUT/PATCH/DELETE requests trigger CORS preflight (OPTIONS) which protects against CSRF attacks.\n- Refresh tokens are stored as HttpOnly cookies for secure refresh flow, but API operations use Bearer tokens.'
+      'API documentation for NexusFlow.\n\nSecurity model:\n- API operations use Bearer tokens in the Authorization header.\n- Unsafe requests (POST/PUT/PATCH/DELETE) must include an x-csrf-token header that matches the signed XSRF-TOKEN cookie.\n- Refresh tokens are stored as HttpOnly cookies for secure session renewal.'
     )
     .setVersion('1.0')
     .addBearerAuth(
       { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
       'access-token'
+    )
+    .addApiKey(
+      {
+        type: 'apiKey',
+        in: 'header',
+        name: CSRF_HEADER_NAME,
+        description: `Required for unsafe requests. Fetch /auth/csrf-token first and send the token from the ${CSRF_COOKIE_NAME} cookie.`,
+      },
+      'csrf-token'
     )
     .build();
 
@@ -132,6 +144,20 @@ async function bootstrap() {
       persistAuthorization: true,
       requestInterceptor: (request: SwaggerRequest) => {
         const clientWindow = window as ClientWindow;
+        const csrfToken = window.document.cookie
+          .split('; ')
+          .find((value) => value.startsWith('XSRF-TOKEN='))
+          ?.split('=')[1];
+        const method = String(request.method || 'GET').toUpperCase();
+        const unsafeMethods = ['POST', 'PUT', 'PATCH', 'DELETE'];
+
+        request.credentials = 'include';
+        if (csrfToken && unsafeMethods.includes(method)) {
+          request.headers = {
+            ...(request.headers ?? {}),
+            'x-csrf-token': decodeURIComponent(csrfToken),
+          };
+        }
         clientWindow.__lastSwaggerRequest = request;
         return request;
       },
