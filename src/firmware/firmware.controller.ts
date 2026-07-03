@@ -22,6 +22,7 @@ import {
   ApiHeader,
   ApiOperation,
   ApiParam,
+  ApiQuery,
   ApiResponse,
   ApiSecurity,
   ApiTags,
@@ -164,6 +165,64 @@ export class FirmwareController {
   @Delete('admin/:id')
   async deleteFirmware(@Param('id') firmwareId: string) {
     return this.firmwareService.deleteFirmware(firmwareId);
+  }
+
+  @ApiOperation({
+    summary: 'Get firmware deployment history',
+    description:
+      'Returns paginated firmware deployments, sorted by creation date with the newest release first. Admin only: accessible by Admin or Owner.',
+  })
+  @ApiBearerAuth('access-token')
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    description: 'Page number, starts from 1',
+    example: 1,
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    description: 'Items per page, max 100',
+    example: 10,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Firmware deployment history retrieved successfully',
+    schema: {
+      example: {
+        data: [
+          {
+            _id: '507f1f77bcf86cd799439011',
+            version: '1.2.0',
+            originalFileName: 'nexusflow-1.2.0.bin',
+            storedFileName: '1720089600000-nexusflow-1_2_0.bin',
+            checksum:
+              'a3b1c4d5e6f7890123456789abcdef0123456789abcdef0123456789abcdef01',
+            size: 1048576,
+            uploadedBy: '507f1f77bcf86cd799439012',
+            isActive: true,
+            createdAt: '2026-07-04T10:15:00.000Z',
+            updatedAt: '2026-07-04T10:15:00.000Z',
+          },
+        ],
+        total: 1,
+        page: 1,
+        limit: 10,
+        totalPages: 1,
+      },
+    },
+  })
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles(Role.Admin)
+  @Get('admin/history')
+  async getFirmwareHistory(
+    @Query('page') page: string | undefined,
+    @Query('limit') limit: string | undefined
+  ) {
+    return this.firmwareService.getFirmwareHistory({
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
+    });
   }
 
   @ApiOperation({
