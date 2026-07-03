@@ -131,6 +131,45 @@ export class FirmwareService {
     return latestFirmware;
   }
 
+  async getFirmwareHistory(params: {
+    page?: number;
+    limit?: number;
+  }): Promise<{
+    data: FirmwareDocument[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  }> {
+    const parsedPage = Number(params.page);
+    const parsedLimit = Number(params.limit);
+
+    const page = Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1;
+    const limit =
+      Number.isFinite(parsedLimit) && parsedLimit > 0
+        ? Math.min(parsedLimit, 100)
+        : 10;
+    const skip = (page - 1) * limit;
+
+    const [data, total] = await Promise.all([
+      this.firmwareModel
+        .find()
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .exec(),
+      this.firmwareModel.countDocuments().exec(),
+    ]);
+
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: total > 0 ? Math.ceil(total / limit) : 1,
+    };
+  }
+
   async deleteFirmware(firmwareId: string) {
     if (!Types.ObjectId.isValid(firmwareId)) {
       throw new BadRequestException('Invalid firmware ID');

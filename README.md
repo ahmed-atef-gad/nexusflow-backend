@@ -362,6 +362,7 @@ Behavior:
 
 - Accepts `.bin` firmware uploads
 - Stores metadata such as version, checksum, and size
+- Exposes `/firmware/admin/history` for retrieving paginated firmware deployments
 - Exposes `/firmware/device/check` for device-side version checks
 - Exposes `/firmware/device/download` for binary delivery
 
