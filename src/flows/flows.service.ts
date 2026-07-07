@@ -537,6 +537,18 @@ export class FlowsService {
       throw new BadRequestException('Invalid id format');
     }
 
+    try {
+      const linkedDevice = await this.devicesService.findByActiveFlowId(id);
+      await this.devicesService.unlinkDeviceFlow(
+        linkedDevice._id.toString(),
+        userId
+      );
+    } catch (error) {
+      if (!(error instanceof NotFoundException)) {
+        throw error;
+      }
+    }
+
     const flow = await this.flowModel
       .findOneAndDelete({ _id: id, userId: userId })
       .exec();

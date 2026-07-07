@@ -168,7 +168,7 @@ export class MqttService {
 
   async publishDeviceFlowChanged(
     macAddress: string,
-    flowId: string,
+    flowId: string | null,
     updatedAt: Date | string
   ): Promise<unknown> {
     const normalizedMac = macAddress.trim().toUpperCase();

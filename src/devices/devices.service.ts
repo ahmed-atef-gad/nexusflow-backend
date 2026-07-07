@@ -428,6 +428,40 @@ export class DevicesService {
 
     return updatedDevice;
   }
+
+  async unlinkDeviceFlow(deviceId: string, userId: string) {
+    const device = await this.findOne(deviceId);
+
+    if (device.ownerId.toString() !== userId) {
+      throw new UnauthorizedException(
+        'Cannot unlink a device owned by another user'
+      );
+    }
+
+    if (!device.activeFlowId) {
+      return device;
+    }
+
+    const updatedDevice = await this.deviceModel
+      .findByIdAndUpdate(
+        device._id,
+        { $unset: { activeFlowId: 1 } },
+        { new: true }
+      )
+      .exec();
+
+    if (!updatedDevice) {
+      throw new NotFoundException(`Device with ID ${deviceId} not found`);
+    }
+
+    await this.mqttService.publishDeviceFlowChanged(
+      updatedDevice.macAddress,
+      null,
+      updatedDevice.updatedAt ?? new Date()
+    );
+
+    return updatedDevice;
+  }
   async getDeviceStatus(deviceId: string) {
     const device = await this.deviceModel.findById(deviceId).exec();
     if (!device) {
