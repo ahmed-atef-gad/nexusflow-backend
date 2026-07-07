@@ -138,6 +138,7 @@ export class FlowsService {
       };
 
       delete nextData.warnings;
+      delete nextData.errors;
 
       return {
         ...node,
