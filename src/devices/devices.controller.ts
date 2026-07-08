@@ -327,6 +327,38 @@ export class DevicesController {
     );
   }
 
+  @ApiOperation({ summary: 'Unlink device from its current Flow' })
+  @ApiParam({
+    name: 'id',
+    description: 'MongoDB ID of the device',
+    example: '507f1f77bcf86cd799439011',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Device unlinked from flow successfully',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - User does not own this device',
+  })
+  @ApiResponse({ status: 404, description: 'Device not found' })
+  @Delete(':id/flow')
+  async unlinkFlow(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') deviceId: string
+  ) {
+    const userId = getUserIdFromRequest(req);
+    const device = await this.devicesService.findOne(deviceId);
+    const isOwner = this.hasOwnerRole(req);
+
+    if (!isOwner && device.ownerId.toString() !== userId) {
+      throw new UnauthorizedException('You do not own this device');
+    }
+
+    const effectiveUserId = isOwner ? device.ownerId.toString() : userId;
+    return this.devicesService.unlinkDeviceFlow(deviceId, effectiveUserId);
+  }
+
   /**
    * Check device connection status (Online/Offline)
    */

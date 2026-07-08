@@ -138,6 +138,7 @@ export class FlowsService {
       };
 
       delete nextData.warnings;
+      delete nextData.errors;
 
       return {
         ...node,
@@ -535,6 +536,18 @@ export class FlowsService {
   async delete(id: string, userId: string): Promise<void> {
     if (!isValidObjectId(id)) {
       throw new BadRequestException('Invalid id format');
+    }
+
+    try {
+      const linkedDevice = await this.devicesService.findByActiveFlowId(id);
+      await this.devicesService.unlinkDeviceFlow(
+        linkedDevice._id.toString(),
+        userId
+      );
+    } catch (error) {
+      if (!(error instanceof NotFoundException)) {
+        throw error;
+      }
     }
 
     const flow = await this.flowModel
