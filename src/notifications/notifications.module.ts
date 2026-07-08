@@ -18,6 +18,7 @@ import { NotificationsReceiptsController } from './notifications-receipts.contro
 import { ProjectAlertConfigController } from './project-alert-config.controller';
 import { ProjectAlertHistoryController } from './project-alert-history.controller';
 import { NotificationsService } from './notifications.service';
+import { OwnerGuard } from 'src/guards/auth/owner.guard';
 import { RolesGuard } from 'src/guards/auth/roles.guard';
 import {
   NotificationDeviceToken,
@@ -57,7 +58,7 @@ import {
     ProjectAlertConfigController,
     ProjectAlertHistoryController,
   ],
-  providers: [NotificationsService, RolesGuard],
+  providers: [NotificationsService, RolesGuard, OwnerGuard],
   exports: [MongooseModule, NotificationsService],
 })
 export class NotificationsModule {}
