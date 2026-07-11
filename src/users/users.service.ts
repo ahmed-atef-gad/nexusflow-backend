@@ -1,4 +1,9 @@
-import { HttpException, Injectable, Param } from '@nestjs/common';
+import {
+  ConflictException,
+  HttpException,
+  Injectable,
+  Param,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { User, UserDocument } from './schemas/user.schema';
@@ -13,6 +18,10 @@ import * as crypto from 'crypto';
 @Injectable()
 export class UsersService {
   constructor(@InjectModel(User.name) private userModel: Model<UserDocument>) {}
+
+  private normalizeEmail(email: string): string {
+    return email.trim().toLowerCase();
+  }
 
   private toStrictBoolean(value: unknown, defaultValue = false): boolean {
     if (value === true || value === false) return value;
@@ -179,18 +188,58 @@ export class UsersService {
     if (!isValidId) {
       throw new HttpException('User not found', 404);
     }
-    if (updateUserDto.password) {
+
+    const updatePayload: UpdateUserDto = { ...updateUserDto };
+
+    if (updatePayload.email !== undefined) {
+      updatePayload.email = this.normalizeEmail(updatePayload.email);
+      const existingEmail = await this.userModel
+        .findOne({
+          _id: { $ne: id },
+          email: updatePayload.email,
+          deleted_at: null,
+        })
+        .exec();
+
+      if (existingEmail) {
+        throw new ConflictException('Email already exists');
+      }
+    }
+
+    if (updatePayload.username !== undefined) {
+      updatePayload.username = updatePayload.username.trim();
+      const existingUsername = await this.userModel
+        .findOne({
+          _id: { $ne: id },
+          username: updatePayload.username,
+          deleted_at: null,
+        })
+        .exec();
+
+      if (existingUsername) {
+        throw new ConflictException('Username already exists');
+      }
+    }
+
+    if (updatePayload.password) {
       const saltOrRounds = 10;
-      updateUserDto.password = await bcrypt.hash(
-        updateUserDto.password,
+      updatePayload.password = await bcrypt.hash(
+        updatePayload.password,
         saltOrRounds
       );
     }
-    return this.userModel
-      .findOneAndUpdate({ _id: id, deleted_at: null }, updateUserDto, {
-        new: true,
-      })
-      .exec();
+    try {
+      return await this.userModel
+        .findOneAndUpdate({ _id: id, deleted_at: null }, updatePayload, {
+          new: true,
+        })
+        .exec();
+    } catch (error) {
+      if ((error as { code?: number })?.code === 11000) {
+        throw new ConflictException('Email or username already exists');
+      }
+      throw error;
+    }
   }
   async delete(@Param('id') id: string): Promise<{ deleted: boolean }> {
     const isValidId = Types.ObjectId.isValid(id);
@@ -300,7 +349,7 @@ export class UsersService {
   async markEmailAsVerifiedByEmail(email: string): Promise<boolean> {
     const result = await this.userModel
       .updateOne(
-        { email: email.trim().toLowerCase(), deleted_at: null },
+        { email: this.normalizeEmail(email), deleted_at: null },
         { $set: { email_verified: true } }
       )
       .exec();
@@ -311,7 +360,7 @@ export class UsersService {
     email: string,
     passwordHash: string
   ): Promise<boolean> {
-    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedEmail = this.normalizeEmail(email);
     const result = await this.userModel
       .updateOne(
         { email: normalizedEmail, deleted_at: null },
@@ -322,7 +371,7 @@ export class UsersService {
   }
 
   async incrementTokenVersionByEmail(email: string): Promise<boolean> {
-    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedEmail = this.normalizeEmail(email);
     const result = await this.userModel
       .updateOne(
         { email: normalizedEmail, deleted_at: null },
