@@ -17,6 +17,8 @@ describe('AuthController', () => {
   let controller: AuthController;
   const originalJwtSecret = process.env.JWT_SECRET;
   const originalCorsOrigins = process.env.CORS_ORIGINS;
+  const originalGoogleVerificationRedirectPath =
+    process.env.GOOGLE_VERIFICATION_REDIRECT_PATH;
   let authService: {
     getGoogleAuthorizationUrl: jest.Mock;
     login: jest.Mock;
@@ -58,6 +60,10 @@ describe('AuthController', () => {
   afterEach(() => {
     restoreEnv('JWT_SECRET', originalJwtSecret);
     restoreEnv('CORS_ORIGINS', originalCorsOrigins);
+    restoreEnv(
+      'GOOGLE_VERIFICATION_REDIRECT_PATH',
+      originalGoogleVerificationRedirectPath
+    );
   });
 
   it('should be defined', () => {
@@ -91,6 +97,41 @@ describe('AuthController', () => {
     expect(redirect).toHaveBeenCalledWith(
       expect.stringContaining('verification_required=true')
     );
+  });
+
+  it('redirects Google signups needing OTP to configured verification path', async () => {
+    process.env.GOOGLE_VERIFICATION_REDIRECT_PATH = '/verify-email';
+    const redirect = jest.fn();
+    const cookie = jest.fn();
+    const clearCookie = jest.fn();
+
+    await controller.googleCallback(
+      {
+        user: {
+          _id: 'user-id',
+          email: 'user@example.com',
+          roles: ['user'],
+          username: 'user',
+          requires_email_verification: true,
+        },
+        cookies: {},
+      } as never,
+      {
+        redirect,
+        cookie,
+        clearCookie,
+        locals: {},
+      } as never
+    );
+
+    const redirectUrl = new URL(redirect.mock.calls[0][0]);
+    expect(redirectUrl.origin).toBe('https://app.example.com');
+    expect(redirectUrl.pathname).toBe('/verify-email');
+    expect(redirectUrl.searchParams.get('verification_required')).toBe('true');
+    expect(redirectUrl.searchParams.get('reason')).toBe(
+      'email_verification_required'
+    );
+    expect(redirectUrl.searchParams.get('email')).toBe('user@example.com');
   });
 
   it('sets refresh cookie and redirects Google logins with access and CSRF tokens', async () => {

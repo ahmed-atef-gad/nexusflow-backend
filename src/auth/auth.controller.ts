@@ -106,6 +106,17 @@ export class AuthController {
     url.searchParams.set('csrf_header', CSRF_HEADER_NAME);
   }
 
+  private getGoogleCallbackUrl(frontendUrl: string): URL {
+    return new URL('/auth/google/callback', frontendUrl);
+  }
+
+  private getGoogleVerificationUrl(frontendUrl: string): URL {
+    const path =
+      process.env.GOOGLE_VERIFICATION_REDIRECT_PATH ||
+      '/auth/google/callback';
+    return new URL(path, frontendUrl);
+  }
+
   @Get('csrf-token')
   @Throttle({ default: { limit: 60, ttl: 60 * 1000 } })
   @ApiOperation({
@@ -305,8 +316,9 @@ export class AuthController {
     const csrfToken = this.getCsrfTokenForRedirect(request, response);
 
     if (request.user.requires_email_verification) {
-      const callbackUrl = new URL('/auth/google/callback', frontendUrl);
+      const callbackUrl = this.getGoogleVerificationUrl(frontendUrl);
       callbackUrl.searchParams.set('verification_required', 'true');
+      callbackUrl.searchParams.set('reason', 'email_verification_required');
       callbackUrl.searchParams.set('email', request.user.email);
       this.addCsrfRedirectParams(callbackUrl, csrfToken);
       return response.redirect(callbackUrl.toString());
@@ -316,12 +328,12 @@ export class AuthController {
       const loginResult = await this.authService.login(request.user);
       this.setRefreshCookie(response, loginResult.refresh_token);
 
-      const callbackUrl = new URL('/auth/google/callback', frontendUrl);
+      const callbackUrl = this.getGoogleCallbackUrl(frontendUrl);
       callbackUrl.searchParams.set('token', loginResult.access_token);
       this.addCsrfRedirectParams(callbackUrl, csrfToken);
       return response.redirect(callbackUrl.toString());
     } catch {
-      const errorUrl = new URL('/auth/google/callback', frontendUrl);
+      const errorUrl = this.getGoogleCallbackUrl(frontendUrl);
       errorUrl.searchParams.set('error', 'google_auth_failed');
       return response.redirect(errorUrl.toString());
     }
