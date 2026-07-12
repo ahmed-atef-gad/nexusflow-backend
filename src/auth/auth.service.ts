@@ -30,6 +30,10 @@ interface SessionTokens {
   refresh_token: string;
 }
 
+interface AccessToken {
+  access_token: string;
+}
+
 interface RefreshTokenPayload {
   sub: string;
   email: string;
@@ -91,34 +95,43 @@ export class AuthService {
     return bcrypt.hash(refreshToken, salt);
   }
 
-  private async issueSessionTokens(
+  private async buildTokenPayload(
     user: AuthenticatedUser
-  ): Promise<SessionTokens> {
+  ): Promise<RefreshTokenPayload> {
     const userId = String(user._id);
     const tokenVersion =
       typeof user.token_version === 'number'
         ? user.token_version
         : await this.usersService.getTokenVersionById(userId);
 
-    const payload: RefreshTokenPayload = {
+    return {
       email: user.email,
       sub: userId,
       roles: user.roles,
       username: user.username,
       token_version: tokenVersion ?? 0,
     };
+  }
 
-    const access_token = this.jwtService.sign(payload, {
+  private issueAccessToken(payload: RefreshTokenPayload): string {
+    return this.jwtService.sign(payload, {
       secret: this.getAccessTokenSecret(),
       expiresIn: this.getAccessTokenExpiresIn() as never,
     });
+  }
+
+  private async issueSessionTokens(
+    user: AuthenticatedUser
+  ): Promise<SessionTokens> {
+    const payload = await this.buildTokenPayload(user);
+    const access_token = this.issueAccessToken(payload);
     const refresh_token = this.jwtService.sign(payload, {
       secret: this.getRefreshTokenSecret(),
       expiresIn: this.getRefreshTokenExpiresIn() as never,
     });
 
     await this.usersService.updateRefreshTokenHash(
-      userId,
+      payload.sub,
       await this.hashRefreshToken(refresh_token)
     );
 
@@ -332,7 +345,7 @@ export class AuthService {
     };
   }
 
-  async refresh(refreshToken: string): Promise<SessionTokens> {
+  async refresh(refreshToken: string): Promise<AccessToken> {
     const payload = await this.verifyRefreshToken(refreshToken);
     const authState = await this.usersService.getAuthStateById(payload.sub);
     if (
@@ -352,13 +365,15 @@ export class AuthService {
       throw new UnauthorizedException('Invalid refresh token');
     }
 
-    return this.issueSessionTokens({
-      _id: payload.sub,
-      email: authState.email || payload.email,
-      roles: authState.roles,
-      username: authState.username || payload.username,
-      token_version: authState.tokenVersion,
-    });
+    return {
+      access_token: this.issueAccessToken({
+        sub: payload.sub,
+        email: authState.email || payload.email,
+        roles: authState.roles,
+        username: authState.username || payload.username,
+        token_version: authState.tokenVersion,
+      }),
+    };
   }
 
   async forgotPassword(forgotPasswordDto: ForgotPasswordDto) {
