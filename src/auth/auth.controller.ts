@@ -95,7 +95,9 @@ export class AuthController {
     request: RequestWithCookies,
     response: Response
   ): string {
-    const localToken = response.locals?.[CSRF_RESPONSE_LOCAL_KEY];
+    const localToken = (
+      response.locals as Record<string, unknown> | undefined
+    )?.[CSRF_RESPONSE_LOCAL_KEY];
     return typeof localToken === 'string'
       ? localToken
       : ensureCsrfCookie(request, response);
@@ -108,22 +110,6 @@ export class AuthController {
 
   private getGoogleCallbackUrl(frontendUrl: string): URL {
     return new URL('/auth/google/callback', frontendUrl);
-  }
-
-  private getGoogleVerificationUrl(frontendUrl: string): URL {
-    const path =
-      process.env.GOOGLE_VERIFICATION_REDIRECT_PATH || '/verification';
-    return new URL(path, frontendUrl);
-  }
-
-  private addGoogleVerificationRedirectParams(
-    url: URL,
-    email: string
-  ): void {
-    url.searchParams.set('verification_required', 'true');
-    url.searchParams.set('email', email);
-    url.searchParams.set('userEmail', email);
-    url.searchParams.set('provider', 'google');
   }
 
   @Get('csrf-token')
@@ -327,17 +313,6 @@ export class AuthController {
       const loginResult = await this.authService.login(request.user);
       this.setRefreshCookie(response, loginResult.refresh_token);
       const csrfToken = this.getCsrfTokenForRedirect(request, response);
-
-      if (request.user.requires_email_verification) {
-        const verificationUrl = this.getGoogleVerificationUrl(frontendUrl);
-        verificationUrl.searchParams.set('token', loginResult.access_token);
-        this.addGoogleVerificationRedirectParams(
-          verificationUrl,
-          request.user.email
-        );
-        this.addCsrfRedirectParams(verificationUrl, csrfToken);
-        return response.redirect(verificationUrl.toString());
-      }
 
       const callbackUrl = this.getGoogleCallbackUrl(frontendUrl);
       callbackUrl.searchParams.set('token', loginResult.access_token);

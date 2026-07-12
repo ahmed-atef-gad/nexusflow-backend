@@ -103,9 +103,7 @@ export class AuthService {
   }
 
   private getRefreshTokenRotationGraceMs(): number {
-    const configuredGraceMs = Number(
-      process.env.JWT_REFRESH_ROTATION_GRACE_MS
-    );
+    const configuredGraceMs = Number(process.env.JWT_REFRESH_ROTATION_GRACE_MS);
     if (Number.isFinite(configuredGraceMs) && configuredGraceMs >= 0) {
       return configuredGraceMs;
     }

@@ -328,17 +328,24 @@ describe('AuthService', () => {
       access_token: 'new-access-token',
       refresh_token: 'new-refresh-token',
     });
-    expect(usersService.rotateRefreshTokenState).toHaveBeenCalledWith(
-      'user-id',
-      expect.objectContaining({
-        expectedRefreshTokenJti: 'old-jti',
-        refreshTokenHash: expect.any(String),
-        refreshTokenJti: expect.any(String),
-        previousRefreshTokenHash: expect.any(String),
-        previousRefreshTokenJti: 'old-jti',
-        previousRefreshTokenExpiresAt: expect.any(Date),
-      })
-    );
+    const rotateCall = usersService.rotateRefreshTokenState.mock.calls[0] as [
+      string,
+      {
+        expectedRefreshTokenJti: string;
+        refreshTokenHash: string;
+        refreshTokenJti: string;
+        previousRefreshTokenHash: string;
+        previousRefreshTokenJti: string;
+        previousRefreshTokenExpiresAt: Date;
+      },
+    ];
+    expect(rotateCall[0]).toBe('user-id');
+    expect(rotateCall[1].expectedRefreshTokenJti).toBe('old-jti');
+    expect(typeof rotateCall[1].refreshTokenHash).toBe('string');
+    expect(typeof rotateCall[1].refreshTokenJti).toBe('string');
+    expect(typeof rotateCall[1].previousRefreshTokenHash).toBe('string');
+    expect(rotateCall[1].previousRefreshTokenJti).toBe('old-jti');
+    expect(rotateCall[1].previousRefreshTokenExpiresAt).toBeInstanceOf(Date);
     expect(jwtService.sign).toHaveBeenCalledWith(
       expect.objectContaining({
         sub: 'user-id',
