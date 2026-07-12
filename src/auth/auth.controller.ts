@@ -7,6 +7,7 @@ import {
   Res,
   Req,
   UseGuards,
+  UseFilters,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
@@ -33,6 +34,7 @@ import { CSRF_COOKIE_NAME, CSRF_HEADER_NAME } from '../security/csrf.constants';
 import { clearCsrfCookie, ensureCsrfCookie } from '../security/csrf.util';
 import { getCrossSiteCookieOptions } from '../security/cookie-options.util';
 import { GoogleOAuthGuard } from '../guards/auth/google-oauth.guard';
+import { GoogleOAuthExceptionFilter } from './filters/google-oauth-exception.filter';
 import {
   clearGoogleOAuthStateCookie,
   createGoogleOAuthState,
@@ -261,45 +263,45 @@ export class AuthController {
   @Get('google/callback')
   @Throttle({ default: { limit: 10, ttl: 60 * 1000 } })
   @UseGuards(GoogleOAuthGuard)
+  @UseFilters(GoogleOAuthExceptionFilter)
   @ApiOperation({
     summary: 'Google OAuth callback',
     description:
-      'Validates Google OAuth state, signs in or creates the user using a verified Google email, sets the refresh token cookie, and returns an access token plus MQTT credentials.',
+      'Validates Google OAuth state, signs in or creates the user using a verified Google email, sets the refresh token cookie, and redirects to the frontend with the access token.',
   })
-  @ApiOkResponse({
-    description: 'Google login successful',
-    schema: {
-      example: {
-        message: 'Google login successful',
-        access_token: 'eyJhbGciOi...access',
-        mqtt: {
-          username: 'john_doe',
-          password: 'a1b2c3d4e5f6g7h8',
-          clientId: 'john_doe',
-        },
-      },
-    },
+  @ApiResponse({
+    status: 302,
+    description:
+      'Redirects to frontend: /auth/google/callback?token={access_token} on success, /auth/google/callback?error={code} on failure',
   })
   @ApiUnauthorizedResponse({
     description: 'Unauthorized - invalid state or Google profile',
   })
   async googleCallback(
     @Req() request: GoogleAuthRequest,
-    @Res({ passthrough: true }) response: Response
+    @Res() response: Response
   ) {
     clearGoogleOAuthStateCookie(response);
-    const loginResult = await this.authService.login(request.user);
-    this.setRefreshCookie(response, loginResult.refresh_token);
+    const frontendUrl = this.getFrontendUrl();
 
-    return {
-      message: 'Google login successful',
-      access_token: loginResult.access_token,
-      mqtt: {
-        username: loginResult.mqtt_username,
-        password: loginResult.mqtt_password,
-        clientId: loginResult.mqtt_username,
-      },
-    };
+    try {
+      const loginResult = await this.authService.login(request.user);
+      this.setRefreshCookie(response, loginResult.refresh_token);
+
+      const callbackUrl = new URL('/auth/google/callback', frontendUrl);
+      callbackUrl.searchParams.set('token', loginResult.access_token);
+      return response.redirect(callbackUrl.toString());
+    } catch {
+      const errorUrl = new URL('/auth/google/callback', frontendUrl);
+      errorUrl.searchParams.set('error', 'google_auth_failed');
+      return response.redirect(errorUrl.toString());
+    }
+  }
+
+  private getFrontendUrl(): string {
+    const corsOrigins = process.env.CORS_ORIGINS || '';
+    const firstOrigin = corsOrigins.split(',')[0]?.trim();
+    return firstOrigin || 'http://localhost:8080';
   }
 
   @Post('refresh')
