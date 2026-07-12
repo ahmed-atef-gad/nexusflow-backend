@@ -5,11 +5,29 @@ import { AuthService, AuthenticatedUser } from '../auth.service';
 
 type GoogleRawProfile = {
   email?: string;
-  email_verified?: boolean;
+  email_verified?: boolean | string;
   picture?: string;
   given_name?: string;
   family_name?: string;
 };
+
+function normalizeGoogleEmailVerified(rawVerified: unknown): boolean {
+  if (typeof rawVerified === 'boolean') {
+    return rawVerified;
+  }
+
+  if (typeof rawVerified === 'string') {
+    const normalized = rawVerified.trim().toLowerCase();
+    if (normalized === 'true' || normalized === '1') {
+      return true;
+    }
+    if (normalized === 'false' || normalized === '0') {
+      return false;
+    }
+  }
+
+  return false;
+}
 
 @Injectable()
 export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
@@ -39,17 +57,20 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
     done: VerifyCallback
   ): Promise<void> {
     try {
-      const rawProfile = profile._json as GoogleRawProfile;
-      const email = rawProfile.email ?? profile.emails?.[0]?.value;
-      const avatarUrl = rawProfile.picture ?? profile.photos?.[0]?.value;
+      const rawProfile = profile._json as Record<string, unknown>;
+      const typedRawProfile = profile._json as GoogleRawProfile;
+      const email = typedRawProfile.email;
+      const avatarUrl = typedRawProfile.picture;
       const user: AuthenticatedUser = await this.authService.validateGoogleUser(
         {
           googleId: profile.id,
           email,
-          emailVerified: rawProfile.email_verified === true,
+          emailVerified: normalizeGoogleEmailVerified(
+            rawProfile.email_verified
+          ),
           displayName: profile.displayName,
-          firstName: rawProfile.given_name,
-          lastName: rawProfile.family_name,
+          firstName: typedRawProfile.given_name,
+          lastName: typedRawProfile.family_name,
           avatarUrl,
         }
       );
