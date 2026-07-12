@@ -14,12 +14,13 @@ import {
   NotificationDeviceTokenDocument,
 } from 'src/notifications/schemas/notification-device-token.schema';
 
-interface AuthenticatedUser {
+export interface AuthenticatedUser {
   _id: string;
   email: string;
   roles: string[];
   username: string;
   token_version?: number;
+  is_active?: boolean;
 }
 
 interface SessionTokens {
@@ -33,6 +34,16 @@ interface RefreshTokenPayload {
   roles: string[];
   username: string;
   token_version: number;
+}
+
+interface GoogleProfileInput {
+  googleId: string;
+  email?: string;
+  emailVerified: boolean;
+  displayName?: string;
+  firstName?: string;
+  lastName?: string;
+  avatarUrl?: string;
 }
 
 @Injectable()
@@ -120,6 +131,47 @@ export class AuthService {
     });
   }
 
+  private stripSensitiveUserFields(user: unknown): AuthenticatedUser {
+    const userObject =
+      typeof (user as { toObject?: () => unknown }).toObject === 'function'
+        ? ((user as { toObject: () => unknown }).toObject() as Record<
+            string,
+            unknown
+          >)
+        : ({ ...(user as Record<string, unknown>) } as Record<string, unknown>);
+
+    delete userObject.password;
+    delete userObject.google_id;
+    delete userObject.refresh_token;
+    delete userObject.mqtt_pass_hash;
+    return userObject as unknown as AuthenticatedUser;
+  }
+
+  private buildGoogleUsernameSeed(input: GoogleProfileInput): string {
+    const name = [input.firstName, input.lastName].filter(Boolean).join(' ');
+    return name || input.displayName || input.email?.split('@')[0] || 'user';
+  }
+
+  getGoogleAuthorizationUrl(state: string): string {
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const callbackUrl = process.env.GOOGLE_CALLBACK;
+    if (!clientId || !callbackUrl) {
+      throw new Error('GOOGLE_CLIENT_ID and GOOGLE_CALLBACK must be set');
+    }
+
+    const params = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: callbackUrl,
+      response_type: 'code',
+      scope: 'openid email profile',
+      state,
+      prompt: 'select_account',
+      include_granted_scopes: 'true',
+    });
+
+    return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+  }
+
   /**
    * Validates a user by email and password.
    * Called by LocalStrategy (which we'll make).
@@ -130,12 +182,76 @@ export class AuthService {
   ): Promise<AuthenticatedUser | null> {
     const normalizedEmail = this.normalizeEmail(email);
     const user = await this.usersService.findOneByEmail(normalizedEmail);
-    if (user && (await bcrypt.compare(pass, user.password))) {
-      const userObject = user.toObject() as unknown as Record<string, unknown>;
-      delete userObject.password;
-      return userObject as unknown as AuthenticatedUser;
+    if (
+      user &&
+      user.password &&
+      user.is_active !== false &&
+      (await bcrypt.compare(pass, user.password))
+    ) {
+      return this.stripSensitiveUserFields(user);
     }
     return null;
+  }
+
+  async validateGoogleUser(
+    profile: GoogleProfileInput
+  ): Promise<AuthenticatedUser> {
+    if (!profile.googleId || !profile.email) {
+      throw new UnauthorizedException('Google profile is missing an email');
+    }
+    if (!profile.emailVerified) {
+      throw new UnauthorizedException('Google email is not verified');
+    }
+
+    const normalizedEmail = this.normalizeEmail(profile.email);
+    const googleUser = await this.usersService.findOneByGoogleId(
+      profile.googleId
+    );
+    if (googleUser) {
+      if (googleUser.is_active === false) {
+        throw new UnauthorizedException('Account is disabled');
+      }
+      return this.stripSensitiveUserFields(googleUser);
+    }
+
+    const existingUser =
+      await this.usersService.findOneByEmailWithGoogleId(normalizedEmail);
+    if (existingUser) {
+      if (existingUser.is_active === false) {
+        throw new UnauthorizedException('Account is disabled');
+      }
+
+      const existingGoogleId = (
+        existingUser.toObject() as unknown as { google_id?: string }
+      ).google_id;
+      if (existingGoogleId && existingGoogleId !== profile.googleId) {
+        throw new UnauthorizedException(
+          'This email is already linked to another Google account'
+        );
+      }
+
+      const linkedUser = await this.usersService.linkGoogleAccount(
+        String(existingUser._id),
+        profile.googleId,
+        existingUser.avatarUrl ? undefined : profile.avatarUrl
+      );
+      if (!linkedUser) {
+        throw new UnauthorizedException('Unable to link Google account');
+      }
+      return this.stripSensitiveUserFields(linkedUser);
+    }
+
+    const username = await this.usersService.createAvailableUsername(
+      this.buildGoogleUsernameSeed({ ...profile, email: normalizedEmail })
+    );
+    const createdUser = await this.usersService.createGoogleUser({
+      googleId: profile.googleId,
+      email: normalizedEmail,
+      username,
+      avatarUrl: profile.avatarUrl,
+    });
+
+    return this.stripSensitiveUserFields(createdUser);
   }
 
   /**
@@ -143,6 +259,10 @@ export class AuthService {
    * Called by the AuthController.
    */
   async login(user: AuthenticatedUser) {
+    if (user.is_active === false) {
+      throw new UnauthorizedException('Account is disabled');
+    }
+
     const userId = String(user._id);
 
     await this.usersService.updateLastLogin(userId);

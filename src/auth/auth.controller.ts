@@ -6,9 +6,11 @@ import {
   UnauthorizedException,
   Res,
   Req,
+  UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
+import type { AuthenticatedUser } from './auth.service';
 import { RegisterUserDto } from './dto/register-user.dto';
 import { LoginUserDto } from './dto/login-user.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
@@ -29,9 +31,21 @@ import type { Response, Request } from 'express';
 import { REFRESH_TOKEN_COOKIE } from './utils/auth.util';
 import { CSRF_COOKIE_NAME, CSRF_HEADER_NAME } from '../security/csrf.constants';
 import { clearCsrfCookie, ensureCsrfCookie } from '../security/csrf.util';
+import { getCrossSiteCookieOptions } from '../security/cookie-options.util';
+import { GoogleOAuthGuard } from '../guards/auth/google-oauth.guard';
+import {
+  clearGoogleOAuthStateCookie,
+  createGoogleOAuthState,
+  getGoogleOAuthStateCookieOptions,
+  GOOGLE_OAUTH_STATE_COOKIE,
+} from './utils/oauth-state.util';
 
 type RequestWithCookies = Request & {
   cookies: Record<string, string | undefined>;
+};
+
+type GoogleAuthRequest = RequestWithCookies & {
+  user: AuthenticatedUser;
 };
 
 type ThrottleOptions = {
@@ -59,8 +73,7 @@ export class AuthController {
       httpOnly: true,
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
       path: '/',
-      secure: true,
-      sameSite: 'none' as const, // Allow cross-site cookie for refresh token
+      ...getCrossSiteCookieOptions(),
     };
   }
 
@@ -215,6 +228,71 @@ export class AuthController {
     this.setRefreshCookie(response, loginResult.refresh_token);
     return {
       message: 'Login successful',
+      access_token: loginResult.access_token,
+      mqtt: {
+        username: loginResult.mqtt_username,
+        password: loginResult.mqtt_password,
+        clientId: loginResult.mqtt_username,
+      },
+    };
+  }
+
+  @Get('google')
+  @Throttle({ default: { limit: 10, ttl: 60 * 1000 } })
+  @ApiOperation({
+    summary: 'Start Google login',
+    description:
+      'Creates a signed OAuth state cookie and redirects the browser to Google for login or registration.',
+  })
+  @ApiResponse({
+    status: 302,
+    description: 'Redirects to Google OAuth consent screen',
+  })
+  startGoogleLogin(@Res() response: Response) {
+    const state = createGoogleOAuthState();
+    response.cookie(
+      GOOGLE_OAUTH_STATE_COOKIE,
+      state,
+      getGoogleOAuthStateCookieOptions()
+    );
+    return response.redirect(this.authService.getGoogleAuthorizationUrl(state));
+  }
+
+  @Get('google/callback')
+  @Throttle({ default: { limit: 10, ttl: 60 * 1000 } })
+  @UseGuards(GoogleOAuthGuard)
+  @ApiOperation({
+    summary: 'Google OAuth callback',
+    description:
+      'Validates Google OAuth state, signs in or creates the user using a verified Google email, sets the refresh token cookie, and returns an access token plus MQTT credentials.',
+  })
+  @ApiOkResponse({
+    description: 'Google login successful',
+    schema: {
+      example: {
+        message: 'Google login successful',
+        access_token: 'eyJhbGciOi...access',
+        mqtt: {
+          username: 'john_doe',
+          password: 'a1b2c3d4e5f6g7h8',
+          clientId: 'john_doe',
+        },
+      },
+    },
+  })
+  @ApiUnauthorizedResponse({
+    description: 'Unauthorized - invalid state or Google profile',
+  })
+  async googleCallback(
+    @Req() request: GoogleAuthRequest,
+    @Res({ passthrough: true }) response: Response
+  ) {
+    clearGoogleOAuthStateCookie(response);
+    const loginResult = await this.authService.login(request.user);
+    this.setRefreshCookie(response, loginResult.refresh_token);
+
+    return {
+      message: 'Google login successful',
       access_token: loginResult.access_token,
       mqtt: {
         username: loginResult.mqtt_username,

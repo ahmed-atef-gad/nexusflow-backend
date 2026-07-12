@@ -11,6 +11,7 @@ export class EmailVerificationOtp {
   email!: string;
 
   @Prop({
+    type: String,
     required: true,
     enum: OtpPurpose,
     default: OtpPurpose.EmailVerification,
