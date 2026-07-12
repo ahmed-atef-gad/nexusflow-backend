@@ -34,12 +34,17 @@ interface AccessToken {
   access_token: string;
 }
 
+interface RefreshResult extends AccessToken {
+  refresh_token?: string;
+}
+
 interface RefreshTokenPayload {
   sub: string;
   email: string;
   roles: string[];
   username: string;
   token_version: number;
+  jti?: string;
 }
 
 interface GoogleProfileInput {
@@ -51,6 +56,13 @@ interface GoogleProfileInput {
   lastName?: string;
   avatarUrl?: string;
 }
+
+type RefreshTokenMatch =
+  | { kind: 'current'; refreshTokenJti: string | null }
+  | { kind: 'previous' }
+  | null;
+
+const REFRESH_TOKEN_ROTATION_GRACE_MS = 30_000;
 
 @Injectable()
 export class AuthService {
@@ -90,6 +102,16 @@ export class AuthService {
     return process.env.JWT_REFRESH_EXPIRES_IN ?? '7d';
   }
 
+  private getRefreshTokenRotationGraceMs(): number {
+    const configuredGraceMs = Number(
+      process.env.JWT_REFRESH_ROTATION_GRACE_MS
+    );
+    if (Number.isFinite(configuredGraceMs) && configuredGraceMs >= 0) {
+      return configuredGraceMs;
+    }
+    return REFRESH_TOKEN_ROTATION_GRACE_MS;
+  }
+
   private async hashRefreshToken(refreshToken: string): Promise<string> {
     const salt = await bcrypt.genSalt();
     return bcrypt.hash(refreshToken, salt);
@@ -120,19 +142,33 @@ export class AuthService {
     });
   }
 
+  private issueRefreshToken(payload: RefreshTokenPayload): {
+    refresh_token: string;
+    refreshTokenJti: string;
+  } {
+    const refreshTokenJti = crypto.randomUUID();
+    const refresh_token = this.jwtService.sign(
+      { ...payload, jti: refreshTokenJti },
+      {
+        secret: this.getRefreshTokenSecret(),
+        expiresIn: this.getRefreshTokenExpiresIn() as never,
+      }
+    );
+
+    return { refresh_token, refreshTokenJti };
+  }
+
   private async issueSessionTokens(
     user: AuthenticatedUser
   ): Promise<SessionTokens> {
     const payload = await this.buildTokenPayload(user);
     const access_token = this.issueAccessToken(payload);
-    const refresh_token = this.jwtService.sign(payload, {
-      secret: this.getRefreshTokenSecret(),
-      expiresIn: this.getRefreshTokenExpiresIn() as never,
-    });
+    const { refresh_token, refreshTokenJti } = this.issueRefreshToken(payload);
 
-    await this.usersService.updateRefreshTokenHash(
+    await this.usersService.setRefreshTokenState(
       payload.sub,
-      await this.hashRefreshToken(refresh_token)
+      await this.hashRefreshToken(refresh_token),
+      refreshTokenJti
     );
 
     return { access_token, refresh_token };
@@ -144,6 +180,48 @@ export class AuthService {
     return this.jwtService.verifyAsync<RefreshTokenPayload>(refreshToken, {
       secret: this.getRefreshTokenSecret(),
     });
+  }
+
+  private async getRefreshTokenMatch(
+    refreshToken: string,
+    payload: RefreshTokenPayload
+  ): Promise<RefreshTokenMatch> {
+    const tokenState = await this.usersService.getRefreshTokenStateById(
+      payload.sub
+    );
+    if (!tokenState?.refreshTokenHash) return null;
+
+    const currentJtiMatches =
+      !tokenState.refreshTokenJti ||
+      !payload.jti ||
+      tokenState.refreshTokenJti === payload.jti;
+    if (
+      currentJtiMatches &&
+      (await bcrypt.compare(refreshToken, tokenState.refreshTokenHash))
+    ) {
+      return {
+        kind: 'current',
+        refreshTokenJti: tokenState.refreshTokenJti,
+      };
+    }
+
+    const previousTokenStillValid =
+      tokenState.previousRefreshTokenExpiresAt !== null &&
+      tokenState.previousRefreshTokenExpiresAt.getTime() > Date.now();
+    const previousJtiMatches =
+      !tokenState.previousRefreshTokenJti ||
+      !payload.jti ||
+      tokenState.previousRefreshTokenJti === payload.jti;
+    if (
+      previousTokenStillValid &&
+      previousJtiMatches &&
+      tokenState.previousRefreshTokenHash &&
+      (await bcrypt.compare(refreshToken, tokenState.previousRefreshTokenHash))
+    ) {
+      return { kind: 'previous' };
+    }
+
+    return null;
   }
 
   private stripSensitiveUserFields(user: unknown): AuthenticatedUser {
@@ -345,7 +423,7 @@ export class AuthService {
     };
   }
 
-  async refresh(refreshToken: string): Promise<AccessToken> {
+  async refresh(refreshToken: string): Promise<RefreshResult> {
     const payload = await this.verifyRefreshToken(refreshToken);
     const authState = await this.usersService.getAuthStateById(payload.sub);
     if (
@@ -356,23 +434,49 @@ export class AuthService {
       throw new UnauthorizedException('Invalid refresh token');
     }
 
-    const storedRefreshTokenHash =
-      await this.usersService.getRefreshTokenHashById(payload.sub);
-    if (
-      !storedRefreshTokenHash ||
-      !(await bcrypt.compare(refreshToken, storedRefreshTokenHash))
-    ) {
+    const refreshTokenMatch = await this.getRefreshTokenMatch(
+      refreshToken,
+      payload
+    );
+    if (!refreshTokenMatch) {
       throw new UnauthorizedException('Invalid refresh token');
     }
 
+    const nextPayload: RefreshTokenPayload = {
+      sub: payload.sub,
+      email: authState.email || payload.email,
+      roles: authState.roles,
+      username: authState.username || payload.username,
+      token_version: authState.tokenVersion,
+    };
+    const access_token = this.issueAccessToken(nextPayload);
+
+    if (refreshTokenMatch.kind === 'previous') {
+      return { access_token };
+    }
+
+    const { refresh_token, refreshTokenJti } =
+      this.issueRefreshToken(nextPayload);
+    const didRotate = await this.usersService.rotateRefreshTokenState(
+      payload.sub,
+      {
+        expectedRefreshTokenJti: refreshTokenMatch.refreshTokenJti,
+        refreshTokenHash: await this.hashRefreshToken(refresh_token),
+        refreshTokenJti,
+        previousRefreshTokenHash: await this.hashRefreshToken(refreshToken),
+        previousRefreshTokenJti: payload.jti ?? null,
+        previousRefreshTokenExpiresAt: new Date(
+          Date.now() + this.getRefreshTokenRotationGraceMs()
+        ),
+      }
+    );
+    if (!didRotate) {
+      return { access_token };
+    }
+
     return {
-      access_token: this.issueAccessToken({
-        sub: payload.sub,
-        email: authState.email || payload.email,
-        roles: authState.roles,
-        username: authState.username || payload.username,
-        token_version: authState.tokenVersion,
-      }),
+      access_token,
+      refresh_token,
     };
   }
 

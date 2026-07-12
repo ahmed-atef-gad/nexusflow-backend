@@ -381,6 +381,45 @@ export class UsersService {
     return user?.refresh_token ?? null;
   }
 
+  async getRefreshTokenStateById(userId: string): Promise<{
+    refreshTokenHash: string | null;
+    refreshTokenJti: string | null;
+    previousRefreshTokenHash: string | null;
+    previousRefreshTokenJti: string | null;
+    previousRefreshTokenExpiresAt: Date | null;
+  } | null> {
+    const isValidId = Types.ObjectId.isValid(userId);
+    if (!isValidId) return null;
+    const user = await this.userModel
+      .findOne({ _id: userId, deleted_at: null })
+      .select(
+        '+refresh_token +refresh_token_jti +previous_refresh_token +previous_refresh_token_jti +previous_refresh_token_expires_at'
+      )
+      .lean()
+      .exec();
+    if (!user) return null;
+    return {
+      refreshTokenHash:
+        typeof user.refresh_token === 'string' ? user.refresh_token : null,
+      refreshTokenJti:
+        typeof user.refresh_token_jti === 'string'
+          ? user.refresh_token_jti
+          : null,
+      previousRefreshTokenHash:
+        typeof user.previous_refresh_token === 'string'
+          ? user.previous_refresh_token
+          : null,
+      previousRefreshTokenJti:
+        typeof user.previous_refresh_token_jti === 'string'
+          ? user.previous_refresh_token_jti
+          : null,
+      previousRefreshTokenExpiresAt:
+        user.previous_refresh_token_expires_at instanceof Date
+          ? user.previous_refresh_token_expires_at
+          : null,
+    };
+  }
+
   async updateRefreshTokenHash(
     userId: string,
     refreshTokenHash: string | null
@@ -390,7 +429,74 @@ export class UsersService {
     const result = await this.userModel
       .updateOne(
         { _id: userId, deleted_at: null },
-        { $set: { refresh_token: refreshTokenHash } }
+        {
+          $set: {
+            refresh_token: refreshTokenHash,
+            refresh_token_jti: null,
+            previous_refresh_token: null,
+            previous_refresh_token_jti: null,
+            previous_refresh_token_expires_at: null,
+          },
+        }
+      )
+      .exec();
+    return result.modifiedCount === 1;
+  }
+
+  async setRefreshTokenState(
+    userId: string,
+    refreshTokenHash: string,
+    refreshTokenJti: string
+  ): Promise<boolean> {
+    const isValidId = Types.ObjectId.isValid(userId);
+    if (!isValidId) return false;
+    const result = await this.userModel
+      .updateOne(
+        { _id: userId, deleted_at: null },
+        {
+          $set: {
+            refresh_token: refreshTokenHash,
+            refresh_token_jti: refreshTokenJti,
+            previous_refresh_token: null,
+            previous_refresh_token_jti: null,
+            previous_refresh_token_expires_at: null,
+          },
+        }
+      )
+      .exec();
+    return result.modifiedCount === 1;
+  }
+
+  async rotateRefreshTokenState(
+    userId: string,
+    input: {
+      expectedRefreshTokenJti: string | null;
+      refreshTokenHash: string;
+      refreshTokenJti: string;
+      previousRefreshTokenHash: string;
+      previousRefreshTokenJti: string | null;
+      previousRefreshTokenExpiresAt: Date;
+    }
+  ): Promise<boolean> {
+    const isValidId = Types.ObjectId.isValid(userId);
+    if (!isValidId) return false;
+    const result = await this.userModel
+      .updateOne(
+        {
+          _id: userId,
+          deleted_at: null,
+          refresh_token_jti: input.expectedRefreshTokenJti,
+        },
+        {
+          $set: {
+            refresh_token: input.refreshTokenHash,
+            refresh_token_jti: input.refreshTokenJti,
+            previous_refresh_token: input.previousRefreshTokenHash,
+            previous_refresh_token_jti: input.previousRefreshTokenJti,
+            previous_refresh_token_expires_at:
+              input.previousRefreshTokenExpiresAt,
+          },
+        }
       )
       .exec();
     return result.modifiedCount === 1;

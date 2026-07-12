@@ -140,9 +140,10 @@ describe('AuthController', () => {
     expect(redirectUrl.searchParams.get('csrf_header')).toBe(CSRF_HEADER_NAME);
   });
 
-  it('returns access and CSRF tokens during refresh without rotating refresh cookie', async () => {
+  it('sets rotated refresh cookie and returns access and CSRF tokens during refresh', async () => {
     authService.refresh.mockResolvedValue({
       access_token: 'new-access-token',
+      refresh_token: 'new-refresh-token',
     });
     const cookie = jest.fn();
 
@@ -160,21 +161,49 @@ describe('AuthController', () => {
 
     expect(authService.refresh).toHaveBeenCalledWith('old-refresh-token');
     expect(cookie).toHaveBeenCalledWith(
+      REFRESH_TOKEN_COOKIE,
+      'new-refresh-token',
+      expect.objectContaining({
+        httpOnly: true,
+        path: '/',
+      })
+    );
+    expect(cookie).toHaveBeenCalledWith(
       CSRF_COOKIE_NAME,
       expect.any(String),
       expect.objectContaining({
         path: '/',
       })
     );
-    expect(cookie).not.toHaveBeenCalledWith(
-      REFRESH_TOKEN_COOKIE,
-      expect.any(String),
-      expect.any(Object)
-    );
     expect(result).toEqual({
       access_token: 'new-access-token',
       csrf_token: expect.any(String),
       csrf_header: CSRF_HEADER_NAME,
     });
+  });
+
+  it('does not set refresh cookie when a grace refresh returns only access token', async () => {
+    authService.refresh.mockResolvedValue({
+      access_token: 'new-access-token',
+    });
+    const cookie = jest.fn();
+
+    await controller.refresh(
+      {
+        cookies: {
+          [REFRESH_TOKEN_COOKIE]: 'previous-refresh-token',
+        },
+      } as never,
+      {
+        cookie,
+        locals: {},
+      } as never
+    );
+
+    expect(cookie).not.toHaveBeenCalledWith(
+      REFRESH_TOKEN_COOKIE,
+      expect.any(String),
+      expect.any(Object)
+    );
   });
 });
