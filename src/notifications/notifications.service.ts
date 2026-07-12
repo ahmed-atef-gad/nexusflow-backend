@@ -681,6 +681,34 @@ export class NotificationsService implements OnModuleInit {
     };
   }
 
+  async createDefaultNotificationPreference(
+    userId: string,
+    flowId: string
+  ): Promise<void> {
+    try {
+      await this.notificationPreferenceModel
+        .updateOne(
+          { flowId, userId },
+          {
+            $setOnInsert: {
+              flowId,
+              projectId: flowId,
+              userId,
+              notificationsEnabled: true,
+              channels: ['push'],
+            },
+          },
+          { upsert: true }
+        )
+        .exec();
+    } catch (error) {
+      if ((error as { code?: number })?.code === 11000) {
+        return;
+      }
+      throw error;
+    }
+  }
+
   async getNotificationStatesForFlows(
     userId: string,
     flowIds: string[]
