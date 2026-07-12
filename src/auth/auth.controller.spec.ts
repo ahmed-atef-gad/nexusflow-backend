@@ -19,6 +19,8 @@ describe('AuthController', () => {
   const originalCorsOrigins = process.env.CORS_ORIGINS;
   const originalGoogleVerificationRedirectPath =
     process.env.GOOGLE_VERIFICATION_REDIRECT_PATH;
+  const originalFrontendVerificationRedirectPath =
+    process.env.FRONTEND_VERIFICATION_REDIRECT_PATH;
   let authService: {
     getGoogleAuthorizationUrl: jest.Mock;
     login: jest.Mock;
@@ -64,6 +66,10 @@ describe('AuthController', () => {
       'GOOGLE_VERIFICATION_REDIRECT_PATH',
       originalGoogleVerificationRedirectPath
     );
+    restoreEnv(
+      'FRONTEND_VERIFICATION_REDIRECT_PATH',
+      originalFrontendVerificationRedirectPath
+    );
   });
 
   it('should be defined', () => {
@@ -94,6 +100,16 @@ describe('AuthController', () => {
     );
 
     expect(authService.login).not.toHaveBeenCalled();
+    expect(clearCookie).toHaveBeenCalledWith(
+      REFRESH_TOKEN_COOKIE,
+      expect.objectContaining({
+        httpOnly: true,
+        path: '/',
+      })
+    );
+    const redirectUrl = new URL(redirect.mock.calls[0][0]);
+    expect(redirectUrl.pathname).toBe('/verify-email');
+    expect(redirectUrl.searchParams.get('provider')).toBe('google');
     expect(redirect).toHaveBeenCalledWith(
       expect.stringContaining('verification_required=true')
     );
@@ -132,6 +148,7 @@ describe('AuthController', () => {
       'email_verification_required'
     );
     expect(redirectUrl.searchParams.get('email')).toBe('user@example.com');
+    expect(redirectUrl.searchParams.get('provider')).toBe('google');
   });
 
   it('sets refresh cookie and redirects Google logins with access and CSRF tokens', async () => {
