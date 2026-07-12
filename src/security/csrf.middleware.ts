@@ -23,10 +23,10 @@ export function csrfProtectionMiddleware(
   try {
     // Refresh bootstraps browser sessions from the HttpOnly refresh cookie.
     // ESP firmware registration routes cannot reliably attach browser CSRF headers.
-    if (CSRF_EXEMPT_ROUTES.has(getRouteKey(request))) {
+    /*if (CSRF_EXEMPT_ROUTES.has(getRouteKey(request))) {
       next();
       return;
-    }
+    }*/
 
     if (SAFE_HTTP_METHODS.has(request.method.toUpperCase())) {
       ensureCsrfCookie(request, response);
