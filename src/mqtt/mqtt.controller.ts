@@ -248,10 +248,28 @@ export class MqttController {
     summary: 'Get saved ESP MQTT performance sessions (Admin)',
   })
   @ApiQuery({
+    name: 'page',
+    required: false,
+    description: 'Page number for pagination',
+    example: 1,
+  })
+  @ApiQuery({
     name: 'limit',
     required: false,
-    description: 'Maximum number of saved sessions to return',
-    example: 100,
+    description: 'Maximum number of records per page',
+    example: 10,
+  })
+  @ApiQuery({
+    name: 'sortBy',
+    required: false,
+    description: 'Field to sort by',
+    example: 'lastDisconnectedAt',
+  })
+  @ApiQuery({
+    name: 'sortOrder',
+    required: false,
+    description: 'Sort order (asc or desc)',
+    example: 'desc',
   })
   @ApiOkResponse({
     description: 'Saved ESP MQTT performance sessions fetched successfully',
@@ -264,8 +282,16 @@ export class MqttController {
   @Roles(Role.Admin)
   @Get('performance/history')
   getPerformanceHistory(
-    @Query('limit') limit?: string
-  ): Promise<MqttPerformanceSession[]> {
-    return this.mqttPerformanceService.getStoredSessions(Number(limit) || 100);
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortOrder') sortOrder?: 'asc' | 'desc'
+  ) {
+    return this.mqttPerformanceService.getStoredSessions(
+      Number(page) || 1,
+      Number(limit) || 10,
+      sortBy || 'lastDisconnectedAt',
+      sortOrder || 'desc'
+    );
   }
 }

@@ -322,40 +322,177 @@ export class MqttPerformanceService {
     return closedSession ? this.toSnapshot(closedSession) : null;
   }
 
-  async getStoredSessions(limit = 100): Promise<MqttPerformanceSession[]> {
-    const safeLimit = Math.min(Math.max(Math.trunc(limit), 1), 500);
-    const records = await this.performanceSessionModel
-      .find({})
-      .sort({ disconnectedAt: -1, connectedAt: -1 })
-      .limit(safeLimit)
-      .lean()
-      .exec();
+  async getStoredSessions(
+    page = 1,
+    limit = 10,
+    sortBy = 'lastDisconnectedAt',
+    sortOrder: 'asc' | 'desc' = 'desc'
+  ) {
+    const safePage = Math.max(Math.trunc(page), 1);
+    const safeLimit = Math.min(Math.max(Math.trunc(limit), 1), 100);
+    const skip = (safePage - 1) * safeLimit;
+    const sortDirection = sortOrder === 'asc' ? 1 : -1;
 
-    return records.map((record) => {
-      const messages = record.messages as MqttPerformanceSession['messages'];
-      const rawRecord = record as unknown as { clockSkewMs?: number };
-      return {
-        sessionId: record.sessionId,
-        clientId: record.clientId,
-        deviceMac: record.deviceMac,
-        deviceId: record.deviceId ?? null,
-        deviceName: record.deviceName ?? null,
-        ownerId: record.ownerId ?? null,
-        ownerUsername: record.ownerUsername ?? null,
-        flowId: record.flowId ?? null,
-        connectedAt: record.connectedAt.toISOString(),
-        disconnectedAt: record.disconnectedAt
-          ? record.disconnectedAt.toISOString()
-          : null,
-        active: record.active,
-        clockSkewMs: rawRecord.clockSkewMs ?? 0,
-        messages: {
-          ...messages,
-          recentMessages: messages.recentMessages ?? [],
+    // Map common frontend sort fields to the aggregation fields if necessary
+    const sortFieldMap: Record<string, string> = {
+      deviceName: 'deviceName',
+      totalMessages: 'messages.received',
+      totalCommands: 'logic.publishedCommands',
+      avgLatency: 'messages.latency.avgMs',
+      avgLogic: 'logic.pipelineDuration.avgMs',
+      lastDisconnectedAt: 'disconnectedAt',
+    };
+    const sortKey = sortFieldMap[sortBy] || 'disconnectedAt';
+
+    const pipeline: any[] = [
+      { $sort: { [sortKey]: sortDirection, connectedAt: -1 } },
+      {
+        $facet: {
+          paginatedSessions: [
+            { $skip: skip },
+            { $limit: safeLimit },
+            {
+              $group: {
+                _id: {
+                  $cond: {
+                    if: { $ne: [{ $type: '$deviceId' }, 'missing'] },
+                    then: { $ifNull: ['$deviceId', '$deviceMac'] },
+                    else: '$deviceMac',
+                  },
+                },
+                deviceName: {
+                  $first: {
+                    $cond: {
+                      if: { $ne: [{ $type: '$deviceName' }, 'missing'] },
+                      then: { $ifNull: ['$deviceName', '$deviceMac'] },
+                      else: '$deviceMac',
+                    },
+                  },
+                },
+                deviceMac: { $first: '$deviceMac' },
+                ownerUsername: { $first: '$ownerUsername' },
+                lastDisconnectedAt: { $max: '$disconnectedAt' },
+                sessions: { $push: '$$ROOT' },
+                totalMessages: { $sum: '$messages.received' },
+                totalCommands: { $sum: '$logic.publishedCommands' },
+                totalLatencyScore: {
+                  $sum: {
+                    $multiply: [
+                      { $ifNull: ['$messages.latency.avgMs', 0] },
+                      { $ifNull: ['$messages.latency.count', 0] },
+                    ],
+                  },
+                },
+                totalLatencyCount: {
+                  $sum: { $ifNull: ['$messages.latency.count', 0] },
+                },
+                totalLogicScore: {
+                  $sum: {
+                    $multiply: [
+                      { $ifNull: ['$logic.pipelineDuration.avgMs', 0] },
+                      { $ifNull: ['$logic.pipelineDuration.count', 0] },
+                    ],
+                  },
+                },
+                totalLogicCount: {
+                  $sum: { $ifNull: ['$logic.pipelineDuration.count', 0] },
+                },
+              },
+            },
+            {
+              $project: {
+                key: '$_id',
+                deviceName: 1,
+                deviceMac: 1,
+                ownerUsername: 1,
+                lastDisconnectedAt: 1,
+                sessions: 1,
+                totalMessages: 1,
+                totalCommands: 1,
+                avgLatency: {
+                  $cond: {
+                    if: { $gt: ['$totalLatencyCount', 0] },
+                    then: {
+                      $divide: ['$totalLatencyScore', '$totalLatencyCount'],
+                    },
+                    else: null,
+                  },
+                },
+                avgLogic: {
+                  $cond: {
+                    if: { $gt: ['$totalLogicCount', 0] },
+                    then: { $divide: ['$totalLogicScore', '$totalLogicCount'] },
+                    else: null,
+                  },
+                },
+              },
+            },
+            { $sort: { lastDisconnectedAt: -1 } },
+          ],
+          totalCount: [{ $count: 'count' }],
         },
-        logic: record.logic as MqttPerformanceSession['logic'],
-      };
-    });
+      },
+    ];
+
+    const result = await this.performanceSessionModel
+      .aggregate(pipeline)
+      .exec();
+    const facetData = result[0] as {
+      totalCount: { count: number }[];
+      paginatedSessions: {
+        key: string;
+        deviceName: string;
+        deviceMac: string;
+        ownerUsername: string | null;
+        lastDisconnectedAt: Date | null;
+        totalMessages: number;
+        totalCommands: number;
+        avgLatency: number | null;
+        avgLogic: number | null;
+        sessions: Record<string, unknown>[];
+      }[];
+    };
+    const total =
+      facetData.totalCount.length > 0 ? facetData.totalCount[0].count : 0;
+
+    // Format sessions to ensure they match frontend expectations
+    const data = facetData.paginatedSessions.map((group) => ({
+      ...group,
+      sessions: group.sessions.map((record) => {
+        const messages = (record.messages as Record<string, unknown>) || {};
+        return {
+          sessionId: String(record.sessionId),
+          clientId: String(record.clientId),
+          deviceMac: String(record.deviceMac),
+          deviceId: record.deviceId ? (record.deviceId as string) : null,
+          deviceName: record.deviceName ? (record.deviceName as string) : null,
+          ownerId: record.ownerId ? (record.ownerId as string) : null,
+          ownerUsername: record.ownerUsername
+            ? (record.ownerUsername as string)
+            : null,
+          flowId: record.flowId ? (record.flowId as string) : null,
+          connectedAt: record.connectedAt
+            ? new Date(
+                record.connectedAt as string | number | Date
+              ).toISOString()
+            : null,
+          disconnectedAt: record.disconnectedAt
+            ? new Date(
+                record.disconnectedAt as string | number | Date
+              ).toISOString()
+            : null,
+          active: Boolean(record.active),
+          clockSkewMs: Number(record.clockSkewMs) || 0,
+          messages: {
+            ...messages,
+            recentMessages: messages.recentMessages ?? [],
+          },
+          logic: record.logic || {},
+        };
+      }),
+    }));
+
+    return { data, total };
   }
 
   private async closeSession(
