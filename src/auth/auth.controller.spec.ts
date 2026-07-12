@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
-import { CSRF_HEADER_NAME } from '../security/csrf.constants';
+import { CSRF_COOKIE_NAME, CSRF_HEADER_NAME } from '../security/csrf.constants';
 import { REFRESH_TOKEN_COOKIE } from './utils/auth.util';
 
 function restoreEnv(key: string, value: string | undefined): void {
@@ -140,10 +140,9 @@ describe('AuthController', () => {
     expect(redirectUrl.searchParams.get('csrf_header')).toBe(CSRF_HEADER_NAME);
   });
 
-  it('rotates refresh cookie and returns CSRF token during refresh', async () => {
+  it('returns access and CSRF tokens during refresh without rotating refresh cookie', async () => {
     authService.refresh.mockResolvedValue({
       access_token: 'new-access-token',
-      refresh_token: 'new-refresh-token',
     });
     const cookie = jest.fn();
 
@@ -161,12 +160,16 @@ describe('AuthController', () => {
 
     expect(authService.refresh).toHaveBeenCalledWith('old-refresh-token');
     expect(cookie).toHaveBeenCalledWith(
-      REFRESH_TOKEN_COOKIE,
-      'new-refresh-token',
+      CSRF_COOKIE_NAME,
+      expect.any(String),
       expect.objectContaining({
-        httpOnly: true,
         path: '/',
       })
+    );
+    expect(cookie).not.toHaveBeenCalledWith(
+      REFRESH_TOKEN_COOKIE,
+      expect.any(String),
+      expect.any(Object)
     );
     expect(result).toEqual({
       access_token: 'new-access-token',

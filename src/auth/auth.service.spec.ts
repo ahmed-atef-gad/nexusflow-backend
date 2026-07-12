@@ -15,6 +15,7 @@ const toDocument = (user: Record<string, unknown>) => ({
 
 describe('AuthService', () => {
   let service: AuthService;
+  const originalJwtSecret = process.env.JWT_SECRET;
   let usersService: {
     findOneByEmail: jest.Mock;
     findOneByGoogleId: jest.Mock;
@@ -22,12 +23,20 @@ describe('AuthService', () => {
     linkGoogleAccount: jest.Mock;
     createAvailableUsername: jest.Mock;
     createGoogleUser: jest.Mock;
+    getAuthStateById: jest.Mock;
+    getRefreshTokenHashById: jest.Mock;
+    updateRefreshTokenHash: jest.Mock;
+  };
+  let jwtService: {
+    sign: jest.Mock;
+    verifyAsync: jest.Mock;
   };
   let verificationService: {
     generateOtpForEmail: jest.Mock;
   };
 
   beforeEach(async () => {
+    process.env.JWT_SECRET = 'test-jwt-secret';
     usersService = {
       findOneByEmail: jest.fn(),
       findOneByGoogleId: jest.fn(),
@@ -35,6 +44,13 @@ describe('AuthService', () => {
       linkGoogleAccount: jest.fn(),
       createAvailableUsername: jest.fn(),
       createGoogleUser: jest.fn(),
+      getAuthStateById: jest.fn(),
+      getRefreshTokenHashById: jest.fn(),
+      updateRefreshTokenHash: jest.fn(),
+    };
+    jwtService = {
+      sign: jest.fn(),
+      verifyAsync: jest.fn(),
     };
     verificationService = {
       generateOtpForEmail: jest.fn(),
@@ -49,7 +65,7 @@ describe('AuthService', () => {
         },
         {
           provide: JwtService,
-          useValue: {},
+          useValue: jwtService,
         },
         {
           provide: VerificationService,
@@ -63,6 +79,15 @@ describe('AuthService', () => {
     }).compile();
 
     service = module.get<AuthService>(AuthService);
+  });
+
+  afterEach(() => {
+    if (originalJwtSecret === undefined) {
+      delete process.env.JWT_SECRET;
+      return;
+    }
+
+    process.env.JWT_SECRET = originalJwtSecret;
   });
 
   it('should be defined', () => {
@@ -259,5 +284,44 @@ describe('AuthService', () => {
     expect(verificationService.generateOtpForEmail).toHaveBeenCalledWith({
       email: 'user@example.com',
     });
+  });
+
+  it('issues a new access token on refresh without rotating the refresh token hash', async () => {
+    const refreshToken = 'refresh-token';
+    jwtService.verifyAsync.mockResolvedValue({
+      sub: 'user-id',
+      email: 'user@example.com',
+      username: 'user',
+      roles: ['user'],
+      token_version: 0,
+    });
+    jwtService.sign.mockReturnValue('new-access-token');
+    usersService.getAuthStateById.mockResolvedValue({
+      email: 'user@example.com',
+      username: 'user',
+      tokenVersion: 0,
+      emailVerified: true,
+      isActive: true,
+      roles: ['user'],
+    });
+    usersService.getRefreshTokenHashById.mockResolvedValue(
+      await bcrypt.hash(refreshToken, 10)
+    );
+
+    const result = await service.refresh(refreshToken);
+
+    expect(result).toEqual({ access_token: 'new-access-token' });
+    expect(usersService.updateRefreshTokenHash).not.toHaveBeenCalled();
+    expect(jwtService.sign).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sub: 'user-id',
+        email: 'user@example.com',
+        username: 'user',
+        token_version: 0,
+      }),
+      expect.objectContaining({
+        secret: 'test-jwt-secret',
+      })
+    );
   });
 });
