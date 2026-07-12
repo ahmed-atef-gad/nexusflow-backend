@@ -6,6 +6,7 @@ import { JwtService } from '@nestjs/jwt';
 import { VerificationService } from 'src/verification/verification.service';
 import { getModelToken } from '@nestjs/mongoose';
 import { NotificationDeviceToken } from 'src/notifications/schemas/notification-device-token.schema';
+import * as bcrypt from 'bcrypt';
 
 const toDocument = (user: Record<string, unknown>) => ({
   ...user,
@@ -15,6 +16,7 @@ const toDocument = (user: Record<string, unknown>) => ({
 describe('AuthService', () => {
   let service: AuthService;
   let usersService: {
+    findOneByEmail: jest.Mock;
     findOneByGoogleId: jest.Mock;
     findOneByEmailWithGoogleId: jest.Mock;
     linkGoogleAccount: jest.Mock;
@@ -27,6 +29,7 @@ describe('AuthService', () => {
 
   beforeEach(async () => {
     usersService = {
+      findOneByEmail: jest.fn(),
       findOneByGoogleId: jest.fn(),
       findOneByEmailWithGoogleId: jest.fn(),
       linkGoogleAccount: jest.fn(),
@@ -74,6 +77,41 @@ describe('AuthService', () => {
         emailVerified: false,
       })
     ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('sends an OTP and returns a pending verification state for a new Google signup', async () => {
+    usersService.findOneByGoogleId.mockResolvedValue(null);
+    usersService.findOneByEmailWithGoogleId.mockResolvedValue(null);
+    usersService.createAvailableUsername.mockResolvedValue('user');
+    usersService.createGoogleUser.mockResolvedValue(
+      toDocument({
+        _id: 'user-id',
+        email: 'user@example.com',
+        username: 'user',
+        roles: ['user'],
+        google_id: 'google-123',
+        email_verified: false,
+        is_active: true,
+      })
+    );
+
+    const result = await service.validateGoogleUser({
+      googleId: 'google-123',
+      email: 'user@example.com',
+      emailVerified: true,
+    });
+
+    expect(verificationService.generateOtpForEmail).toHaveBeenCalledWith({
+      email: 'user@example.com',
+    });
+    expect(result.requires_email_verification).toBe(true);
+    expect(result.email).toBe('user@example.com');
+    expect(usersService.createGoogleUser).toHaveBeenCalledWith(
+      expect.objectContaining({
+        googleId: 'google-123',
+        email: 'user@example.com',
+      })
+    );
   });
 
   it('links an existing account only after Google verifies the same email', async () => {
@@ -135,11 +173,20 @@ describe('AuthService', () => {
     expect(usersService.linkGoogleAccount).not.toHaveBeenCalled();
   });
 
-  it('sends an OTP and blocks new Google registrations until verification', async () => {
+  it('returns a pending verification state for an unverified linked account', async () => {
     usersService.findOneByGoogleId.mockResolvedValue(null);
-    usersService.findOneByEmailWithGoogleId.mockResolvedValue(null);
-    usersService.createAvailableUsername.mockResolvedValue('user');
-    usersService.createGoogleUser.mockResolvedValue(
+    usersService.findOneByEmailWithGoogleId.mockResolvedValue(
+      toDocument({
+        _id: 'user-id',
+        email: 'user@example.com',
+        username: 'user',
+        roles: ['user'],
+        google_id: undefined,
+        email_verified: false,
+        is_active: true,
+      })
+    );
+    usersService.linkGoogleAccount.mockResolvedValue(
       toDocument({
         _id: 'user-id',
         email: 'user@example.com',
@@ -151,27 +198,24 @@ describe('AuthService', () => {
       })
     );
 
-    await expect(
-      service.validateGoogleUser({
-        googleId: 'google-123',
-        email: 'user@example.com',
-        emailVerified: true,
-      })
-    ).rejects.toBeInstanceOf(UnauthorizedException);
+    const result = await service.validateGoogleUser({
+      googleId: 'google-123',
+      email: 'user@example.com',
+      emailVerified: true,
+    });
 
     expect(verificationService.generateOtpForEmail).toHaveBeenCalledWith({
       email: 'user@example.com',
     });
-    expect(usersService.createGoogleUser).toHaveBeenCalledWith(
-      expect.objectContaining({
-        googleId: 'google-123',
-        email: 'user@example.com',
-        username: 'user',
-      })
+    expect(usersService.linkGoogleAccount).toHaveBeenCalledWith(
+      'user-id',
+      'google-123',
+      undefined
     );
+    expect(result.requires_email_verification).toBe(true);
   });
 
-  it('blocks Google sign-in for unverified linked accounts', async () => {
+  it('returns a pending verification state for an unverified linked Google account', async () => {
     usersService.findOneByGoogleId.mockResolvedValue(
       toDocument({
         _id: 'user-id',
@@ -184,13 +228,36 @@ describe('AuthService', () => {
       })
     );
 
-    await expect(
-      service.validateGoogleUser({
-        googleId: 'google-123',
+    const result = await service.validateGoogleUser({
+      googleId: 'google-123',
+      email: 'user@example.com',
+      emailVerified: true,
+    });
+
+    expect(result.requires_email_verification).toBe(true);
+    expect(verificationService.generateOtpForEmail).toHaveBeenCalledWith({
+      email: 'user@example.com',
+    });
+  });
+
+  it('blocks password login for unverified accounts and sends an OTP', async () => {
+    usersService.findOneByEmail.mockResolvedValue(
+      toDocument({
+        _id: 'user-id',
         email: 'user@example.com',
-        emailVerified: true,
+        username: 'user',
+        roles: ['user'],
+        password: bcrypt.hashSync('password', 10),
+        email_verified: false,
+        is_active: true,
       })
+    );
+
+    await expect(
+      service.validateUser('user@example.com', 'password')
     ).rejects.toThrow('Email must be verified first');
-    expect(verificationService.generateOtpForEmail).not.toHaveBeenCalled();
+    expect(verificationService.generateOtpForEmail).toHaveBeenCalledWith({
+      email: 'user@example.com',
+    });
   });
 });
