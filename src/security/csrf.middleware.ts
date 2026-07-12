@@ -3,10 +3,14 @@ import type { NextFunction, Request, Response } from 'express';
 import { ensureCsrfCookie, isCsrfRequestValid } from './csrf.util';
 
 const SAFE_HTTP_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
-const CSRF_EXEMPT_ROUTES = new Set(['POST /devices/verify-registration-code', 'POST /devices/register']);
+const CSRF_EXEMPT_ROUTES = new Set([
+  'POST /devices/verify-registration-code',
+  'POST /devices/register',
+]);
 
 function getRouteKey(request: Request): string {
-  const path = request.path || request.originalUrl?.split('?')[0] || request.url;
+  const path =
+    request.path || request.originalUrl?.split('?')[0] || request.url;
   return `${request.method.toUpperCase()} ${path}`;
 }
 
