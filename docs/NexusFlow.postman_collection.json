@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "1a6de4bc-2a2a-45de-a5f0-2b1df9d9ec61",
     "name": "NexusFlow Backend API",
-    "description": "Postman collection for NexusFlow backend endpoints.\n\n## Key Features\n\n### Notification System\n- **Incident-Based Cool-off**: Notifications are suppressed for the same incident (5 min base, 15 min if acknowledged) but different incidents immediately trigger new notifications\n- **Auto-handling**: When user acknowledges one notification for an incident, all pending notifications for that incident are automatically marked as handled\n- **Incident Matching**: An incident is uniquely identified by: user + flow + device + rule + node + module + reading_key\n\n### Alert Rules & Policies\n- Create and manage alert rules with customizable operators (>, <, >=, <=, =, between, outside)\n- Global alert policies define baseline configurations per module\n- Rules are automatically created when flows are saved based on active policies\n\n## Setup Instructions\n\n1. Set the `baseUrl` variable to your NexusFlow backend URL (e.g., http://localhost:3000)\n2. Set `internalAlertsApiKey` if using internal alert trigger endpoint\n3. Run Auth / Get CSRF Token before any POST, PUT, PATCH, or DELETE request\n4. Run the Auth endpoints to populate authentication tokens\n5. Use other endpoints with auto-populated Bearer and CSRF headers from previous responses",
+    "description": "Postman collection for NexusFlow backend endpoints.\n\n## Key Features\n\n### Notification System\n- **Incident-Based Cool-off**: Notifications are suppressed for the same incident (5 min base, 15 min if acknowledged) but different incidents immediately trigger new notifications\n- **Auto-handling**: When user acknowledges one notification for an incident, all pending notifications for that incident are automatically marked as handled\n- **Incident Matching**: An incident is uniquely identified by: user + flow + device + rule + node + module + reading_key\n\n### Alert Rules & Policies\n- Create and manage alert rules with customizable operators (>, <, >=, <=, =, between, outside)\n- Global alert policies define baseline configurations per module\n- Rules are automatically created when flows are saved based on active policies\n\n## Setup Instructions\n\n1. Set the `baseUrl` variable to your NexusFlow backend URL (e.g., http://localhost:3000)\n2. Set `internalAlertsApiKey` if using internal alert trigger endpoint\n3. Run Auth / Get CSRF Token before any POST, PUT, PATCH, or DELETE request\n4. Run the Auth endpoints to populate authentication tokens\n5. For Google login/register, open `{{baseUrl}}/auth/google` in a browser. The Postman Google OAuth requests document the redirect and callback endpoints, but the browser flow is the usual path because it depends on Google's consent screen and a signed state cookie.\n6. Use other endpoints with auto-populated Bearer and CSRF headers from previous responses",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -165,6 +165,68 @@
                   "  const json = pm.response.json();",
                   "  if (json?.access_token) pm.collectionVariables.set('accessToken', String(json.access_token));",
                   "} catch (e) {}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Start Google OAuth",
+          "protocolProfileBehavior": {
+            "followRedirects": false
+          },
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/auth/google",
+            "description": "Starts Google login/register by setting a signed `google_oauth_state` cookie and redirecting to Google's OAuth consent screen. Keep redirects disabled in Postman to inspect the `Location` header. For an actual login, open `{{baseUrl}}/auth/google` in a browser."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const location = pm.response.headers.get('Location');",
+                  "if (location) {",
+                  "  pm.collectionVariables.set('googleAuthUrl', location);",
+                  "  try {",
+                  "    const parsed = new URL(location);",
+                  "    const state = parsed.searchParams.get('state');",
+                  "    if (state) pm.collectionVariables.set('googleOAuthState', state);",
+                  "  } catch (e) {}",
+                  "}",
+                  "const stateCookie = pm.cookies.get('google_oauth_state');",
+                  "if (stateCookie) pm.collectionVariables.set('googleOAuthState', String(stateCookie));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Google OAuth Callback",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/auth/google/callback?code={{googleAuthCode}}&state={{googleOAuthState}}",
+            "description": "Google redirects here after consent. This endpoint validates the signed OAuth state cookie, logs in or registers the user, sets the `refresh_token` HttpOnly cookie, and returns `access_token` plus MQTT credentials. In normal use Google supplies `code` and `state`; manually calling this in Postman requires the matching `google_oauth_state` cookie from Start Google OAuth."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "try {",
+                  "  const json = pm.response.json();",
+                  "  if (json?.access_token) pm.collectionVariables.set('accessToken', String(json.access_token));",
+                  "} catch (e) {}",
+                  "const refreshToken = pm.cookies.get('refresh_token');",
+                  "if (refreshToken) pm.collectionVariables.set('refreshToken', String(refreshToken));",
+                  "const csrfToken = pm.cookies.get('XSRF-TOKEN');",
+                  "if (csrfToken) pm.collectionVariables.set('csrfToken', String(csrfToken));"
                 ]
               }
             }
@@ -2187,6 +2249,18 @@
     },
     {
       "key": "refreshToken",
+      "value": ""
+    },
+    {
+      "key": "googleAuthUrl",
+      "value": ""
+    },
+    {
+      "key": "googleOAuthState",
+      "value": ""
+    },
+    {
+      "key": "googleAuthCode",
       "value": ""
     }
   ]
