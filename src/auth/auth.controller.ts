@@ -31,7 +31,11 @@ import {
 import type { Response, Request } from 'express';
 import { REFRESH_TOKEN_COOKIE } from './utils/auth.util';
 import { CSRF_COOKIE_NAME, CSRF_HEADER_NAME } from '../security/csrf.constants';
-import { clearCsrfCookie, ensureCsrfCookie } from '../security/csrf.util';
+import {
+  clearCsrfCookie,
+  CSRF_RESPONSE_LOCAL_KEY,
+  ensureCsrfCookie,
+} from '../security/csrf.util';
 import { getCrossSiteCookieOptions } from '../security/cookie-options.util';
 import { GoogleOAuthGuard } from '../guards/auth/google-oauth.guard';
 import { GoogleOAuthExceptionFilter } from './filters/google-oauth-exception.filter';
@@ -85,6 +89,21 @@ export class AuthController {
       refreshToken,
       this.getRefreshCookieOptions()
     );
+  }
+
+  private getCsrfTokenForRedirect(
+    request: RequestWithCookies,
+    response: Response
+  ): string {
+    const localToken = response.locals?.[CSRF_RESPONSE_LOCAL_KEY];
+    return typeof localToken === 'string'
+      ? localToken
+      : ensureCsrfCookie(request, response);
+  }
+
+  private addCsrfRedirectParams(url: URL, csrfToken: string): void {
+    url.searchParams.set('csrf_token', csrfToken);
+    url.searchParams.set('csrf_header', CSRF_HEADER_NAME);
   }
 
   @Get('csrf-token')
@@ -267,12 +286,12 @@ export class AuthController {
   @ApiOperation({
     summary: 'Google OAuth callback',
     description:
-      'Validates Google OAuth state, signs in or creates the user using a verified Google email, sets the refresh token cookie, and redirects to the frontend with the access token.',
+      'Validates Google OAuth state, signs in or creates the user using a verified Google email, sets the refresh token cookie, and redirects to the frontend with the access token and CSRF token needed for refresh requests.',
   })
   @ApiResponse({
     status: 302,
     description:
-      'Redirects to frontend: /auth/google/callback?token={access_token} on success, /auth/google/callback?error={code} on failure',
+      'Redirects to frontend: /auth/google/callback?token={access_token}&csrf_token={csrf_token}&csrf_header=x-csrf-token on success, /auth/google/callback?error={code} on failure',
   })
   @ApiUnauthorizedResponse({
     description: 'Unauthorized - invalid state or Google profile',
@@ -283,11 +302,13 @@ export class AuthController {
   ) {
     clearGoogleOAuthStateCookie(response);
     const frontendUrl = this.getFrontendUrl();
+    const csrfToken = this.getCsrfTokenForRedirect(request, response);
 
     if (request.user.requires_email_verification) {
       const callbackUrl = new URL('/auth/google/callback', frontendUrl);
       callbackUrl.searchParams.set('verification_required', 'true');
       callbackUrl.searchParams.set('email', request.user.email);
+      this.addCsrfRedirectParams(callbackUrl, csrfToken);
       return response.redirect(callbackUrl.toString());
     }
 
@@ -297,6 +318,7 @@ export class AuthController {
 
       const callbackUrl = new URL('/auth/google/callback', frontendUrl);
       callbackUrl.searchParams.set('token', loginResult.access_token);
+      this.addCsrfRedirectParams(callbackUrl, csrfToken);
       return response.redirect(callbackUrl.toString());
     } catch {
       const errorUrl = new URL('/auth/google/callback', frontendUrl);
