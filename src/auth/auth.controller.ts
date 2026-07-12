@@ -337,7 +337,7 @@ export class AuthController {
   @ApiOperation({
     summary: 'Refresh access token',
     description:
-      'Rotates the refresh token cookie and returns a new access token for authenticated API calls.',
+      'Rotates the refresh token cookie and returns a new access token plus CSRF token for authenticated API calls.',
   })
   @ApiCookieAuth(REFRESH_TOKEN_COOKIE)
   @ApiCreatedResponse({
@@ -345,6 +345,8 @@ export class AuthController {
     schema: {
       example: {
         access_token: 'eyJhbGciOi...access',
+        csrf_token: 'nonce.signature',
+        csrf_header: CSRF_HEADER_NAME,
       },
     },
   })
@@ -363,9 +365,12 @@ export class AuthController {
 
     const refreshedTokens = await this.authService.refresh(refreshToken);
     this.setRefreshCookie(response, refreshedTokens.refresh_token);
+    const csrfToken = ensureCsrfCookie(request, response);
 
     return {
       access_token: refreshedTokens.access_token,
+      csrf_token: csrfToken,
+      csrf_header: CSRF_HEADER_NAME,
     };
   }
 

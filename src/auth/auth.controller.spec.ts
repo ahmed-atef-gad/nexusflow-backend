@@ -139,4 +139,39 @@ describe('AuthController', () => {
     );
     expect(redirectUrl.searchParams.get('csrf_header')).toBe(CSRF_HEADER_NAME);
   });
+
+  it('rotates refresh cookie and returns CSRF token during refresh', async () => {
+    authService.refresh.mockResolvedValue({
+      access_token: 'new-access-token',
+      refresh_token: 'new-refresh-token',
+    });
+    const cookie = jest.fn();
+
+    const result = await controller.refresh(
+      {
+        cookies: {
+          [REFRESH_TOKEN_COOKIE]: 'old-refresh-token',
+        },
+      } as never,
+      {
+        cookie,
+        locals: {},
+      } as never
+    );
+
+    expect(authService.refresh).toHaveBeenCalledWith('old-refresh-token');
+    expect(cookie).toHaveBeenCalledWith(
+      REFRESH_TOKEN_COOKIE,
+      'new-refresh-token',
+      expect.objectContaining({
+        httpOnly: true,
+        path: '/',
+      })
+    );
+    expect(result).toEqual({
+      access_token: 'new-access-token',
+      csrf_token: expect.any(String),
+      csrf_header: CSRF_HEADER_NAME,
+    });
+  });
 });
