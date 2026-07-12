@@ -112,8 +112,7 @@ export class AuthController {
 
   private getGoogleVerificationUrl(frontendUrl: string): URL {
     const path =
-      process.env.GOOGLE_VERIFICATION_REDIRECT_PATH ||
-      '/auth/google/callback';
+      process.env.GOOGLE_VERIFICATION_REDIRECT_PATH || '/verification';
     return new URL(path, frontendUrl);
   }
 
@@ -313,7 +312,6 @@ export class AuthController {
   ) {
     clearGoogleOAuthStateCookie(response);
     const frontendUrl = this.getFrontendUrl();
-    const csrfToken = this.getCsrfTokenForRedirect(request, response);
 
     if (request.user.requires_email_verification) {
       response.clearCookie(
@@ -322,16 +320,15 @@ export class AuthController {
       );
       const callbackUrl = this.getGoogleVerificationUrl(frontendUrl);
       callbackUrl.searchParams.set('verification_required', 'true');
-      callbackUrl.searchParams.set('reason', 'email_verification_required');
       callbackUrl.searchParams.set('email', request.user.email);
       callbackUrl.searchParams.set('provider', 'google');
-      this.addCsrfRedirectParams(callbackUrl, csrfToken);
       return response.redirect(callbackUrl.toString());
     }
 
     try {
       const loginResult = await this.authService.login(request.user);
       this.setRefreshCookie(response, loginResult.refresh_token);
+      const csrfToken = this.getCsrfTokenForRedirect(request, response);
 
       const callbackUrl = this.getGoogleCallbackUrl(frontendUrl);
       callbackUrl.searchParams.set('token', loginResult.access_token);
