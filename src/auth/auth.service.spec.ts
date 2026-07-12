@@ -25,7 +25,10 @@ describe('AuthService', () => {
     createGoogleUser: jest.Mock;
     getAuthStateById: jest.Mock;
     getRefreshTokenHashById: jest.Mock;
+    getRefreshTokenStateById: jest.Mock;
     updateRefreshTokenHash: jest.Mock;
+    setRefreshTokenState: jest.Mock;
+    rotateRefreshTokenState: jest.Mock;
   };
   let jwtService: {
     sign: jest.Mock;
@@ -46,7 +49,10 @@ describe('AuthService', () => {
       createGoogleUser: jest.fn(),
       getAuthStateById: jest.fn(),
       getRefreshTokenHashById: jest.fn(),
+      getRefreshTokenStateById: jest.fn(),
       updateRefreshTokenHash: jest.fn(),
+      setRefreshTokenState: jest.fn(),
+      rotateRefreshTokenState: jest.fn(),
     };
     jwtService = {
       sign: jest.fn(),
@@ -286,7 +292,7 @@ describe('AuthService', () => {
     });
   });
 
-  it('issues a new access token on refresh without rotating the refresh token hash', async () => {
+  it('rotates refresh token state when the current refresh token is used', async () => {
     const refreshToken = 'refresh-token';
     jwtService.verifyAsync.mockResolvedValue({
       sub: 'user-id',
@@ -294,8 +300,11 @@ describe('AuthService', () => {
       username: 'user',
       roles: ['user'],
       token_version: 0,
+      jti: 'old-jti',
     });
-    jwtService.sign.mockReturnValue('new-access-token');
+    jwtService.sign
+      .mockReturnValueOnce('new-access-token')
+      .mockReturnValueOnce('new-refresh-token');
     usersService.getAuthStateById.mockResolvedValue({
       email: 'user@example.com',
       username: 'user',
@@ -304,14 +313,32 @@ describe('AuthService', () => {
       isActive: true,
       roles: ['user'],
     });
-    usersService.getRefreshTokenHashById.mockResolvedValue(
-      await bcrypt.hash(refreshToken, 10)
-    );
+    usersService.getRefreshTokenStateById.mockResolvedValue({
+      refreshTokenHash: await bcrypt.hash(refreshToken, 10),
+      refreshTokenJti: 'old-jti',
+      previousRefreshTokenHash: null,
+      previousRefreshTokenJti: null,
+      previousRefreshTokenExpiresAt: null,
+    });
+    usersService.rotateRefreshTokenState.mockResolvedValue(true);
 
     const result = await service.refresh(refreshToken);
 
-    expect(result).toEqual({ access_token: 'new-access-token' });
-    expect(usersService.updateRefreshTokenHash).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      access_token: 'new-access-token',
+      refresh_token: 'new-refresh-token',
+    });
+    expect(usersService.rotateRefreshTokenState).toHaveBeenCalledWith(
+      'user-id',
+      expect.objectContaining({
+        expectedRefreshTokenJti: 'old-jti',
+        refreshTokenHash: expect.any(String),
+        refreshTokenJti: expect.any(String),
+        previousRefreshTokenHash: expect.any(String),
+        previousRefreshTokenJti: 'old-jti',
+        previousRefreshTokenExpiresAt: expect.any(Date),
+      })
+    );
     expect(jwtService.sign).toHaveBeenCalledWith(
       expect.objectContaining({
         sub: 'user-id',
@@ -323,5 +350,38 @@ describe('AuthService', () => {
         secret: 'test-jwt-secret',
       })
     );
+  });
+
+  it('accepts the previous refresh token during the grace window without rotating again', async () => {
+    const refreshToken = 'previous-refresh-token';
+    jwtService.verifyAsync.mockResolvedValue({
+      sub: 'user-id',
+      email: 'user@example.com',
+      username: 'user',
+      roles: ['user'],
+      token_version: 0,
+      jti: 'previous-jti',
+    });
+    jwtService.sign.mockReturnValue('new-access-token');
+    usersService.getAuthStateById.mockResolvedValue({
+      email: 'user@example.com',
+      username: 'user',
+      tokenVersion: 0,
+      emailVerified: true,
+      isActive: true,
+      roles: ['user'],
+    });
+    usersService.getRefreshTokenStateById.mockResolvedValue({
+      refreshTokenHash: await bcrypt.hash('current-refresh-token', 10),
+      refreshTokenJti: 'current-jti',
+      previousRefreshTokenHash: await bcrypt.hash(refreshToken, 10),
+      previousRefreshTokenJti: 'previous-jti',
+      previousRefreshTokenExpiresAt: new Date(Date.now() + 10_000),
+    });
+
+    const result = await service.refresh(refreshToken);
+
+    expect(result).toEqual({ access_token: 'new-access-token' });
+    expect(usersService.rotateRefreshTokenState).not.toHaveBeenCalled();
   });
 });

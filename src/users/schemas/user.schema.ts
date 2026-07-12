@@ -33,6 +33,18 @@ export class User {
   @Prop({ type: String, nullable: true, select: false })
   refresh_token?: string;
 
+  @Prop({ type: String, nullable: true, select: false })
+  refresh_token_jti?: string;
+
+  @Prop({ type: String, nullable: true, select: false })
+  previous_refresh_token?: string;
+
+  @Prop({ type: String, nullable: true, select: false })
+  previous_refresh_token_jti?: string;
+
+  @Prop({ type: Date, nullable: true, select: false })
+  previous_refresh_token_expires_at?: Date | null;
+
   @Prop({ type: Date, nullable: true })
   last_login?: Date;
 

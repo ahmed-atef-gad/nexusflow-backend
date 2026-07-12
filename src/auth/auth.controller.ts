@@ -334,10 +334,11 @@ export class AuthController {
   }
 
   @Post('refresh')
+  @Throttle({ default: { limit: 20, ttl: 60 * 1000 } })
   @ApiOperation({
     summary: 'Refresh access token',
     description:
-      'Returns a new access token plus CSRF token for authenticated API calls. The refresh cookie remains valid until its JWT expiry or explicit invalidation.',
+      'Rotates the refresh token cookie when the current refresh token is used, accepts the previous token for a short grace window to avoid concurrent request races, and returns a new access token plus CSRF token.',
   })
   @ApiCookieAuth(REFRESH_TOKEN_COOKIE)
   @ApiCreatedResponse({
@@ -364,6 +365,9 @@ export class AuthController {
     }
 
     const refreshedTokens = await this.authService.refresh(refreshToken);
+    if (refreshedTokens.refresh_token) {
+      this.setRefreshCookie(response, refreshedTokens.refresh_token);
+    }
     const csrfToken = ensureCsrfCookie(request, response);
 
     return {
