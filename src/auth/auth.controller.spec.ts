@@ -71,6 +71,12 @@ describe('AuthController', () => {
   });
 
   it('redirects Google signups that still need OTP verification', async () => {
+    authService.login.mockResolvedValue({
+      access_token: 'access-token',
+      refresh_token: 'refresh-token',
+      mqtt_username: 'user',
+      mqtt_password: 'mqtt-password',
+    });
     const redirect = jest.fn();
     const cookie = jest.fn();
     const clearCookie = jest.fn();
@@ -93,18 +99,34 @@ describe('AuthController', () => {
       } as never
     );
 
-    expect(authService.login).not.toHaveBeenCalled();
+    expect(authService.login).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: 'user@example.com',
+        requires_email_verification: true,
+      })
+    );
     expect(clearCookie).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(Object)
+    );
+    expect(cookie).toHaveBeenCalledWith(
       REFRESH_TOKEN_COOKIE,
+      'refresh-token',
       expect.objectContaining({
         httpOnly: true,
         path: '/',
       })
     );
     const redirectUrl = new URL(redirect.mock.calls[0][0]);
-    expect(redirectUrl.pathname).toBe('/verify-email');
+    expect(redirectUrl.pathname).toBe('/verification');
+    expect(redirectUrl.searchParams.get('token')).toBe('access-token');
+    expect(redirectUrl.searchParams.get('email')).toBe('user@example.com');
+    expect(redirectUrl.searchParams.get('userEmail')).toBe('user@example.com');
     expect(redirectUrl.searchParams.get('provider')).toBe('google');
-    expect(redirectUrl.searchParams.get('csrf_token')).toBeNull();
+    expect(redirectUrl.searchParams.get('csrf_token')).toEqual(
+      expect.any(String)
+    );
+    expect(redirectUrl.searchParams.get('csrf_header')).toBe(CSRF_HEADER_NAME);
     expect(redirect).toHaveBeenCalledWith(
       expect.stringContaining('verification_required=true')
     );
@@ -112,6 +134,12 @@ describe('AuthController', () => {
 
   it('redirects Google signups needing OTP to configured verification path', async () => {
     process.env.GOOGLE_VERIFICATION_REDIRECT_PATH = '/verify-email';
+    authService.login.mockResolvedValue({
+      access_token: 'access-token',
+      refresh_token: 'refresh-token',
+      mqtt_username: 'user',
+      mqtt_password: 'mqtt-password',
+    });
     const redirect = jest.fn();
     const cookie = jest.fn();
     const clearCookie = jest.fn();
@@ -140,6 +168,11 @@ describe('AuthController', () => {
     expect(redirectUrl.pathname).toBe('/verify-email');
     expect(redirectUrl.searchParams.get('verification_required')).toBe('true');
     expect(redirectUrl.searchParams.get('email')).toBe('user@example.com');
+    expect(redirectUrl.searchParams.get('userEmail')).toBe('user@example.com');
+    expect(redirectUrl.searchParams.get('token')).toBe('access-token');
+    expect(redirectUrl.searchParams.get('csrf_token')).toEqual(
+      expect.any(String)
+    );
     expect(redirectUrl.searchParams.get('provider')).toBe('google');
   });
 

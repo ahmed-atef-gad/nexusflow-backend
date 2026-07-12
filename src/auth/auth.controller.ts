@@ -116,6 +116,16 @@ export class AuthController {
     return new URL(path, frontendUrl);
   }
 
+  private addGoogleVerificationRedirectParams(
+    url: URL,
+    email: string
+  ): void {
+    url.searchParams.set('verification_required', 'true');
+    url.searchParams.set('email', email);
+    url.searchParams.set('userEmail', email);
+    url.searchParams.set('provider', 'google');
+  }
+
   @Get('csrf-token')
   @Throttle({ default: { limit: 60, ttl: 60 * 1000 } })
   @ApiOperation({
@@ -313,22 +323,21 @@ export class AuthController {
     clearGoogleOAuthStateCookie(response);
     const frontendUrl = this.getFrontendUrl();
 
-    if (request.user.requires_email_verification) {
-      response.clearCookie(
-        REFRESH_TOKEN_COOKIE,
-        this.getRefreshCookieOptions()
-      );
-      const callbackUrl = this.getGoogleVerificationUrl(frontendUrl);
-      callbackUrl.searchParams.set('verification_required', 'true');
-      callbackUrl.searchParams.set('email', request.user.email);
-      callbackUrl.searchParams.set('provider', 'google');
-      return response.redirect(callbackUrl.toString());
-    }
-
     try {
       const loginResult = await this.authService.login(request.user);
       this.setRefreshCookie(response, loginResult.refresh_token);
       const csrfToken = this.getCsrfTokenForRedirect(request, response);
+
+      if (request.user.requires_email_verification) {
+        const verificationUrl = this.getGoogleVerificationUrl(frontendUrl);
+        verificationUrl.searchParams.set('token', loginResult.access_token);
+        this.addGoogleVerificationRedirectParams(
+          verificationUrl,
+          request.user.email
+        );
+        this.addCsrfRedirectParams(verificationUrl, csrfToken);
+        return response.redirect(verificationUrl.toString());
+      }
 
       const callbackUrl = this.getGoogleCallbackUrl(frontendUrl);
       callbackUrl.searchParams.set('token', loginResult.access_token);
