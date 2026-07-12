@@ -12,6 +12,8 @@ import {
   NotificationDeviceToken,
   NotificationDeviceTokenSchema,
 } from 'src/notifications/schemas/notification-device-token.schema';
+import { GoogleStrategy } from './strategies/google.strategy';
+import { GoogleOAuthGuard } from 'src/guards/auth/google-oauth.guard';
 
 @Module({
   imports: [
@@ -33,7 +35,7 @@ import {
       }),
     }),
   ],
-  providers: [AuthService, AuthGuard],
+  providers: [AuthService, AuthGuard, GoogleStrategy, GoogleOAuthGuard],
   controllers: [AuthController],
   exports: [AuthService, JwtModule, AuthGuard],
 })

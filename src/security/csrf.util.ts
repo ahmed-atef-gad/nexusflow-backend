@@ -5,6 +5,7 @@ import {
   CSRF_COOKIE_NAME,
   CSRF_HEADER_NAME,
 } from './csrf.constants';
+import { getCrossSiteCookieOptions } from './cookie-options.util';
 
 const CSRF_TOKEN_BYTES = 32;
 const CSRF_COOKIE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -58,8 +59,7 @@ export function getCsrfCookieOptions(): CookieOptions {
     httpOnly: false,
     maxAge: CSRF_COOKIE_MAX_AGE_MS,
     path: '/',
-    sameSite: 'none',
-    secure: true,
+    ...getCrossSiteCookieOptions(),
   };
 }
 

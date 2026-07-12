@@ -47,6 +47,22 @@ export class UsersService {
     return this.userModel.findOne({ email: email, deleted_at: null }).exec();
   }
 
+  async findOneByEmailWithGoogleId(
+    email: string
+  ): Promise<UserDocument | null> {
+    return this.userModel
+      .findOne({ email: this.normalizeEmail(email), deleted_at: null })
+      .select('+google_id')
+      .exec();
+  }
+
+  async findOneByGoogleId(googleId: string): Promise<UserDocument | null> {
+    return this.userModel
+      .findOne({ google_id: googleId, deleted_at: null })
+      .select('+google_id')
+      .exec();
+  }
+
   async findOneByUsername(username: string): Promise<UserDocument | null> {
     return this.userModel
       .findOne({ username: username, deleted_at: null })
@@ -106,6 +122,84 @@ export class UsersService {
     createdUser.roles = [Role.User]; // Default role
     return createdUser.save();
   }
+
+  async createGoogleUser(input: {
+    googleId: string;
+    email: string;
+    username: string;
+    avatarUrl?: string;
+  }): Promise<UserDocument> {
+    const randomPassword = crypto.randomBytes(48).toString('base64url');
+    const password = await bcrypt.hash(randomPassword, 12);
+    const createdUser = new this.userModel({
+      username: input.username,
+      email: this.normalizeEmail(input.email),
+      password,
+      google_id: input.googleId,
+      avatarUrl: input.avatarUrl,
+      roles: [Role.User],
+      email_verified: true,
+      is_active: true,
+    });
+    return createdUser.save();
+  }
+
+  async linkGoogleAccount(
+    userId: string,
+    googleId: string,
+    avatarUrl?: string
+  ): Promise<UserDocument | null> {
+    const isValidId = Types.ObjectId.isValid(userId);
+    if (!isValidId) return null;
+
+    const update: Record<string, unknown> = {
+      google_id: googleId,
+      email_verified: true,
+    };
+    if (avatarUrl) {
+      update.avatarUrl = avatarUrl;
+    }
+
+    return this.userModel
+      .findOneAndUpdate(
+        {
+          _id: userId,
+          deleted_at: null,
+          $or: [
+            { google_id: { $exists: false } },
+            { google_id: null },
+            { google_id: googleId },
+          ],
+        },
+        { $set: update },
+        { new: true }
+      )
+      .exec();
+  }
+
+  async createAvailableUsername(seed: string): Promise<string> {
+    const base =
+      seed
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9_]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .replace(/_{2,}/g, '_')
+        .slice(0, 24) || 'user';
+
+    const existingBase = await this.findOneByUsername(base);
+    if (!existingBase) return base;
+
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const suffix = crypto.randomBytes(3).toString('hex');
+      const candidate = `${base.slice(0, 17)}_${suffix}`;
+      const existing = await this.findOneByUsername(candidate);
+      if (!existing) return candidate;
+    }
+
+    return `user_${new Types.ObjectId().toString().slice(-12)}`;
+  }
+
   async create(createUserDto: CreateUserDto): Promise<UserDocument> {
     const saltOrRounds = 10;
     const hashedPassword = await bcrypt.hash(

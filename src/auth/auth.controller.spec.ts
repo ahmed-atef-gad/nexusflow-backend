@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AuthController } from './auth.controller';
+import { AuthService } from './auth.service';
 
 describe('AuthController', () => {
   let controller: AuthController;
@@ -7,6 +8,21 @@ describe('AuthController', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AuthController],
+      providers: [
+        {
+          provide: AuthService,
+          useValue: {
+            getGoogleAuthorizationUrl: jest.fn(),
+            login: jest.fn(),
+            register: jest.fn(),
+            validateUser: jest.fn(),
+            refresh: jest.fn(),
+            forgotPassword: jest.fn(),
+            resetPassword: jest.fn(),
+            logout: jest.fn(),
+          },
+        },
+      ],
     }).compile();
 
     controller = module.get<AuthController>(AuthController);

@@ -15,6 +15,9 @@ export class User {
   @Prop({ required: true })
   password!: string;
 
+  @Prop({ type: String, unique: true, sparse: true, select: false })
+  google_id?: string;
+
   @Prop({ type: String, nullable: true })
   avatarUrl?: string;
 
