@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { UnauthorizedException } from '@nestjs/common';
-import { AuthService, AuthenticatedUser } from './auth.service';
+import { AuthService } from './auth.service';
 import { UsersService } from 'src/users/users.service';
 import { JwtService } from '@nestjs/jwt';
 import { VerificationService } from 'src/verification/verification.service';
@@ -102,7 +102,7 @@ describe('AuthService', () => {
       'google-123',
       undefined
     );
-    expect((result as AuthenticatedUser).email).toBe('user@example.com');
+    expect(result.email).toBe('user@example.com');
     expect(result).not.toHaveProperty('google_id');
   });
 

@@ -131,10 +131,7 @@ export class FirmwareService {
     return latestFirmware;
   }
 
-  async getFirmwareHistory(params: {
-    page?: number;
-    limit?: number;
-  }): Promise<{
+  async getFirmwareHistory(params: { page?: number; limit?: number }): Promise<{
     data: FirmwareDocument[];
     total: number;
     page: number;

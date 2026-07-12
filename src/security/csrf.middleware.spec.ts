@@ -10,14 +10,28 @@ describe('csrfProtectionMiddleware', () => {
     process.env.JWT_SECRET = originalJwtSecret;
   });
 
-  function createResponse(): Response {
+  function createResponse(): {
+    response: Response;
+    cookieMock: jest.Mock;
+  } {
+    const cookieMock = jest.fn();
     return {
-      cookie: jest.fn(),
-    } as unknown as Response;
+      response: {
+        cookie: cookieMock,
+      } as unknown as Response,
+      cookieMock,
+    };
   }
 
-  function createNext(): NextFunction {
-    return jest.fn() as unknown as NextFunction;
+  function createNext(): {
+    next: NextFunction;
+    nextMock: jest.Mock;
+  } {
+    const nextMock = jest.fn();
+    return {
+      next: nextMock as unknown as NextFunction,
+      nextMock,
+    };
   }
 
   it('should skip CSRF validation for ESP registration with code', () => {
@@ -27,13 +41,13 @@ describe('csrfProtectionMiddleware', () => {
       headers: {},
       cookies: {},
     } as unknown as Request;
-    const response = createResponse();
-    const next = createNext();
+    const { response, cookieMock } = createResponse();
+    const { next, nextMock } = createNext();
 
     csrfProtectionMiddleware(request, response, next);
 
-    expect(response.cookie).not.toHaveBeenCalled();
-    expect(next).toHaveBeenCalledWith();
+    expect(cookieMock).not.toHaveBeenCalled();
+    expect(nextMock).toHaveBeenCalledWith();
   });
 
   it('should still require CSRF validation for other device POST routes', () => {
@@ -44,16 +58,16 @@ describe('csrfProtectionMiddleware', () => {
       headers: {},
       cookies: {},
     } as unknown as Request;
-    const response = createResponse();
-    const next = createNext();
+    const { response, cookieMock } = createResponse();
+    const { next, nextMock } = createNext();
 
     csrfProtectionMiddleware(request, response, next);
 
-    expect(response.cookie).toHaveBeenCalledWith(
+    expect(cookieMock).toHaveBeenCalledWith(
       CSRF_COOKIE_NAME,
       expect.any(String),
       expect.objectContaining({ path: '/' })
     );
-    expect(next).toHaveBeenCalledWith(expect.any(ForbiddenException));
+    expect(nextMock).toHaveBeenCalledWith(expect.any(ForbiddenException));
   });
 });
