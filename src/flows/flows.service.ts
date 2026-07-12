@@ -230,6 +230,10 @@ export class FlowsService {
     const savedFlow = await createdFlow.save();
     const savedFlowId = savedFlow.id as string;
 
+    await this.notificationsService.createDefaultNotificationPreference(
+      userId,
+      savedFlowId
+    );
     await this.setupService.create({
       flowId: savedFlowId,
       elements: setupData,
