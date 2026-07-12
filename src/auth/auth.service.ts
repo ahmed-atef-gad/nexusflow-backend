@@ -21,6 +21,8 @@ export interface AuthenticatedUser {
   username: string;
   token_version?: number;
   is_active?: boolean;
+  email_verified?: boolean;
+  requires_email_verification?: boolean;
 }
 
 interface SessionTokens {
@@ -188,6 +190,12 @@ export class AuthService {
       user.is_active !== false &&
       (await bcrypt.compare(pass, user.password))
     ) {
+      if (user.email_verified === false) {
+        await this.verificationService.generateOtpForEmail({
+          email: normalizedEmail,
+        });
+        throw new UnauthorizedException('Email must be verified first');
+      }
       return this.stripSensitiveUserFields(user);
     }
     return null;
@@ -218,7 +226,11 @@ export class AuthService {
         throw new UnauthorizedException('Account is disabled');
       }
       if (googleUser.email_verified === false) {
-        throw new UnauthorizedException('Email must be verified first');
+        await this.requireEmailVerification(normalizedEmail);
+        return {
+          ...this.stripSensitiveUserFields(googleUser),
+          requires_email_verification: true,
+        };
       }
       return this.stripSensitiveUserFields(googleUser);
     }
@@ -230,7 +242,31 @@ export class AuthService {
         throw new UnauthorizedException('Account is disabled');
       }
       if (existingUser.email_verified === false) {
-        throw new UnauthorizedException('Email must be verified first');
+        const existingGoogleId = (
+          existingUser.toObject() as unknown as { google_id?: string }
+        ).google_id;
+        if (existingGoogleId && existingGoogleId !== profile.googleId) {
+          throw new UnauthorizedException(
+            'This email is already linked to another Google account'
+          );
+        }
+
+        if (!existingGoogleId) {
+          const linkedUser = await this.usersService.linkGoogleAccount(
+            String(existingUser._id),
+            profile.googleId,
+            existingUser.avatarUrl ? undefined : profile.avatarUrl
+          );
+          if (!linkedUser) {
+            throw new UnauthorizedException('Unable to link Google account');
+          }
+        }
+
+        await this.requireEmailVerification(normalizedEmail);
+        return {
+          ...this.stripSensitiveUserFields(existingUser),
+          requires_email_verification: true,
+        };
       }
 
       const existingGoogleId = (
@@ -256,7 +292,7 @@ export class AuthService {
     const username = await this.usersService.createAvailableUsername(
       this.buildGoogleUsernameSeed({ ...profile, email: normalizedEmail })
     );
-    await this.usersService.createGoogleUser({
+    const createdUser = await this.usersService.createGoogleUser({
       googleId: profile.googleId,
       email: normalizedEmail,
       username,
@@ -265,7 +301,10 @@ export class AuthService {
 
     await this.requireEmailVerification(normalizedEmail);
 
-    throw new UnauthorizedException('Email must be verified first');
+    return {
+      ...this.stripSensitiveUserFields(createdUser),
+      requires_email_verification: true,
+    };
   }
 
   /**

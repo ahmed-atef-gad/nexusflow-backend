@@ -284,6 +284,13 @@ export class AuthController {
     clearGoogleOAuthStateCookie(response);
     const frontendUrl = this.getFrontendUrl();
 
+    if (request.user.requires_email_verification) {
+      const callbackUrl = new URL('/auth/google/callback', frontendUrl);
+      callbackUrl.searchParams.set('verification_required', 'true');
+      callbackUrl.searchParams.set('email', request.user.email);
+      return response.redirect(callbackUrl.toString());
+    }
+
     try {
       const loginResult = await this.authService.login(request.user);
       this.setRefreshCookie(response, loginResult.refresh_token);
