@@ -316,10 +316,15 @@ export class AuthController {
     const csrfToken = this.getCsrfTokenForRedirect(request, response);
 
     if (request.user.requires_email_verification) {
+      response.clearCookie(
+        REFRESH_TOKEN_COOKIE,
+        this.getRefreshCookieOptions()
+      );
       const callbackUrl = this.getGoogleVerificationUrl(frontendUrl);
       callbackUrl.searchParams.set('verification_required', 'true');
       callbackUrl.searchParams.set('reason', 'email_verification_required');
       callbackUrl.searchParams.set('email', request.user.email);
+      callbackUrl.searchParams.set('provider', 'google');
       this.addCsrfRedirectParams(callbackUrl, csrfToken);
       return response.redirect(callbackUrl.toString());
     }
