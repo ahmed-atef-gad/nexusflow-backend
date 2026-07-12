@@ -49,6 +49,7 @@ type RuntimeCommand = {
 type RuntimeMessage = {
   payload: unknown;
   value: unknown;
+  rawPayload: InputPayload | null;
   topic: string;
   nodeId: string;
   moduleId: string;
@@ -1253,6 +1254,10 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
   private buildForwardPayload(
     message: RuntimeMessage
   ): Record<string, unknown> {
+    if (message.rawPayload && message.payload === message.input.normalized) {
+      return message.rawPayload as Record<string, unknown>;
+    }
+
     const payload = message.payload;
     if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
       return payload as Record<string, unknown>;
@@ -1267,6 +1272,7 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     inputNodeId: string;
     inputModuleId: string;
     payload: unknown;
+    rawPayload: InputPayload | null;
     normalizedInput: number | null;
     topic: string;
     flowId: string;
@@ -1277,6 +1283,7 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     return {
       payload: params.payload,
       value: params.payload,
+      rawPayload: params.rawPayload,
       topic: params.topic,
       nodeId: params.inputNodeId,
       moduleId: params.inputModuleId,
@@ -1717,6 +1724,7 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
         inputNodeId,
         inputModuleId: String(firstStep.moduleId ?? ''),
         payload: initialPayload,
+        rawPayload,
         normalizedInput: inputValue,
         topic,
         flowId,
