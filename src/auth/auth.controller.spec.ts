@@ -1,9 +1,22 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { CSRF_HEADER_NAME } from '../security/csrf.constants';
+import { REFRESH_TOKEN_COOKIE } from './utils/auth.util';
+
+function restoreEnv(key: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[key];
+    return;
+  }
+
+  process.env[key] = value;
+}
 
 describe('AuthController', () => {
   let controller: AuthController;
+  const originalJwtSecret = process.env.JWT_SECRET;
+  const originalCorsOrigins = process.env.CORS_ORIGINS;
   let authService: {
     getGoogleAuthorizationUrl: jest.Mock;
     login: jest.Mock;
@@ -16,6 +29,8 @@ describe('AuthController', () => {
   };
 
   beforeEach(async () => {
+    process.env.JWT_SECRET = 'test-jwt-secret';
+    process.env.CORS_ORIGINS = 'https://app.example.com';
     authService = {
       getGoogleAuthorizationUrl: jest.fn(),
       login: jest.fn(),
@@ -38,6 +53,11 @@ describe('AuthController', () => {
     }).compile();
 
     controller = module.get<AuthController>(AuthController);
+  });
+
+  afterEach(() => {
+    restoreEnv('JWT_SECRET', originalJwtSecret);
+    restoreEnv('CORS_ORIGINS', originalCorsOrigins);
   });
 
   it('should be defined', () => {
@@ -71,5 +91,52 @@ describe('AuthController', () => {
     expect(redirect).toHaveBeenCalledWith(
       expect.stringContaining('verification_required=true')
     );
+  });
+
+  it('sets refresh cookie and redirects Google logins with access and CSRF tokens', async () => {
+    authService.login.mockResolvedValue({
+      access_token: 'access-token',
+      refresh_token: 'refresh-token',
+      mqtt_username: 'user',
+      mqtt_password: 'mqtt-password',
+    });
+    const redirect = jest.fn();
+    const cookie = jest.fn();
+    const clearCookie = jest.fn();
+
+    await controller.googleCallback(
+      {
+        user: {
+          _id: 'user-id',
+          email: 'user@example.com',
+          roles: ['user'],
+          username: 'user',
+        },
+        cookies: {},
+      } as never,
+      {
+        redirect,
+        cookie,
+        clearCookie,
+        locals: {},
+      } as never
+    );
+
+    expect(cookie).toHaveBeenCalledWith(
+      REFRESH_TOKEN_COOKIE,
+      'refresh-token',
+      expect.objectContaining({
+        httpOnly: true,
+        path: '/',
+      })
+    );
+    const redirectUrl = new URL(redirect.mock.calls[0][0]);
+    expect(redirectUrl.origin).toBe('https://app.example.com');
+    expect(redirectUrl.pathname).toBe('/auth/google/callback');
+    expect(redirectUrl.searchParams.get('token')).toBe('access-token');
+    expect(redirectUrl.searchParams.get('csrf_token')).toEqual(
+      expect.any(String)
+    );
+    expect(redirectUrl.searchParams.get('csrf_header')).toBe(CSRF_HEADER_NAME);
   });
 });

@@ -9,10 +9,17 @@ import { getCrossSiteCookieOptions } from './cookie-options.util';
 
 const CSRF_TOKEN_BYTES = 32;
 const CSRF_COOKIE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+export const CSRF_RESPONSE_LOCAL_KEY = 'csrfToken';
 
 type RequestWithCookies = Request & {
   cookies?: Record<string, string | undefined>;
 };
+
+function rememberCsrfToken(response: Response, token: string): void {
+  if (response.locals) {
+    response.locals[CSRF_RESPONSE_LOCAL_KEY] = token;
+  }
+}
 
 function getCsrfSecret(): string {
   const secret = process.env.CSRF_SECRET ?? process.env.JWT_SECRET;
@@ -92,9 +99,14 @@ export function ensureCsrfCookie(
   response: Response
 ): string {
   const existingToken = getCsrfCookieValue(request);
-  if (isValidCsrfToken(existingToken)) return existingToken;
+  if (isValidCsrfToken(existingToken)) {
+    rememberCsrfToken(response, existingToken);
+    return existingToken;
+  }
 
-  return setCsrfCookie(response);
+  const token = setCsrfCookie(response);
+  rememberCsrfToken(response, token);
+  return token;
 }
 
 export function clearCsrfCookie(response: Response): void {
