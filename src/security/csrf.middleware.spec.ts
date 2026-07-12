@@ -7,6 +7,11 @@ describe('csrfProtectionMiddleware', () => {
   const originalJwtSecret = process.env.JWT_SECRET;
 
   afterEach(() => {
+    if (originalJwtSecret === undefined) {
+      delete process.env.JWT_SECRET;
+      return;
+    }
+
     process.env.JWT_SECRET = originalJwtSecret;
   });
 
@@ -50,11 +55,27 @@ describe('csrfProtectionMiddleware', () => {
     expect(nextMock).toHaveBeenCalledWith();
   });
 
+  it('should skip CSRF validation for refresh because it bootstraps sessions', () => {
+    const request = {
+      method: 'POST',
+      path: '/auth/refresh',
+      headers: {},
+      cookies: {},
+    } as unknown as Request;
+    const { response, cookieMock } = createResponse();
+    const { next, nextMock } = createNext();
+
+    csrfProtectionMiddleware(request, response, next);
+
+    expect(cookieMock).not.toHaveBeenCalled();
+    expect(nextMock).toHaveBeenCalledWith();
+  });
+
   it('should still require CSRF validation for other device POST routes', () => {
     process.env.JWT_SECRET = 'test-secret';
     const request = {
       method: 'POST',
-      path: '/devices/register',
+      path: '/devices/update',
       headers: {},
       cookies: {},
     } as unknown as Request;

@@ -4,6 +4,7 @@ import { ensureCsrfCookie, isCsrfRequestValid } from './csrf.util';
 
 const SAFE_HTTP_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const CSRF_EXEMPT_ROUTES = new Set([
+  'POST /auth/refresh',
   'POST /devices/verify-registration-code',
   'POST /devices/register',
 ]);
@@ -20,7 +21,8 @@ export function csrfProtectionMiddleware(
   next: NextFunction
 ) {
   try {
-    // Temporary exemption for ESP firmware registration; re-enable CSRF later.
+    // Refresh bootstraps browser sessions from the HttpOnly refresh cookie.
+    // ESP firmware registration routes cannot reliably attach browser CSRF headers.
     if (CSRF_EXEMPT_ROUTES.has(getRouteKey(request))) {
       next();
       return;
