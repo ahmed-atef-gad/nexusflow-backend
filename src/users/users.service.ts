@@ -138,7 +138,7 @@ export class UsersService {
       google_id: input.googleId,
       avatarUrl: input.avatarUrl,
       roles: [Role.User],
-      email_verified: true,
+      email_verified: false,
       is_active: true,
     });
     return createdUser.save();
@@ -154,7 +154,6 @@ export class UsersService {
 
     const update: Record<string, unknown> = {
       google_id: googleId,
-      email_verified: true,
     };
     if (avatarUrl) {
       update.avatarUrl = avatarUrl;

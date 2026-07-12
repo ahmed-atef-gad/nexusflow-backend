@@ -21,6 +21,9 @@ describe('AuthService', () => {
     createAvailableUsername: jest.Mock;
     createGoogleUser: jest.Mock;
   };
+  let verificationService: {
+    generateOtpForEmail: jest.Mock;
+  };
 
   beforeEach(async () => {
     usersService = {
@@ -29,6 +32,9 @@ describe('AuthService', () => {
       linkGoogleAccount: jest.fn(),
       createAvailableUsername: jest.fn(),
       createGoogleUser: jest.fn(),
+    };
+    verificationService = {
+      generateOtpForEmail: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -44,7 +50,7 @@ describe('AuthService', () => {
         },
         {
           provide: VerificationService,
-          useValue: {},
+          useValue: verificationService,
         },
         {
           provide: getModelToken(NotificationDeviceToken.name),
@@ -127,5 +133,64 @@ describe('AuthService', () => {
       })
     ).rejects.toBeInstanceOf(UnauthorizedException);
     expect(usersService.linkGoogleAccount).not.toHaveBeenCalled();
+  });
+
+  it('sends an OTP and blocks new Google registrations until verification', async () => {
+    usersService.findOneByGoogleId.mockResolvedValue(null);
+    usersService.findOneByEmailWithGoogleId.mockResolvedValue(null);
+    usersService.createAvailableUsername.mockResolvedValue('user');
+    usersService.createGoogleUser.mockResolvedValue(
+      toDocument({
+        _id: 'user-id',
+        email: 'user@example.com',
+        username: 'user',
+        roles: ['user'],
+        google_id: 'google-123',
+        email_verified: false,
+        is_active: true,
+      })
+    );
+
+    await expect(
+      service.validateGoogleUser({
+        googleId: 'google-123',
+        email: 'user@example.com',
+        emailVerified: true,
+      })
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+
+    expect(verificationService.generateOtpForEmail).toHaveBeenCalledWith({
+      email: 'user@example.com',
+    });
+    expect(usersService.createGoogleUser).toHaveBeenCalledWith(
+      expect.objectContaining({
+        googleId: 'google-123',
+        email: 'user@example.com',
+        username: 'user',
+      })
+    );
+  });
+
+  it('blocks Google sign-in for unverified linked accounts', async () => {
+    usersService.findOneByGoogleId.mockResolvedValue(
+      toDocument({
+        _id: 'user-id',
+        email: 'user@example.com',
+        username: 'user',
+        roles: ['user'],
+        google_id: 'google-123',
+        email_verified: false,
+        is_active: true,
+      })
+    );
+
+    await expect(
+      service.validateGoogleUser({
+        googleId: 'google-123',
+        email: 'user@example.com',
+        emailVerified: true,
+      })
+    ).rejects.toThrow('Email must be verified first');
+    expect(verificationService.generateOtpForEmail).not.toHaveBeenCalled();
   });
 });

@@ -193,6 +193,12 @@ export class AuthService {
     return null;
   }
 
+  private async requireEmailVerification(email: string): Promise<void> {
+    await this.verificationService.generateOtpForEmail({
+      email,
+    });
+  }
+
   async validateGoogleUser(
     profile: GoogleProfileInput
   ): Promise<AuthenticatedUser> {
@@ -211,6 +217,9 @@ export class AuthService {
       if (googleUser.is_active === false) {
         throw new UnauthorizedException('Account is disabled');
       }
+      if (googleUser.email_verified === false) {
+        throw new UnauthorizedException('Email must be verified first');
+      }
       return this.stripSensitiveUserFields(googleUser);
     }
 
@@ -219,6 +228,9 @@ export class AuthService {
     if (existingUser) {
       if (existingUser.is_active === false) {
         throw new UnauthorizedException('Account is disabled');
+      }
+      if (existingUser.email_verified === false) {
+        throw new UnauthorizedException('Email must be verified first');
       }
 
       const existingGoogleId = (
@@ -244,14 +256,16 @@ export class AuthService {
     const username = await this.usersService.createAvailableUsername(
       this.buildGoogleUsernameSeed({ ...profile, email: normalizedEmail })
     );
-    const createdUser = await this.usersService.createGoogleUser({
+    await this.usersService.createGoogleUser({
       googleId: profile.googleId,
       email: normalizedEmail,
       username,
       avatarUrl: profile.avatarUrl,
     });
 
-    return this.stripSensitiveUserFields(createdUser);
+    await this.requireEmailVerification(normalizedEmail);
+
+    throw new UnauthorizedException('Email must be verified first');
   }
 
   /**
