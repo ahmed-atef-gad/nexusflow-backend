@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Body,
+  Query,
   UnauthorizedException,
   Res,
   Req,
@@ -17,6 +18,8 @@ import { LoginUserDto } from './dto/login-user.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { LogoutDto } from './dto/logout.dto';
+import { GoogleMobileStartDto } from './dto/google-mobile-start.dto';
+import { GoogleMobileExchangeDto } from './dto/google-mobile-exchange.dto';
 import {
   ApiBadRequestResponse,
   ApiBody,
@@ -44,7 +47,9 @@ import {
   createGoogleOAuthState,
   getGoogleOAuthStateCookieOptions,
   GOOGLE_OAUTH_STATE_COOKIE,
+  parseGoogleOAuthState,
 } from './utils/oauth-state.util';
+import { GoogleAuthHandoffService } from './services/google-auth-handoff.service';
 
 type RequestWithCookies = Request & {
   cookies: Record<string, string | undefined>;
@@ -52,6 +57,18 @@ type RequestWithCookies = Request & {
 
 type GoogleAuthRequest = RequestWithCookies & {
   user: AuthenticatedUser;
+};
+
+type GoogleMobileExchangeResponse = {
+  access_token: string;
+  csrf_token: string;
+  csrf_header: string;
+  mqtt: {
+    username: string;
+    password: string;
+    clientId: string;
+  };
+  requires_email_verification: boolean;
 };
 
 type ThrottleOptions = {
@@ -72,7 +89,10 @@ const throttle = Throttle as unknown as (
 @throttle({ default: { limit: 3, ttl: 60 * 1000 } }) // Apply a default rate limit to all auth routes
 @Controller('auth')
 export class AuthController {
-  constructor(private authService: AuthService) {}
+  constructor(
+    private authService: AuthService,
+    private googleAuthHandoffService: GoogleAuthHandoffService
+  ) {}
 
   private getRefreshCookieOptions() {
     return {
@@ -110,6 +130,14 @@ export class AuthController {
 
   private getGoogleCallbackUrl(frontendUrl: string): URL {
     return new URL('/auth/google/callback', frontendUrl);
+  }
+
+  private getGoogleMobileRedirectUrl(): URL {
+    const redirectUri = process.env.GOOGLE_MOBILE_REDIRECT_URI;
+    if (!redirectUri) {
+      throw new Error('GOOGLE_MOBILE_REDIRECT_URI must be set');
+    }
+    return new URL(redirectUri);
   }
 
   @Get('csrf-token')
@@ -285,6 +313,33 @@ export class AuthController {
     return response.redirect(this.authService.getGoogleAuthorizationUrl(state));
   }
 
+  @Get('google/mobile')
+  @Throttle({ default: { limit: 10, ttl: 60 * 1000 } })
+  @ApiOperation({
+    summary: 'Start mobile Google login',
+    description:
+      'Creates a signed mobile OAuth state with a PKCE challenge and redirects to Google. The Google callback remains /auth/google/callback.',
+  })
+  @ApiResponse({
+    status: 302,
+    description: 'Redirects to Google OAuth consent screen',
+  })
+  startGoogleMobileLogin(
+    @Query() query: GoogleMobileStartDto,
+    @Res() response: Response
+  ) {
+    const state = createGoogleOAuthState({
+      client: 'mobile',
+      codeChallenge: query.code_challenge,
+    });
+    response.cookie(
+      GOOGLE_OAUTH_STATE_COOKIE,
+      state,
+      getGoogleOAuthStateCookieOptions()
+    );
+    return response.redirect(this.authService.getGoogleAuthorizationUrl(state));
+  }
+
   @Get('google/callback')
   @Throttle({ default: { limit: 10, ttl: 60 * 1000 } })
   @UseGuards(GoogleOAuthGuard)
@@ -306,10 +361,25 @@ export class AuthController {
     @Req() request: GoogleAuthRequest,
     @Res() response: Response
   ) {
+    const state = parseGoogleOAuthState(
+      typeof request.query?.state === 'string' ? request.query.state : undefined
+    );
     clearGoogleOAuthStateCookie(response);
     const frontendUrl = this.getFrontendUrl();
+    const mobileCodeChallenge =
+      state?.client === 'mobile' ? state.codeChallenge : undefined;
 
     try {
+      if (mobileCodeChallenge) {
+        const code = await this.googleAuthHandoffService.create({
+          userId: String(request.user._id),
+          codeChallenge: mobileCodeChallenge,
+        });
+        const callbackUrl = this.getGoogleMobileRedirectUrl();
+        callbackUrl.searchParams.set('code', code);
+        return response.redirect(callbackUrl.toString());
+      }
+
       const loginResult = await this.authService.login(request.user);
       this.setRefreshCookie(response, loginResult.refresh_token);
       const csrfToken = this.getCsrfTokenForRedirect(request, response);
@@ -319,10 +389,69 @@ export class AuthController {
       this.addCsrfRedirectParams(callbackUrl, csrfToken);
       return response.redirect(callbackUrl.toString());
     } catch {
+      if (mobileCodeChallenge) {
+        const errorUrl = this.getGoogleMobileRedirectUrl();
+        errorUrl.searchParams.set('error', 'google_auth_failed');
+        return response.redirect(errorUrl.toString());
+      }
+
       const errorUrl = this.getGoogleCallbackUrl(frontendUrl);
       errorUrl.searchParams.set('error', 'google_auth_failed');
       return response.redirect(errorUrl.toString());
     }
+  }
+
+  @Post('google/mobile/exchange')
+  @Throttle({ default: { limit: 10, ttl: 60 * 1000 } })
+  @ApiOperation({
+    summary: 'Exchange mobile Google handoff code',
+    description:
+      'Consumes a short-lived mobile Google handoff code using the original PKCE verifier, sets the refresh token cookie, returns an access token, MQTT credentials, and a CSRF token.',
+  })
+  @ApiBody({ type: GoogleMobileExchangeDto })
+  @ApiCreatedResponse({
+    description: 'Mobile Google session created successfully',
+    schema: {
+      example: {
+        access_token: 'eyJhbGciOi...access',
+        csrf_token: 'nonce.signature',
+        csrf_header: CSRF_HEADER_NAME,
+        mqtt: {
+          username: 'john_doe',
+          password: 'a1b2c3d4e5f6g7h8',
+          clientId: 'john_doe',
+        },
+        requires_email_verification: false,
+      },
+    },
+  })
+  async exchangeGoogleMobileCode(
+    @Req() request: RequestWithCookies,
+    @Res({ passthrough: true }) response: Response,
+    @Body() body: GoogleMobileExchangeDto
+  ): Promise<GoogleMobileExchangeResponse> {
+    const handoff = await this.googleAuthHandoffService.consume({
+      code: body.code,
+      codeVerifier: body.code_verifier,
+    });
+    const user = await this.authService.getAuthenticatedUserById(
+      handoff.userId
+    );
+    const loginResult = await this.authService.login(user);
+    this.setRefreshCookie(response, loginResult.refresh_token);
+    const csrfToken = ensureCsrfCookie(request, response);
+
+    return {
+      access_token: loginResult.access_token,
+      csrf_token: csrfToken,
+      csrf_header: CSRF_HEADER_NAME,
+      mqtt: {
+        username: loginResult.mqtt_username,
+        password: loginResult.mqtt_password,
+        clientId: loginResult.mqtt_username,
+      },
+      requires_email_verification: user.requires_email_verification === true,
+    };
   }
 
   private getFrontendUrl(): string {

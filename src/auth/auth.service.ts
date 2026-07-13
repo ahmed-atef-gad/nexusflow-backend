@@ -421,6 +421,24 @@ export class AuthService {
     };
   }
 
+  async getAuthenticatedUserById(userId: string): Promise<AuthenticatedUser> {
+    const authState = await this.usersService.getAuthStateById(userId);
+    if (!authState || !authState.isActive) {
+      throw new UnauthorizedException('Invalid Google handoff user');
+    }
+
+    return {
+      _id: userId,
+      email: authState.email,
+      username: authState.username,
+      roles: authState.roles,
+      token_version: authState.tokenVersion,
+      is_active: authState.isActive,
+      email_verified: authState.emailVerified,
+      requires_email_verification: !authState.emailVerified,
+    };
+  }
+
   async refresh(refreshToken: string): Promise<RefreshResult> {
     const payload = await this.verifyRefreshToken(refreshToken);
     const authState = await this.usersService.getAuthStateById(payload.sub);

@@ -482,6 +482,14 @@ CSRF_SECRET=replace-with-a-strong-csrf-secret
 # Token expiration times
 JWT_ACCESS_EXPIRES_IN=15m
 JWT_REFRESH_EXPIRES_IN=7d
+
+# Google OAuth for web and mobile
+GOOGLE_CLIENT_ID=replace-with-google-client-id
+GOOGLE_CLIENT_SECRET=replace-with-google-client-secret
+GOOGLE_CALLBACK=http://localhost:3000/auth/google/callback
+GOOGLE_OAUTH_STATE_SECRET=replace-with-a-strong-oauth-state-secret
+GOOGLE_MOBILE_REDIRECT_URI=https://example.com/auth/google/mobile-callback
+GOOGLE_MOBILE_HANDOFF_TTL_SECONDS=180
 ```
 
 ### Common Core Variables
