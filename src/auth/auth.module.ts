@@ -14,6 +14,11 @@ import {
 } from 'src/notifications/schemas/notification-device-token.schema';
 import { GoogleStrategy } from './strategies/google.strategy';
 import { GoogleOAuthGuard } from 'src/guards/auth/google-oauth.guard';
+import {
+  GoogleAuthHandoff,
+  GoogleAuthHandoffSchema,
+} from './schemas/google-auth-handoff.schema';
+import { GoogleAuthHandoffService } from './services/google-auth-handoff.service';
 
 @Module({
   imports: [
@@ -23,6 +28,10 @@ import { GoogleOAuthGuard } from 'src/guards/auth/google-oauth.guard';
       {
         name: NotificationDeviceToken.name,
         schema: NotificationDeviceTokenSchema,
+      },
+      {
+        name: GoogleAuthHandoff.name,
+        schema: GoogleAuthHandoffSchema,
       },
     ]),
     PassportModule,
@@ -35,7 +44,13 @@ import { GoogleOAuthGuard } from 'src/guards/auth/google-oauth.guard';
       }),
     }),
   ],
-  providers: [AuthService, AuthGuard, GoogleStrategy, GoogleOAuthGuard],
+  providers: [
+    AuthService,
+    AuthGuard,
+    GoogleStrategy,
+    GoogleOAuthGuard,
+    GoogleAuthHandoffService,
+  ],
   controllers: [AuthController],
   exports: [AuthService, JwtModule, AuthGuard],
 })

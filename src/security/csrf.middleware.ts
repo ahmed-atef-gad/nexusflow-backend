@@ -4,9 +4,10 @@ import { ensureCsrfCookie, isCsrfRequestValid } from './csrf.util';
 
 const SAFE_HTTP_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const CSRF_EXEMPT_ROUTES = new Set([
-  'POST /auth/refresh',
-  'POST /devices/verify-registration-code',
-  'POST /devices/register',
+  //'POST /auth/refresh',
+  'POST /auth/google/mobile/exchange',
+  //'POST /devices/verify-registration-code',
+  //'POST /devices/register',
 ]);
 
 function getRouteKey(request: Request): string {
@@ -23,10 +24,10 @@ export function csrfProtectionMiddleware(
   try {
     // Refresh bootstraps browser sessions from the HttpOnly refresh cookie.
     // ESP firmware registration routes cannot reliably attach browser CSRF headers.
-    /*if (CSRF_EXEMPT_ROUTES.has(getRouteKey(request))) {
+    if (CSRF_EXEMPT_ROUTES.has(getRouteKey(request))) {
       next();
       return;
-    }*/
+    }
 
     if (SAFE_HTTP_METHODS.has(request.method.toUpperCase())) {
       ensureCsrfCookie(request, response);
