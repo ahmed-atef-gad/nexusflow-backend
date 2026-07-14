@@ -3,4 +3,5 @@ export const MQTT_TOPICS = {
     `/devices/${macAddress}/flowupdated`,
   DEVICE_FLOW_CHANGED: (macAddress: string) =>
     `/devices/${macAddress}/flowchanged`,
+  RESET_WIFI: (macAddress: string) => `esp/${macAddress}/resetwifi`,
 };
