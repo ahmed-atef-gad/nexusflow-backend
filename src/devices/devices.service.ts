@@ -7,6 +7,7 @@ import {
   Inject,
   HttpException,
   HttpStatus,
+  Logger,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -30,9 +31,12 @@ import {
 } from './schemas/device-registration-code.schema';
 import { UsersService } from 'src/users/users.service';
 import { PaginationQueryDto } from 'src/common/dto/pagination-query.dto';
+import { MQTT_TOPICS } from '../mqtt/mqtt.constants';
 
 @Injectable()
 export class DevicesService {
+  private readonly logger = new Logger(DevicesService.name);
+
   constructor(
     @InjectModel(Device.name) private deviceModel: Model<DeviceDocument>,
     @InjectModel(DeviceToken.name)
@@ -580,6 +584,22 @@ export class DevicesService {
     });
 
     // Delete the device
-    await this.deviceModel.findByIdAndDelete(deviceId);
+    const deletedDevice = await this.deviceModel.findByIdAndDelete(deviceId);
+
+    if (
+      deletedDevice &&
+      this.mqttService.isClientConnected(deletedDevice.macAddress)
+    ) {
+      try {
+        await this.mqttService.publishMessage(
+          MQTT_TOPICS.RESET_WIFI(deletedDevice.macAddress),
+          'Device deleted. Reset WiFi credentials and disconnect.'
+        );
+      } catch (error) {
+        this.logger.warn(
+          `Failed to publish reset WiFi message for deleted device ${deletedDevice.macAddress}: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    }
   }
 }
