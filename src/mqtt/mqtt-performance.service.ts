@@ -552,7 +552,13 @@ export class MqttPerformanceService {
   ): MutableMqttPerformanceSession | null {
     const normalizedMac = deviceMac.trim().toUpperCase();
     const session = this.activeSessionsByMac.get(normalizedMac);
-    if (!session || session.clientId !== clientId) return null;
+    if (!session) return null;
+    if (
+      session.clientId !== clientId &&
+      !clientId.startsWith('internal-forward-')
+    ) {
+      return null;
+    }
     return session;
   }
 
