@@ -1771,7 +1771,6 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
               `Function node ${step.id ?? 'unknown'} failed: ${(error as Error).message}`
             );
 
-            const functionNodeId = String(step.id ?? 'unknown');
             try {
               await runOutsideRawLogicTimer(() =>
                 this.mqttService.publish(

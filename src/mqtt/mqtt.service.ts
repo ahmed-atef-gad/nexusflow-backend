@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PigeonService } from '../pigeon-mqtt/pigeon.service';
 import { MQTT_TOPICS } from './mqtt.constants';
+import { PubPacket } from 'src/pigeon-mqtt/pigeon.interface';
 
 type PublishOptions = {
   qos?: 0 | 1 | 2;
@@ -112,9 +113,9 @@ export class MqttService {
 
   async publish(
     topic: string,
-    payload: unknown,
+    payload: string | Record<string, unknown>,
     options: PublishOptions = {}
-  ): Promise<unknown> {
+  ): Promise<PubPacket> {
     const packet = {
       cmd: 'publish',
       topic,
@@ -123,11 +124,11 @@ export class MqttService {
       retain: options.retain ?? false,
     };
 
-    this.logger.log(`Publishing to topic: ${topic}`);
-    return this.pigeonService.publish(packet) as Promise<unknown>;
+    this.logger.debug(`Publishing to topic: ${topic}`);
+    return this.pigeonService.publish(packet);
   }
 
-  async publishMessage(topic: string, message: string): Promise<unknown> {
+  async publishMessage(topic: string, message: string): Promise<PubPacket> {
     return this.publish(
       topic,
       {
@@ -142,7 +143,7 @@ export class MqttService {
     macAddress: string,
     flowId: string,
     updatedAt: Date | string
-  ): Promise<unknown> {
+  ): Promise<PubPacket> {
     const normalizedMac = macAddress.trim().toUpperCase();
     const topic = MQTT_TOPICS.FLOW_LAST_UPDATE(normalizedMac);
     const packet = {
@@ -163,14 +164,14 @@ export class MqttService {
     this.logger.log(
       `Publishing flow updated to topic: ${topic} as ${normalizedMac}`
     );
-    return this.pigeonService.publish(packet) as Promise<unknown>;
+    return this.pigeonService.publish(packet);
   }
 
   async publishDeviceFlowChanged(
     macAddress: string,
     flowId: string | null,
     updatedAt: Date | string
-  ): Promise<unknown> {
+  ): Promise<PubPacket> {
     const normalizedMac = macAddress.trim().toUpperCase();
     const topic = MQTT_TOPICS.DEVICE_FLOW_CHANGED(normalizedMac);
     const packet = {
@@ -191,7 +192,7 @@ export class MqttService {
     this.logger.log(
       `Publishing flow changed to topic: ${topic} as ${normalizedMac}`
     );
-    return this.pigeonService.publish(packet) as Promise<unknown>;
+    return this.pigeonService.publish(packet);
   }
 
   isClientConnected(clientId: string): boolean {

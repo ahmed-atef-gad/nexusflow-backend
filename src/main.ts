@@ -87,7 +87,12 @@ function getAllowedCorsOrigins(): string[] {
 }
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(
+    AppModule,
+    process.env.NODE_ENV === 'production'
+      ? { logger: ['error', 'warn', 'log'] }
+      : {}
+  );
   const allowedOrigins = getAllowedCorsOrigins();
   // Do NOT keep retry state in server closure; the interceptor functions
   // are serialized into the client page. Keep state on `window` instead.
