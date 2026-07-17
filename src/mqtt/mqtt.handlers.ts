@@ -133,14 +133,16 @@ const SCOPED_OUTPUT_TOPIC_PATTERN = /^nexusflow\/output\/([^/]+)\/([^/]+)$/;
 
 const DEFAULT_FUNCTION_NODE_EXECUTION_TIMEOUT_MS = 100;
 const DEFAULT_FUNCTION_NODE_MAX_PAYLOAD_BYTES = 8192;
-const MAX_USER_MQTT_SESSIONS = 5;
-const MAX_OWNER_ONLINE_DEVICES = 5;
+const DEFAULT_MAX_USER_MQTT_SESSIONS = 5;
+const DEFAULT_MAX_OWNER_ONLINE_DEVICES = 5;
 
 @Injectable()
 export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(MqttHandlers.name);
   private readonly functionExecutionTimeoutMs: number;
   private readonly functionNodeMaxPayloadBytes: number;
+  private readonly maxUserMqttSessions: number;
+  private readonly maxOwnerOnlineDevices: number;
   private readonly activeEspSessions = new Map<string, string>();
 
   constructor(
@@ -160,6 +162,14 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     this.functionNodeMaxPayloadBytes = this.readPositiveConfigNumber(
       'FUNCTION_NODE_MAX_PAYLOAD_BYTES',
       DEFAULT_FUNCTION_NODE_MAX_PAYLOAD_BYTES
+    );
+    this.maxUserMqttSessions = this.readPositiveConfigNumber(
+      'MAX_USER_MQTT_SESSIONS',
+      DEFAULT_MAX_USER_MQTT_SESSIONS
+    );
+    this.maxOwnerOnlineDevices = this.readPositiveConfigNumber(
+      'MAX_OWNER_ONLINE_DEVICES',
+      DEFAULT_MAX_OWNER_ONLINE_DEVICES
     );
   }
 
@@ -435,10 +445,10 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
               ownerId,
               normalizedClientMac
             );
-          if (activeOwnerDeviceSessions >= MAX_OWNER_ONLINE_DEVICES) {
+          if (activeOwnerDeviceSessions >= this.maxOwnerOnlineDevices) {
             return this.rejectAuth(
               clientId,
-              `reason=owner already has maximum online devices ownerId=${ownerId} activeDevices=${activeOwnerDeviceSessions} limit=${MAX_OWNER_ONLINE_DEVICES}`,
+              `reason=owner already has maximum online devices ownerId=${ownerId} activeDevices=${activeOwnerDeviceSessions} limit=${this.maxOwnerOnlineDevices}`,
               done
             );
           }
@@ -514,10 +524,10 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
 
       const activeUserSessions =
         this.mqttService.getActiveUserSessionCount(userId);
-      if (activeUserSessions >= MAX_USER_MQTT_SESSIONS) {
+      if (activeUserSessions >= this.maxUserMqttSessions) {
         return this.rejectAuth(
           clientId,
-          `reason=user already has maximum active mqtt sessions userId=${userId} activeSessions=${activeUserSessions} limit=${MAX_USER_MQTT_SESSIONS}`,
+          `reason=user already has maximum active mqtt sessions userId=${userId} activeSessions=${activeUserSessions} limit=${this.maxUserMqttSessions}`,
           done
         );
       }
