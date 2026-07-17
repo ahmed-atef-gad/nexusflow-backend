@@ -134,6 +134,7 @@ const SCOPED_OUTPUT_TOPIC_PATTERN = /^nexusflow\/output\/([^/]+)\/([^/]+)$/;
 const DEFAULT_FUNCTION_NODE_EXECUTION_TIMEOUT_MS = 100;
 const DEFAULT_FUNCTION_NODE_MAX_PAYLOAD_BYTES = 8192;
 const MAX_USER_MQTT_SESSIONS = 5;
+const MAX_OWNER_ONLINE_DEVICES = 5;
 
 @Injectable()
 export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
@@ -424,6 +425,25 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
           );
         }
 
+        const ownerId = device.ownerId?.toString();
+        const deviceId = device._id?.toString();
+        const deviceName = typeof device.name === 'string' ? device.name : null;
+
+        if (ownerId) {
+          const activeOwnerDeviceSessions =
+            this.mqttService.getActiveOwnerDeviceSessionCount(
+              ownerId,
+              normalizedClientMac
+            );
+          if (activeOwnerDeviceSessions >= MAX_OWNER_ONLINE_DEVICES) {
+            return this.rejectAuth(
+              clientId,
+              `reason=owner already has maximum online devices ownerId=${ownerId} activeDevices=${activeOwnerDeviceSessions} limit=${MAX_OWNER_ONLINE_DEVICES}`,
+              done
+            );
+          }
+        }
+
         if (!this.reserveEspSession(normalizedClientMac, clientId)) {
           return this.rejectAuth(
             clientId,
@@ -432,9 +452,6 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
           );
         }
 
-        const ownerId = device.ownerId?.toString();
-        const deviceId = device._id?.toString();
-        const deviceName = typeof device.name === 'string' ? device.name : null;
         let ownerUsername: string | undefined;
         if (ownerId) {
           const owner = await this.usersService.getUserById(ownerId);

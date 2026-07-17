@@ -254,6 +254,25 @@ export class MqttService {
     ).length;
   }
 
+  getActiveOwnerDeviceSessionCount(
+    ownerId: string,
+    excludeDeviceMac?: string
+  ): number {
+    const normalizedOwnerId = ownerId.trim();
+    const normalizedExcludedMac = excludeDeviceMac?.trim().toUpperCase();
+    if (!normalizedOwnerId) return 0;
+
+    return this.getBrokerClients().filter((client) => {
+      if (!client?.isEsp || !client.ownerId || !client.deviceMac) return false;
+      if (client.ownerId !== normalizedOwnerId) return false;
+
+      return (
+        !normalizedExcludedMac ||
+        client.deviceMac.trim().toUpperCase() !== normalizedExcludedMac
+      );
+    }).length;
+  }
+
   getActiveUsersCount(): number {
     return this.getActiveUserConnections().length;
   }
