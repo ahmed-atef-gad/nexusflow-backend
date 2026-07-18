@@ -25,6 +25,7 @@ describe('AuthService', () => {
     createGoogleUser: jest.Mock;
     getAuthStateById: jest.Mock;
     getRefreshTokenHashById: jest.Mock;
+    getRefreshTokenStatesById: jest.Mock;
     getRefreshTokenStateById: jest.Mock;
     updateRefreshTokenHash: jest.Mock;
     setRefreshTokenState: jest.Mock;
@@ -49,6 +50,7 @@ describe('AuthService', () => {
       createGoogleUser: jest.fn(),
       getAuthStateById: jest.fn(),
       getRefreshTokenHashById: jest.fn(),
+      getRefreshTokenStatesById: jest.fn(),
       getRefreshTokenStateById: jest.fn(),
       updateRefreshTokenHash: jest.fn(),
       setRefreshTokenState: jest.fn(),
@@ -313,13 +315,16 @@ describe('AuthService', () => {
       isActive: true,
       roles: ['user'],
     });
-    usersService.getRefreshTokenStateById.mockResolvedValue({
-      refreshTokenHash: await bcrypt.hash(refreshToken, 10),
-      refreshTokenJti: 'old-jti',
-      previousRefreshTokenHash: null,
-      previousRefreshTokenJti: null,
-      previousRefreshTokenExpiresAt: null,
-    });
+    usersService.getRefreshTokenStatesById.mockResolvedValue([
+      {
+        source: 'session',
+        refreshTokenHash: await bcrypt.hash(refreshToken, 10),
+        refreshTokenJti: 'old-jti',
+        previousRefreshTokenHash: null,
+        previousRefreshTokenJti: null,
+        previousRefreshTokenExpiresAt: null,
+      },
+    ]);
     usersService.rotateRefreshTokenState.mockResolvedValue(true);
 
     const result = await service.refresh(refreshToken);
@@ -359,6 +364,63 @@ describe('AuthService', () => {
     );
   });
 
+  it('refreshes the matching session when a user has multiple active logins', async () => {
+    const webRefreshToken = 'web-refresh-token';
+    const mobileRefreshToken = 'mobile-refresh-token';
+    jwtService.verifyAsync.mockResolvedValue({
+      sub: 'user-id',
+      email: 'user@example.com',
+      username: 'user',
+      roles: ['user'],
+      token_version: 0,
+      jti: 'web-jti',
+    });
+    jwtService.sign
+      .mockReturnValueOnce('new-web-access-token')
+      .mockReturnValueOnce('new-web-refresh-token');
+    usersService.getAuthStateById.mockResolvedValue({
+      email: 'user@example.com',
+      username: 'user',
+      tokenVersion: 0,
+      emailVerified: true,
+      isActive: true,
+      roles: ['user'],
+    });
+    usersService.getRefreshTokenStatesById.mockResolvedValue([
+      {
+        source: 'session',
+        refreshTokenHash: await bcrypt.hash(mobileRefreshToken, 10),
+        refreshTokenJti: 'mobile-jti',
+        previousRefreshTokenHash: null,
+        previousRefreshTokenJti: null,
+        previousRefreshTokenExpiresAt: null,
+      },
+      {
+        source: 'session',
+        refreshTokenHash: await bcrypt.hash(webRefreshToken, 10),
+        refreshTokenJti: 'web-jti',
+        previousRefreshTokenHash: null,
+        previousRefreshTokenJti: null,
+        previousRefreshTokenExpiresAt: null,
+      },
+    ]);
+    usersService.rotateRefreshTokenState.mockResolvedValue(true);
+
+    const result = await service.refresh(webRefreshToken);
+
+    expect(result).toEqual({
+      access_token: 'new-web-access-token',
+      refresh_token: 'new-web-refresh-token',
+    });
+    expect(usersService.rotateRefreshTokenState).toHaveBeenCalledWith(
+      'user-id',
+      expect.objectContaining({
+        expectedRefreshTokenJti: 'web-jti',
+        previousRefreshTokenJti: 'web-jti',
+      })
+    );
+  });
+
   it('accepts the previous refresh token during the grace window without rotating again', async () => {
     const refreshToken = 'previous-refresh-token';
     jwtService.verifyAsync.mockResolvedValue({
@@ -378,13 +440,16 @@ describe('AuthService', () => {
       isActive: true,
       roles: ['user'],
     });
-    usersService.getRefreshTokenStateById.mockResolvedValue({
-      refreshTokenHash: await bcrypt.hash('current-refresh-token', 10),
-      refreshTokenJti: 'current-jti',
-      previousRefreshTokenHash: await bcrypt.hash(refreshToken, 10),
-      previousRefreshTokenJti: 'previous-jti',
-      previousRefreshTokenExpiresAt: new Date(Date.now() + 10_000),
-    });
+    usersService.getRefreshTokenStatesById.mockResolvedValue([
+      {
+        source: 'session',
+        refreshTokenHash: await bcrypt.hash('current-refresh-token', 10),
+        refreshTokenJti: 'current-jti',
+        previousRefreshTokenHash: await bcrypt.hash(refreshToken, 10),
+        previousRefreshTokenJti: 'previous-jti',
+        previousRefreshTokenExpiresAt: new Date(Date.now() + 10_000),
+      },
+    ]);
 
     const result = await service.refresh(refreshToken);
 

@@ -564,7 +564,7 @@ export class AuthController {
   @ApiOperation({
     summary: 'Logout user',
     description:
-      'Clears the refresh token cookie and invalidates existing tokens by bumping token version. If `deviceId` is provided, the matching FCM token registration for that authenticated user is removed.',
+      'Clears the refresh token cookie and invalidates only the current refresh session. If `deviceId` is provided, the matching FCM token registration for that authenticated user is removed.',
   })
   @ApiBody({ type: LogoutDto, required: false })
   @ApiResponse({

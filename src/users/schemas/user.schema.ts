@@ -4,6 +4,16 @@ import { Role } from '../enums/role.enum';
 
 export type UserDocument = HydratedDocument<User>;
 
+export class RefreshSession {
+  refresh_token!: string;
+  refresh_token_jti?: string;
+  previous_refresh_token?: string;
+  previous_refresh_token_jti?: string;
+  previous_refresh_token_expires_at?: Date | null;
+  created_at?: Date;
+  updated_at?: Date;
+}
+
 @Schema({ timestamps: true })
 export class User {
   @Prop({ required: true, unique: true })
@@ -44,6 +54,23 @@ export class User {
 
   @Prop({ type: Date, nullable: true, select: false })
   previous_refresh_token_expires_at?: Date | null;
+
+  @Prop({
+    type: [
+      {
+        refresh_token: { type: String, required: true },
+        refresh_token_jti: { type: String, required: true },
+        previous_refresh_token: { type: String, default: null },
+        previous_refresh_token_jti: { type: String, default: null },
+        previous_refresh_token_expires_at: { type: Date, default: null },
+        created_at: { type: Date, default: Date.now },
+        updated_at: { type: Date, default: Date.now },
+      },
+    ],
+    default: [],
+    select: false,
+  })
+  refresh_sessions?: RefreshSession[];
 
   @Prop({ type: Date, nullable: true })
   last_login?: Date;
