@@ -1,6 +1,9 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { UsersService } from 'src/users/users.service';
+import {
+  type RefreshTokenState,
+  UsersService,
+} from 'src/users/users.service';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
@@ -58,8 +61,12 @@ interface GoogleProfileInput {
 }
 
 type RefreshTokenMatch =
-  | { kind: 'current'; refreshTokenJti: string | null }
-  | { kind: 'previous' }
+  | {
+      kind: 'current';
+      source: RefreshTokenState['source'];
+      refreshTokenJti: string | null;
+    }
+  | { kind: 'previous'; source: RefreshTokenState['source'] }
   | null;
 
 const REFRESH_TOKEN_ROTATION_GRACE_MS = 30_000;
@@ -184,39 +191,44 @@ export class AuthService {
     refreshToken: string,
     payload: RefreshTokenPayload
   ): Promise<RefreshTokenMatch> {
-    const tokenState = await this.usersService.getRefreshTokenStateById(
+    const tokenStates = await this.usersService.getRefreshTokenStatesById(
       payload.sub
     );
-    if (!tokenState?.refreshTokenHash) return null;
+    if (!tokenStates?.length) return null;
 
-    const currentJtiMatches =
-      !tokenState.refreshTokenJti ||
-      !payload.jti ||
-      tokenState.refreshTokenJti === payload.jti;
-    if (
-      currentJtiMatches &&
-      (await bcrypt.compare(refreshToken, tokenState.refreshTokenHash))
-    ) {
-      return {
-        kind: 'current',
-        refreshTokenJti: tokenState.refreshTokenJti,
-      };
-    }
+    for (const tokenState of tokenStates) {
+      if (!tokenState.refreshTokenHash) continue;
 
-    const previousTokenStillValid =
-      tokenState.previousRefreshTokenExpiresAt !== null &&
-      tokenState.previousRefreshTokenExpiresAt.getTime() > Date.now();
-    const previousJtiMatches =
-      !tokenState.previousRefreshTokenJti ||
-      !payload.jti ||
-      tokenState.previousRefreshTokenJti === payload.jti;
-    if (
-      previousTokenStillValid &&
-      previousJtiMatches &&
-      tokenState.previousRefreshTokenHash &&
-      (await bcrypt.compare(refreshToken, tokenState.previousRefreshTokenHash))
-    ) {
-      return { kind: 'previous' };
+      const currentJtiMatches =
+        !tokenState.refreshTokenJti ||
+        !payload.jti ||
+        tokenState.refreshTokenJti === payload.jti;
+      if (
+        currentJtiMatches &&
+        (await bcrypt.compare(refreshToken, tokenState.refreshTokenHash))
+      ) {
+        return {
+          kind: 'current',
+          source: tokenState.source,
+          refreshTokenJti: tokenState.refreshTokenJti,
+        };
+      }
+
+      const previousTokenStillValid =
+        tokenState.previousRefreshTokenExpiresAt !== null &&
+        tokenState.previousRefreshTokenExpiresAt.getTime() > Date.now();
+      const previousJtiMatches =
+        !tokenState.previousRefreshTokenJti ||
+        !payload.jti ||
+        tokenState.previousRefreshTokenJti === payload.jti;
+      if (
+        previousTokenStillValid &&
+        previousJtiMatches &&
+        tokenState.previousRefreshTokenHash &&
+        (await bcrypt.compare(refreshToken, tokenState.previousRefreshTokenHash))
+      ) {
+        return { kind: 'previous', source: tokenState.source };
+      }
     }
 
     return null;
@@ -537,16 +549,14 @@ export class AuthService {
     try {
       const decoded = await this.verifyRefreshToken(refreshToken);
       userId = decoded.sub;
-      const storedRefreshTokenHash =
-        await this.usersService.getRefreshTokenHashById(userId);
-      if (
-        !storedRefreshTokenHash ||
-        !(await bcrypt.compare(refreshToken, storedRefreshTokenHash))
-      ) {
+      const refreshTokenMatch = await this.getRefreshTokenMatch(
+        refreshToken,
+        decoded
+      );
+      if (!refreshTokenMatch) {
         return { fcmTokenCleared: false };
       }
-      await this.usersService.incrementTokenVersion(userId);
-      await this.usersService.clearRefreshToken(userId);
+      await this.usersService.clearRefreshToken(userId, decoded.jti ?? null);
     } catch {
       // Swallow errors to avoid leaking auth details on logout
       return { fcmTokenCleared: false };

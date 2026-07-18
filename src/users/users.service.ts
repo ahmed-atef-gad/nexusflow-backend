@@ -15,6 +15,15 @@ import { ListUsersQueryDto } from './dto/list-users-query.dto';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 
+export type RefreshTokenState = {
+  source: 'session' | 'legacy';
+  refreshTokenHash: string | null;
+  refreshTokenJti: string | null;
+  previousRefreshTokenHash: string | null;
+  previousRefreshTokenJti: string | null;
+  previousRefreshTokenExpiresAt: Date | null;
+};
+
 @Injectable()
 export class UsersService {
   constructor(@InjectModel(User.name) private userModel: Model<UserDocument>) {}
@@ -376,48 +385,85 @@ export class UsersService {
     if (!isValidId) return null;
     const user = await this.userModel
       .findOne({ _id: userId, deleted_at: null })
-      .select('refresh_token')
+      .select('+refresh_token +refresh_sessions')
+      .lean()
       .exec();
-    return user?.refresh_token ?? null;
+    const currentSession = user?.refresh_sessions?.find(
+      (session) => typeof session.refresh_token === 'string'
+    );
+    return currentSession?.refresh_token ?? user?.refresh_token ?? null;
   }
 
-  async getRefreshTokenStateById(userId: string): Promise<{
-    refreshTokenHash: string | null;
-    refreshTokenJti: string | null;
-    previousRefreshTokenHash: string | null;
-    previousRefreshTokenJti: string | null;
-    previousRefreshTokenExpiresAt: Date | null;
-  } | null> {
+  async getRefreshTokenStatesById(
+    userId: string
+  ): Promise<RefreshTokenState[] | null> {
     const isValidId = Types.ObjectId.isValid(userId);
     if (!isValidId) return null;
     const user = await this.userModel
       .findOne({ _id: userId, deleted_at: null })
       .select(
-        '+refresh_token +refresh_token_jti +previous_refresh_token +previous_refresh_token_jti +previous_refresh_token_expires_at'
+        '+refresh_token +refresh_token_jti +previous_refresh_token +previous_refresh_token_jti +previous_refresh_token_expires_at +refresh_sessions'
       )
       .lean()
       .exec();
     if (!user) return null;
-    return {
+
+    const sessionStates = (user.refresh_sessions ?? []).map((session) => ({
+      source: 'session' as const,
       refreshTokenHash:
-        typeof user.refresh_token === 'string' ? user.refresh_token : null,
+        typeof session.refresh_token === 'string' ? session.refresh_token : null,
       refreshTokenJti:
-        typeof user.refresh_token_jti === 'string'
-          ? user.refresh_token_jti
+        typeof session.refresh_token_jti === 'string'
+          ? session.refresh_token_jti
           : null,
       previousRefreshTokenHash:
-        typeof user.previous_refresh_token === 'string'
-          ? user.previous_refresh_token
+        typeof session.previous_refresh_token === 'string'
+          ? session.previous_refresh_token
           : null,
       previousRefreshTokenJti:
-        typeof user.previous_refresh_token_jti === 'string'
-          ? user.previous_refresh_token_jti
+        typeof session.previous_refresh_token_jti === 'string'
+          ? session.previous_refresh_token_jti
           : null,
       previousRefreshTokenExpiresAt:
-        user.previous_refresh_token_expires_at instanceof Date
-          ? user.previous_refresh_token_expires_at
+        session.previous_refresh_token_expires_at instanceof Date
+          ? session.previous_refresh_token_expires_at
           : null,
-    };
+    }));
+
+    if (typeof user.refresh_token !== 'string') {
+      return sessionStates;
+    }
+
+    return [
+      ...sessionStates,
+      {
+        source: 'legacy',
+        refreshTokenHash: user.refresh_token,
+        refreshTokenJti:
+          typeof user.refresh_token_jti === 'string'
+            ? user.refresh_token_jti
+            : null,
+        previousRefreshTokenHash:
+          typeof user.previous_refresh_token === 'string'
+            ? user.previous_refresh_token
+            : null,
+        previousRefreshTokenJti:
+          typeof user.previous_refresh_token_jti === 'string'
+            ? user.previous_refresh_token_jti
+            : null,
+        previousRefreshTokenExpiresAt:
+          user.previous_refresh_token_expires_at instanceof Date
+            ? user.previous_refresh_token_expires_at
+            : null,
+      },
+    ];
+  }
+
+  async getRefreshTokenStateById(
+    userId: string
+  ): Promise<RefreshTokenState | null> {
+    const states = await this.getRefreshTokenStatesById(userId);
+    return states?.[0] ?? null;
   }
 
   async updateRefreshTokenHash(
@@ -436,6 +482,7 @@ export class UsersService {
             previous_refresh_token: null,
             previous_refresh_token_jti: null,
             previous_refresh_token_expires_at: null,
+            refresh_sessions: [],
           },
         }
       )
@@ -454,12 +501,16 @@ export class UsersService {
       .updateOne(
         { _id: userId, deleted_at: null },
         {
-          $set: {
-            refresh_token: refreshTokenHash,
-            refresh_token_jti: refreshTokenJti,
-            previous_refresh_token: null,
-            previous_refresh_token_jti: null,
-            previous_refresh_token_expires_at: null,
+          $push: {
+            refresh_sessions: {
+              refresh_token: refreshTokenHash,
+              refresh_token_jti: refreshTokenJti,
+              previous_refresh_token: null,
+              previous_refresh_token_jti: null,
+              previous_refresh_token_expires_at: null,
+              created_at: new Date(),
+              updated_at: new Date(),
+            },
           },
         }
       )
@@ -480,6 +531,30 @@ export class UsersService {
   ): Promise<boolean> {
     const isValidId = Types.ObjectId.isValid(userId);
     if (!isValidId) return false;
+    const sessionResult = await this.userModel
+      .updateOne(
+        {
+          _id: userId,
+          deleted_at: null,
+          'refresh_sessions.refresh_token_jti': input.expectedRefreshTokenJti,
+        },
+        {
+          $set: {
+            'refresh_sessions.$.refresh_token': input.refreshTokenHash,
+            'refresh_sessions.$.refresh_token_jti': input.refreshTokenJti,
+            'refresh_sessions.$.previous_refresh_token':
+              input.previousRefreshTokenHash,
+            'refresh_sessions.$.previous_refresh_token_jti':
+              input.previousRefreshTokenJti,
+            'refresh_sessions.$.previous_refresh_token_expires_at':
+              input.previousRefreshTokenExpiresAt,
+            'refresh_sessions.$.updated_at': new Date(),
+          },
+        }
+      )
+      .exec();
+    if (sessionResult.modifiedCount === 1) return true;
+
     const result = await this.userModel
       .updateOne(
         {
@@ -502,7 +577,32 @@ export class UsersService {
     return result.modifiedCount === 1;
   }
 
-  async clearRefreshToken(userId: string): Promise<boolean> {
+  async clearRefreshToken(
+    userId: string,
+    refreshTokenJti?: string | null
+  ): Promise<boolean> {
+    const isValidId = Types.ObjectId.isValid(userId);
+    if (!isValidId) return false;
+
+    if (refreshTokenJti) {
+      const sessionResult = await this.userModel
+        .updateOne(
+          { _id: userId, deleted_at: null },
+          {
+            $pull: {
+              refresh_sessions: {
+                $or: [
+                  { refresh_token_jti: refreshTokenJti },
+                  { previous_refresh_token_jti: refreshTokenJti },
+                ],
+              },
+            },
+          }
+        )
+        .exec();
+      if (sessionResult.modifiedCount === 1) return true;
+    }
+
     return this.updateRefreshTokenHash(userId, null);
   }
 
