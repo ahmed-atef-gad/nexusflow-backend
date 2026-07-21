@@ -19,7 +19,8 @@ This service is not just a CRUD API. In the current architecture it is responsib
 
 - NestJS 11
 - TypeScript
-- MongoDB + Mongoose
+- MongoDB + Mongoose (including native Time-Series collections)
+- `@nestjs/cache-manager` for standardized, TTL-aware in-memory caching
 - JWT + Passport
 - Swagger / OpenAPI
 - MQTT + WebSocket MQTT
@@ -64,6 +65,8 @@ The backend serves two communication layers:
 
 - HTTP API for the web app, firmware setup sync, registration, verification, and firmware operations
 - MQTT broker services for telemetry, commands, online/offline presence, and real-time control
+
+State caching (MQTT sessions, rule cooldowns, throttle gates, and runtime logic caches) is centralized through `@nestjs/cache-manager`, replacing scattered memory Maps with standard, predictable TTL expiry.
 
 ## Module Breakdown
 
@@ -391,6 +394,23 @@ The MQTT module currently configures:
 - MQTT over WebSocket on `8884` by default
 - optional TLS/WSS material via environment variables
 
+### `readings`
+
+Files: [`src/readings`](src/readings)
+
+Responsibilities:
+
+- Real-time ingestion and fire-and-forget throttling of sensor telemetry
+- Time-series persistence of historical data to MongoDB
+- Automated 30-day TTL lifecycle for old data points
+- API for frontend historical charting and aggregated time-range queries
+
+Key components:
+
+- [`src/readings/readings.service.ts`](src/readings/readings.service.ts): Throttles incoming MQTT telemetry and bulk-writes to MongoDB.
+- [`src/readings/readings.controller.ts`](src/readings/readings.controller.ts): Serves historical data (`1h`, `24h`, `7d`, `30d`) back to the frontend.
+- [`src/readings/schemas/sensor-reading.schema.ts`](src/readings/schemas/sensor-reading.schema.ts): MongoDB Time-Series definition (`timeseries: { timeField: 'timestamp', metaField: 'metadata' }`).
+
 ### `notifications`
 
 Files: [`src/notifications`](src/notifications)
@@ -442,9 +462,10 @@ Typical user-side path:
 5. Device syncs setup from backend
 6. Device publishes telemetry over MQTT
 7. Backend may execute server-side function/runtime logic for linked flows
-8. Frontend subscribes to real-time updates through MQTT over WebSocket
-9. Backend evaluates configured alert rules and persists alert history
-10. Backend dispatches push notifications through FCM for matched alerts
+8. Backend throttles and saves raw sensor readings to the Time-Series DB for historical charting
+9. Frontend subscribes to real-time updates through MQTT over WebSocket
+10. Backend evaluates configured alert rules and persists alert history
+11. Backend dispatches push notifications through FCM for matched alerts
 
 Typical device-side onboarding path:
 
@@ -662,6 +683,7 @@ This README is not a full API reference. Swagger at `/api` is the source of trut
 - `/v1/flows/:flowId/notification-preferences`: per-user flow notification settings
 - `/v1/flows/:flowId/alert-rules`: alert rule CRUD for specific flow nodes
 - `/v1/flows/:flowId/alert-history`: missed/previous alerts with cursor pagination
+- `/v1/flows/:flowId/readings/:nodeId`: historical sensor readings time-series data
 - `/v1/internal/alerts/trigger`: internal alert ingestion endpoint
 
 ## MQTT Role In The System

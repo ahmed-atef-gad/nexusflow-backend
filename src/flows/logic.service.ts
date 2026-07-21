@@ -5,6 +5,8 @@ import {
   NotFoundException,
   forwardRef,
 } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -28,13 +30,13 @@ const MAX_RUNTIME_STEPS_PER_PATH = 64;
 const MAX_RUNTIME_FUNCTION_STEPS_PER_PATH = 16;
 const MAX_FUNCTION_VALIDATION_CACHE_SIZE = 500;
 const DEFAULT_MQTT_LOGIC_CACHE_TTL_MS = 300000; // 5 minutes
-const DEFAULT_MQTT_LOGIC_CACHE_MAX_ENTRIES = 1000;
-const DEFAULT_MQTT_LOGIC_CACHE_SWEEP_INTERVAL_MS = 60000; // 1 minute
+
+// Cache key namespaces
+const LOGIC_FLOWS_NS = 'logic:flows:';
 
 interface LogicFlowCacheEntry {
   flowId: string;
   flows: RuntimeStep[][];
-  expiresAt: number;
 }
 
 interface LogicProgramProjection {
@@ -46,15 +48,13 @@ export class LogicService {
   private readonly functionNodeMaxCodeLength: number;
   private readonly functionNodeMaxAstNodes: number;
   private readonly logicCacheTtlMs: number;
-  private readonly logicCacheMaxEntries: number;
-  private readonly logicCacheSweepIntervalMs: number;
-  private readonly functionValidationCache = new Map<string, string | null>();
 
   constructor(
     @InjectModel(Logic.name) private logicModel: Model<LogicDocument>,
     private readonly configService: ConfigService,
     @Inject(forwardRef(() => DevicesService))
-    private readonly devicesService: DevicesService
+    private readonly devicesService: DevicesService,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache
   ) {
     this.functionNodeMaxCodeLength = this.readPositiveConfigNumber(
       'FUNCTION_NODE_MAX_CODE_LENGTH',
@@ -68,56 +68,6 @@ export class LogicService {
       'MQTT_LOGIC_CACHE_TTL_MS',
       DEFAULT_MQTT_LOGIC_CACHE_TTL_MS
     );
-    this.logicCacheMaxEntries = this.readPositiveConfigNumber(
-      'MQTT_LOGIC_CACHE_MAX_ENTRIES',
-      DEFAULT_MQTT_LOGIC_CACHE_MAX_ENTRIES
-    );
-    this.logicCacheSweepIntervalMs = this.readPositiveConfigNumber(
-      'MQTT_LOGIC_CACHE_SWEEP_INTERVAL_MS',
-      DEFAULT_MQTT_LOGIC_CACHE_SWEEP_INTERVAL_MS
-    );
-  }
-
-  // MQTT logic cache
-  private readonly logicFlowsCache = new Map<string, LogicFlowCacheEntry>();
-  private logicCacheSweepTimer: NodeJS.Timeout | null = null;
-
-  startLogicCacheSweeper() {
-    if (this.logicCacheSweepTimer) return;
-    this.logicCacheSweepTimer = setInterval(
-      () => this.pruneLogicCache(),
-      this.logicCacheSweepIntervalMs
-    );
-    this.logicCacheSweepTimer.unref?.();
-  }
-
-  stopLogicCacheSweeper() {
-    if (!this.logicCacheSweepTimer) return;
-    clearInterval(this.logicCacheSweepTimer);
-    this.logicCacheSweepTimer = null;
-  }
-
-  private pruneLogicCache(): void {
-    if (!this.logicFlowsCache.size) return;
-    const now = Date.now();
-    for (const [cacheKey, cachedEntry] of this.logicFlowsCache.entries()) {
-      if (cachedEntry.expiresAt <= now) {
-        this.logicFlowsCache.delete(cacheKey);
-      }
-    }
-  }
-
-  private trimLogicCacheIfNeeded(): void {
-    if (this.logicFlowsCache.size < this.logicCacheMaxEntries) return;
-    let oldestCacheKey: string | null = null;
-    let oldestExpiresAt = Number.POSITIVE_INFINITY;
-    for (const [cacheKey, cachedEntry] of this.logicFlowsCache.entries()) {
-      if (cachedEntry.expiresAt < oldestExpiresAt) {
-        oldestExpiresAt = cachedEntry.expiresAt;
-        oldestCacheKey = cacheKey;
-      }
-    }
-    if (oldestCacheKey) this.logicFlowsCache.delete(oldestCacheKey);
   }
 
   private buildLogicCacheKey(deviceMac: string): string {
@@ -126,24 +76,29 @@ export class LogicService {
 
   evictForDevice(deviceMac: string): void {
     if (!deviceMac) return;
+    const key =
+      LOGIC_FLOWS_NS +
+      (deviceMac === '*' ? '*' : this.buildLogicCacheKey(deviceMac));
     if (deviceMac === '*') {
-      this.logicFlowsCache.clear();
-      return;
+      void this.cacheManager.clear();
     }
-    this.logicFlowsCache.delete(this.buildLogicCacheKey(deviceMac));
+    void this.cacheManager.del(key);
   }
 
   validateFunctionCodeAtRuntime(code: string): string | null {
-    if (this.functionValidationCache.has(code)) {
-      const cached = this.functionValidationCache.get(code) ?? null;
+    return this.validateFunctionCodeSync(code);
+  }
 
-      // Guard against stale cache entries from older deployments where
-      // mapValue was not yet part of the allowed globals.
+  private readonly _fnValidationLocalCache = new Map<string, string | null>();
+
+  private validateFunctionCodeSync(code: string): string | null {
+    if (this._fnValidationLocalCache.has(code)) {
+      const cached = this._fnValidationLocalCache.get(code) ?? null;
       if (
         cached === "'mapValue' is not defined" &&
         /\bmapValue\s*\(/.test(code)
       ) {
-        this.functionValidationCache.delete(code);
+        this._fnValidationLocalCache.delete(code);
       } else {
         return cached;
       }
@@ -155,12 +110,12 @@ export class LogicService {
     });
 
     if (
-      this.functionValidationCache.size >= MAX_FUNCTION_VALIDATION_CACHE_SIZE
+      this._fnValidationLocalCache.size >= MAX_FUNCTION_VALIDATION_CACHE_SIZE
     ) {
-      this.functionValidationCache.clear();
+      this._fnValidationLocalCache.clear();
     }
 
-    this.functionValidationCache.set(code, validationError);
+    this._fnValidationLocalCache.set(code, validationError);
     return validationError;
   }
 
@@ -168,16 +123,13 @@ export class LogicService {
     flowId: string,
     deviceMac: string
   ): Promise<RuntimeStep[][]> {
-    const cacheKey = this.buildLogicCacheKey(deviceMac);
-    const now = Date.now();
-    const cachedEntry = this.logicFlowsCache.get(cacheKey);
-    if (
-      cachedEntry &&
-      cachedEntry.expiresAt > now &&
-      cachedEntry.flowId === flowId
-    )
+    const cacheKey = LOGIC_FLOWS_NS + this.buildLogicCacheKey(deviceMac);
+    const cachedEntry =
+      await this.cacheManager.get<LogicFlowCacheEntry>(cacheKey);
+
+    if (cachedEntry && cachedEntry.flowId === flowId) {
       return cachedEntry.flows;
-    if (cachedEntry) this.logicFlowsCache.delete(cacheKey);
+    }
 
     const logicDoc = await this.logicModel
       .findOne({ flowId })
@@ -190,12 +142,11 @@ export class LogicService {
       : [];
     const safeFlows = rawFlows.filter(Array.isArray) as RuntimeStep[][];
 
-    this.trimLogicCacheIfNeeded();
-    this.logicFlowsCache.set(cacheKey, {
-      flowId,
-      flows: safeFlows,
-      expiresAt: now + this.logicCacheTtlMs,
-    });
+    await this.cacheManager.set(
+      cacheKey,
+      { flowId, flows: safeFlows },
+      this.logicCacheTtlMs
+    );
     return safeFlows;
   }
 

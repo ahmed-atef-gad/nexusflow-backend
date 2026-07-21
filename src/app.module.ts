@@ -16,6 +16,8 @@ import { DevicesModule } from './devices/devices.module';
 import { VerificationModule } from './verification/verification.module';
 import { FirmwareModule } from './firmware/firmware.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { ReadingsModule } from './readings/readings.module';
+import { CacheModule } from '@nestjs/cache-manager';
 
 type ThrottlerConfig = {
   limit: number;
@@ -43,6 +45,7 @@ const throttlerGuard = ThrottlerGuard as unknown as new (
         ttl: 60000,
       },
     ]),
+    CacheModule.register({ isGlobal: true }),
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -64,6 +67,7 @@ const throttlerGuard = ThrottlerGuard as unknown as new (
     VerificationModule,
     FirmwareModule,
     NotificationsModule,
+    ReadingsModule,
   ],
   controllers: [AppController],
   providers: [
