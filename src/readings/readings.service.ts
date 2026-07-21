@@ -152,16 +152,26 @@ export class ReadingsService implements OnModuleInit {
       'meta.flowId': flowId,
       'meta.nodeId': nodeId,
     };
-
     if (Object.keys(timeFilter).length) {
       filter.recordedAt = timeFilter;
     }
 
-    return this.collection
-      .find(filter)
-      .sort({ recordedAt: 1 })
-      .limit(clampedLimit)
-      .toArray();
+    const pipeline = [
+      { $match: filter },
+      { $sort: { recordedAt: 1 } },
+      {
+        $bucketAuto: {
+          groupBy: '$recordedAt',
+          buckets: clampedLimit,
+          output: {
+            doc: { $first: '$$ROOT' },
+          },
+        },
+      },
+      { $replaceRoot: { newRoot: '$doc' } },
+    ];
+
+    return this.collection.aggregate<ReadingDocument>(pipeline).toArray();
   }
 
   /**
