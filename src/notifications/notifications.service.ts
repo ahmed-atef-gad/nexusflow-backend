@@ -1,12 +1,15 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   InternalServerErrorException,
   Logger,
   NotFoundException,
   OnModuleInit,
 } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 import { InjectModel } from '@nestjs/mongoose';
 import { ConfigService } from '@nestjs/config';
 import { App, cert, getApps, initializeApp } from 'firebase-admin/app';
@@ -401,12 +404,9 @@ export class NotificationsService implements OnModuleInit {
     'UNREGISTERED',
   ]);
   private readonly ruleCooldownMs: number;
-  private readonly recentRuleTriggers = new Map<string, number>();
   private readonly gasRuleMaxBackoffMs: number;
-  private readonly gasRuleBackoffState = new Map<
-    string,
-    { lastTriggeredAtMs: number; nextDelayMs: number }
-  >();
+  private static readonly RULE_TRIGGER_NS = 'notif:trigger:';
+  private static readonly GAS_BACKOFF_NS = 'notif:gas:';
 
   constructor(
     @InjectModel(NotificationDeviceToken.name)
@@ -425,7 +425,8 @@ export class NotificationsService implements OnModuleInit {
     private readonly alertRuleModel: Model<AlertRuleDocument>,
     @InjectModel(Flow.name)
     private readonly flowModel: Model<FlowDocument>,
-    private readonly configService: ConfigService
+    private readonly configService: ConfigService,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache
   ) {
     this.ruleCooldownMs = this.readPositiveConfigNumber(
       'ALERT_RULE_COOLDOWN_MS',
@@ -1322,11 +1323,13 @@ export class NotificationsService implements OnModuleInit {
         max: rule.max ?? null,
       });
       if (!matches) {
-        this.resetRuleTriggerState(cooldownKey, rule.moduleId);
+        await this.resetRuleTriggerState(cooldownKey, rule.moduleId);
         continue;
       }
 
-      if (!this.shouldTriggerRule(cooldownKey, rule.moduleId, occurredAt)) {
+      if (
+        !(await this.shouldTriggerRule(cooldownKey, rule.moduleId, occurredAt))
+      ) {
         continue;
       }
 
@@ -2834,39 +2837,42 @@ export class NotificationsService implements OnModuleInit {
     );
   }
 
-  private shouldTriggerRule(
+  private async shouldTriggerRule(
     cooldownKey: string,
     moduleId: string,
     occurredAt?: Date
-  ): boolean {
+  ): Promise<boolean> {
     const now = occurredAt?.getTime() ?? Date.now();
     if (moduleId.trim() === GAS_SENSOR_MODULE_ID) {
       return this.shouldTriggerGasRule(cooldownKey, now);
     }
 
-    const previous = this.recentRuleTriggers.get(cooldownKey);
+    const triggerKey = NotificationsService.RULE_TRIGGER_NS + cooldownKey;
+    const previous = await this.cacheManager.get<number>(triggerKey);
     if (previous && now - previous < this.ruleCooldownMs) {
       return false;
     }
 
-    this.recentRuleTriggers.set(cooldownKey, now);
-    if (this.recentRuleTriggers.size > 5000) {
-      this.pruneRecentRuleTriggers(now);
-    }
-
+    await this.cacheManager.set(triggerKey, now, this.ruleCooldownMs);
     return true;
   }
 
-  private shouldTriggerGasRule(cooldownKey: string, now: number): boolean {
-    const state = this.gasRuleBackoffState.get(cooldownKey);
+  private async shouldTriggerGasRule(
+    cooldownKey: string,
+    now: number
+  ): Promise<boolean> {
+    const gasKey = NotificationsService.GAS_BACKOFF_NS + cooldownKey;
+    const state = await this.cacheManager.get<{
+      lastTriggeredAtMs: number;
+      nextDelayMs: number;
+    }>(gasKey);
+
     if (!state) {
-      this.gasRuleBackoffState.set(cooldownKey, {
-        lastTriggeredAtMs: now,
-        nextDelayMs: this.ruleCooldownMs,
-      });
-      if (this.gasRuleBackoffState.size > 5000) {
-        this.pruneGasRuleBackoffState(now);
-      }
+      await this.cacheManager.set(
+        gasKey,
+        { lastTriggeredAtMs: now, nextDelayMs: this.ruleCooldownMs },
+        this.gasRuleMaxBackoffMs
+      );
       return true;
     }
 
@@ -2874,41 +2880,30 @@ export class NotificationsService implements OnModuleInit {
       return false;
     }
 
-    this.gasRuleBackoffState.set(cooldownKey, {
-      lastTriggeredAtMs: now,
-      nextDelayMs: Math.min(state.nextDelayMs * 2, this.gasRuleMaxBackoffMs),
-    });
-    if (this.gasRuleBackoffState.size > 5000) {
-      this.pruneGasRuleBackoffState(now);
-    }
-
+    await this.cacheManager.set(
+      gasKey,
+      {
+        lastTriggeredAtMs: now,
+        nextDelayMs: Math.min(state.nextDelayMs * 2, this.gasRuleMaxBackoffMs),
+      },
+      this.gasRuleMaxBackoffMs
+    );
     return true;
   }
 
-  private resetRuleTriggerState(cooldownKey: string, moduleId: string): void {
+  private async resetRuleTriggerState(
+    cooldownKey: string,
+    moduleId: string
+  ): Promise<void> {
     if (moduleId.trim() === GAS_SENSOR_MODULE_ID) {
-      this.gasRuleBackoffState.delete(cooldownKey);
+      await this.cacheManager.del(
+        NotificationsService.GAS_BACKOFF_NS + cooldownKey
+      );
       return;
     }
-    this.recentRuleTriggers.delete(cooldownKey);
-  }
-
-  private pruneRecentRuleTriggers(now: number): void {
-    const expiry = now - this.ruleCooldownMs;
-    for (const [key, value] of this.recentRuleTriggers.entries()) {
-      if (value <= expiry) {
-        this.recentRuleTriggers.delete(key);
-      }
-    }
-  }
-
-  private pruneGasRuleBackoffState(now: number): void {
-    const expiry = now - this.gasRuleMaxBackoffMs;
-    for (const [key, value] of this.gasRuleBackoffState.entries()) {
-      if (value.lastTriggeredAtMs <= expiry) {
-        this.gasRuleBackoffState.delete(key);
-      }
-    }
+    await this.cacheManager.del(
+      NotificationsService.RULE_TRIGGER_NS + cooldownKey
+    );
   }
 
   private readPositiveConfigNumber(name: string, fallback: number): number {

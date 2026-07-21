@@ -18,6 +18,7 @@ import {
 import { AuthModule } from '../auth/auth.module';
 import { RolesGuard } from '../guards/auth/roles.guard';
 import { NotificationsModule } from 'src/notifications/notifications.module';
+import { ReadingsModule } from '../readings/readings.module';
 
 @Global()
 @Module({
@@ -27,6 +28,7 @@ import { NotificationsModule } from 'src/notifications/notifications.module';
     UsersModule,
     AuthModule,
     NotificationsModule,
+    ReadingsModule,
     MongooseModule.forFeature([
       { name: Logic.name, schema: LogicSchema },
       {

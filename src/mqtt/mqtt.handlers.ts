@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  OnModuleDestroy,
-  OnModuleInit,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PigeonService } from '../pigeon-mqtt/pigeon.service';
 import { DevicesService } from '../devices/devices.service';
@@ -15,6 +10,9 @@ import * as vm from 'node:vm';
 import { performance } from 'node:perf_hooks';
 import type { PigeonBroker } from '../pigeon-mqtt/pigeon.interface';
 import { MqttPerformanceService } from './mqtt-performance.service';
+import { ReadingsService } from '../readings/readings.service';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 
 type RuntimeBroker = PigeonBroker & {
   authenticate?: (
@@ -137,13 +135,13 @@ const DEFAULT_MAX_USER_MQTT_SESSIONS = 5;
 const DEFAULT_MAX_OWNER_ONLINE_DEVICES = 5;
 
 @Injectable()
-export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
+export class MqttHandlers implements OnModuleInit {
   private readonly logger = new Logger(MqttHandlers.name);
   private readonly functionExecutionTimeoutMs: number;
   private readonly functionNodeMaxPayloadBytes: number;
   private readonly maxUserMqttSessions: number;
   private readonly maxOwnerOnlineDevices: number;
-  private readonly activeEspSessions = new Map<string, string>();
+  private static readonly ESP_SESSION_NS = 'mqtt:esp:';
 
   constructor(
     private readonly pigeonService: PigeonService,
@@ -153,7 +151,9 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     private readonly notificationsService: NotificationsService,
     private readonly logicService: LogicService,
     private readonly mqttPerformanceService: MqttPerformanceService,
-    private readonly configService: ConfigService
+    private readonly readingsService: ReadingsService,
+    private readonly configService: ConfigService,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache
   ) {
     this.functionExecutionTimeoutMs = this.readPositiveConfigNumber(
       'FUNCTION_NODE_EXECUTION_TIMEOUT_MS',
@@ -207,13 +207,6 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       'connectionError',
       this.onConnectionError.bind(this) as (...args: unknown[]) => void
     );
-
-    // start logic cache sweeper in LogicService
-    this.logicService.startLogicCacheSweeper();
-  }
-
-  onModuleDestroy() {
-    this.logicService.stopLogicCacheSweeper();
   }
 
   private readPositiveConfigNumber(name: string, fallback: number): number {
@@ -360,13 +353,17 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     return done(error, false);
   }
 
-  private reserveEspSession(deviceMac: string, clientId: string): boolean {
+  private async reserveEspSession(
+    deviceMac: string,
+    clientId: string
+  ): Promise<boolean> {
     const normalizedMac = this.normalizeMacAddress(deviceMac);
     const normalizedClientId = clientId.trim();
-    const activeClientId = this.activeEspSessions.get(normalizedMac);
+    const sessionKey = MqttHandlers.ESP_SESSION_NS + normalizedMac;
+    const activeClientId = await this.cacheManager.get<string>(sessionKey);
 
     if (!activeClientId) {
-      this.activeEspSessions.set(normalizedMac, normalizedClientId);
+      await this.cacheManager.set(sessionKey, normalizedClientId, 0);
       return true;
     }
 
@@ -375,7 +372,7 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
     }
 
     if (!this.mqttService.isClientConnected(activeClientId)) {
-      this.activeEspSessions.set(normalizedMac, normalizedClientId);
+      await this.cacheManager.set(sessionKey, normalizedClientId, 0);
       return true;
     }
 
@@ -454,7 +451,7 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
           }
         }
 
-        if (!this.reserveEspSession(normalizedClientMac, clientId)) {
+        if (!(await this.reserveEspSession(normalizedClientMac, clientId))) {
           return this.rejectAuth(
             clientId,
             `reason=device already has an active mqtt session mac=${normalizedClientMac}`,
@@ -795,8 +792,10 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       const normalizedMac = this.normalizeMacAddress(
         client.deviceMac ?? clientId
       );
-      if (this.activeEspSessions.get(normalizedMac) === clientId) {
-        this.activeEspSessions.delete(normalizedMac);
+      const sessionKey = MqttHandlers.ESP_SESSION_NS + normalizedMac;
+      const activeClientId = await this.cacheManager.get<string>(sessionKey);
+      if (activeClientId === clientId) {
+        await this.cacheManager.del(sessionKey);
       }
       await this.mqttPerformanceService.endEspSession(normalizedMac, clientId);
       this.logicService.evictForDevice(normalizedMac);
@@ -1116,6 +1115,15 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
       },
     });
 
+    // Persist reading to the time-series collection (fire-and-forget, throttled)
+    this.readingsService.saveReadingThrottled({
+      flowId: params.flowId,
+      nodeId: params.inputNodeId,
+      deviceMac: params.deviceMac,
+      topic: params.topic,
+      readings,
+    });
+
     if (outcome.triggeredRules > 0) {
       this.logger.log(
         `Triggered ${outcome.triggeredRules} alert rule(s) for flowId=${params.flowId} nodeId=${params.inputNodeId}`
@@ -1227,6 +1235,15 @@ export class MqttHandlers implements OnModuleInit, OnModuleDestroy {
         deviceMac: params.deviceMac,
         clientId: params.client?.id?.toString?.() ?? 'unknown',
       },
+    });
+
+    // Persist reading to the time-series collection (fire-and-forget, throttled)
+    this.readingsService.saveReadingThrottled({
+      flowId: params.flowId,
+      nodeId: params.inputNodeId,
+      deviceMac: params.deviceMac,
+      topic: params.topic,
+      readings,
     });
 
     if (outcome.triggeredRules > 0) {
